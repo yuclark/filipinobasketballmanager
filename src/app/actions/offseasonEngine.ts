@@ -1,9 +1,10 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNull } from "drizzle-orm";
 import { players, teams, games, transactions } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
+import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
 // Name Pools
 const FIRST_NAMES = [
@@ -49,8 +50,20 @@ const VISMIN_HOMETOWNS = [
   "Ormoc", "Dapitan", "Pagadian"
 ];
 
-export async function generateRookiePoolAction(seasonYear: number) {
+export async function generateRookiePoolAction(seasonYear: number, forceRegenerate = false) {
   try {
+    if (!forceRegenerate) {
+      const existing = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(players)
+        .where(eq(players.status, "DraftPool"));
+      
+      if (Number(existing[0]?.count ?? 0) > 0) {
+        console.log("[Offseason Engine] Draft pool already exists, skipping regeneration to preserve scouting records.");
+        return { success: true };
+      }
+    }
+
     // 1. Delete old DraftPool players
     await db.delete(players).where(eq(players.status, "DraftPool"));
 
@@ -322,6 +335,9 @@ export async function processPlayerEvolutionAction() {
       }
     }
 
+    // Enforce strict roster limits at the end of Phase 2 evolution/retirements
+    await enforceLeagueRosterLimitsAction();
+
     return { success: true, logs: evolutionLogs };
   } catch (error: any) {
     console.error("Failed to run player evolution:", error);
@@ -358,7 +374,7 @@ export async function executeDraftPickAction(teamId: string, playerId: string) {
 
     const description = `DRAFT: ${team.city} ${team.name} selected prospect ${player.firstName} ${player.lastName} (${player.position}, OVR ${player.overall}) in the Rookie Draft.`;
     await db.insert(transactions).values({
-      type: "Signing",
+      type: "Draft",
       description,
       seasonYear: currentYear,
       gameDay: 82,
@@ -368,6 +384,145 @@ export async function executeDraftPickAction(teamId: string, playerId: string) {
   } catch (error: any) {
     console.error("Draft pick execution failed:", error);
     return { success: false, error: error.message || "Draft pick failed." };
+  }
+}
+
+export async function replenishLeagueRostersAction() {
+  try {
+    console.log("[Roster Replenishment] Starting safety net check...");
+
+    const allTeams = await db.select().from(teams);
+    const activePlayers = await db
+      .select()
+      .from(players)
+      .where(eq(players.status, "Active"));
+
+    const rosterCounts = new Map<string, number>();
+    for (const t of allTeams) {
+      rosterCounts.set(t.id, 0);
+    }
+    for (const p of activePlayers) {
+      if (p.teamId) {
+        rosterCounts.set(p.teamId, (rosterCounts.get(p.teamId) ?? 0) + 1);
+      }
+    }
+
+    const depletedTeams = allTeams.filter((t) => (rosterCounts.get(t.id) ?? 0) < 12);
+
+    if (depletedTeams.length === 0) {
+      console.log("[Roster Replenishment] All teams have at least 12 players. Safety net bypassed.");
+      return { success: true, count: 0 };
+    }
+
+    console.log(`[Roster Replenishment] Found ${depletedTeams.length} depleted teams. Initiating signings...`);
+
+    const freeAgents = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.status, "Active"), isNull(players.teamId)))
+      .orderBy(desc(players.overall));
+
+    let faIndex = 0;
+    let totalSigningsCount = 0;
+
+    await db.transaction(async (tx) => {
+      const lastGame = await tx
+        .select({ year: games.seasonYear })
+        .from(games)
+        .orderBy(desc(games.seasonYear))
+        .limit(1);
+      const currentYear = lastGame[0]?.year ?? 2026;
+
+      for (const team of depletedTeams) {
+        const currentCount = rosterCounts.get(team.id) ?? 0;
+        const playersNeeded = 12 - currentCount;
+
+        console.log(`[Roster Replenishment] ${team.city} ${team.name} needs ${playersNeeded} players (current roster: ${currentCount}).`);
+
+        if (faIndex + playersNeeded > freeAgents.length) {
+          console.warn("[Roster Replenishment] Free agency pool is too small! Generating emergency free agents...");
+          const emergencyFAs: Array<typeof players.$inferInsert> = [];
+          const neededFAsCount = (faIndex + playersNeeded) - freeAgents.length;
+          
+          for (let k = 0; k < neededFAsCount + 10; k++) {
+            const isFilAm = Math.random() < 0.2;
+            const firstName = isFilAm
+              ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
+              : FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+            const lastName = isFilAm
+              ? FILAM_SURNAMES[Math.floor(Math.random() * FILAM_SURNAMES.length)]
+              : SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+            const age = Math.floor(Math.random() * 12) + 21; // 21 to 32
+            const hometown = Math.random() < 0.5 ? "Manila" : "Cebu City";
+            const position = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
+            const overall = Math.floor(Math.random() * 20) + 55; // 55 to 74
+
+            emergencyFAs.push({
+              teamId: null,
+              firstName,
+              lastName,
+              age,
+              hometown,
+              isFilAm,
+              overall,
+              salary: 500000,
+              position,
+              threePoint: overall - Math.floor(Math.random() * 5),
+              insideScoring: overall - Math.floor(Math.random() * 5),
+              playmaking: overall - Math.floor(Math.random() * 5),
+              perimeterDefense: overall - Math.floor(Math.random() * 5),
+              interiorDefense: overall - Math.floor(Math.random() * 5),
+              rebounding: overall - Math.floor(Math.random() * 5),
+              speed: overall - Math.floor(Math.random() * 5),
+              stamina: overall - Math.floor(Math.random() * 5),
+              contractYearsRemaining: 1,
+              status: "Active",
+              isRookie: false,
+              injuryDaysRemaining: 0,
+              injuryType: null,
+            });
+          }
+
+          const insertedFAs = await tx.insert(players).values(emergencyFAs).returning();
+          freeAgents.push(...insertedFAs);
+        }
+
+        for (let signIdx = 0; signIdx < playersNeeded; signIdx++) {
+          const fa = freeAgents[faIndex];
+          faIndex++;
+          totalSigningsCount++;
+
+          const contractYears = Math.random() < 0.5 ? 1 : 2;
+          const salaryVal = 500000; // Minimum baseline salary ₱500,000
+
+          await tx
+            .update(players)
+            .set({
+              teamId: team.id,
+              contractYearsRemaining: contractYears,
+              salary: salaryVal,
+            })
+            .where(eq(players.id, fa.id));
+
+          const description = `SYSTEM: ${team.city} ${team.name} signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) to meet league roster minimums.`;
+
+          await tx.insert(transactions).values({
+            type: "Signing",
+            description,
+            seasonYear: currentYear,
+            gameDay: 82,
+          });
+
+          console.log(`[Roster Replenishment] Signed ${fa.firstName} ${fa.lastName} to ${team.name}.`);
+        }
+      }
+    });
+
+    console.log(`[Roster Replenishment] Safety net execution complete. Signed ${totalSigningsCount} players.`);
+    return { success: true, count: totalSigningsCount };
+  } catch (error: any) {
+    console.error("[Roster Replenishment] Safety net execution failed:", error);
+    return { success: false, error: error.message || "Failed to replenish rosters." };
   }
 }
 
@@ -381,6 +536,9 @@ export async function advanceToNextSeasonAction() {
       .limit(1);
     const currentYear = lastGame[0]?.year ?? 2026;
     const nextYear = currentYear + 1;
+
+    // Run safety net roster limits enforcement
+    await enforceLeagueRosterLimitsAction();
 
     // 2. Wipe completed season schedule
     await db.delete(games); // Cascade deletes playerGameStats
@@ -398,6 +556,9 @@ export async function advanceToNextSeasonAction() {
       seasonYear: nextYear,
       gameDay: 1,
     });
+
+    // Generate fresh rookie class for the upcoming draft pool (so they can be scouted during the season)
+    await generateRookiePoolAction(nextYear, true);
 
     return { success: true, nextYear };
   } catch (error: any) {

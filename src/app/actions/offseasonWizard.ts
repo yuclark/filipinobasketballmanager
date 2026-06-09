@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { players, teams, games, transactions } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
+import { generateRookiePoolAction, replenishLeagueRostersAction } from "@/app/actions/offseasonEngine";
+import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
 
@@ -316,6 +318,9 @@ export async function finalizeOffseasonAction() {
     const currentYear = lastGame[0]?.year ?? 2026;
     const nextYear = currentYear + 1;
 
+    // Safety net: enforce strict roster limits (12-18)
+    await enforceLeagueRosterLimitsAction();
+
     // 3. Clear schedule games and stats (will cascade delete playerGameStats)
     await db.delete(games);
 
@@ -332,6 +337,9 @@ export async function finalizeOffseasonAction() {
       seasonYear: nextYear,
       gameDay: 1,
     });
+
+    // Generate fresh rookie class for the upcoming draft pool (so they can be scouted during the season)
+    await generateRookiePoolAction(nextYear, true);
 
     return { success: true, nextYear };
   } catch (error: any) {

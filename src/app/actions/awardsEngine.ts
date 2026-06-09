@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql, aliasedTable } from "drizzle-orm";
 import {
   players,
   games,
@@ -34,12 +34,13 @@ function positionClass(position: string): PositionClass {
 }
 
 // ─── Main Awards Action ───────────────────────────────────────────────────────
-export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
+export async function calculateRegularSeasonAwardsAction(seasonYear: number, tx?: any) {
   try {
     console.log(`[Awards Engine] Calculating Season ${seasonYear} awards...`);
+    const client = (tx || db) as typeof db;
 
     // 1. Fetch all regular-season game logs for this year
-    const regularGameIds = await db
+    const regularGameIds = await client
       .select({ id: games.id })
       .from(games)
       .where(and(eq(games.stage, "Regular"), eq(games.seasonYear, seasonYear)));
@@ -51,7 +52,7 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
 
     const gameIdList = regularGameIds.map((g) => g.id);
 
-    const allLogs = await db
+    const allLogs = await client
       .select({
         playerId: playerGameStats.playerId,
         points: playerGameStats.points,
@@ -105,7 +106,7 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
     }
 
     // 3. Load all active players (includes isRookie, teamId, position, perimeterDefense, interiorDefense)
-    const allPlayersList = await db
+    const allPlayersList = await client
       .select()
       .from(players)
       .where(inArray(players.status, ["Active", "Retired"])); // include just-retired too
@@ -113,8 +114,8 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
     const playerMap = new Map(allPlayersList.map((p) => [p.id, p]));
 
     // 4. Determine playoff team IDs (top 8 of each conference by regular season record)
-    const allTeams = await db.select().from(teams);
-    const allCompletedRegular = await db
+    const allTeams = await client.select().from(teams);
+    const allCompletedRegular = await client
       .select({
         homeTeamId: games.homeTeamId,
         awayTeamId: games.awayTeamId,
@@ -252,10 +253,10 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
     const defTeamSlots = selectAllLeagueSlots(sortedByDS, defTeamIds);
 
     // ── 9. Persist to DB ─────────────────────────────────────────────────────
-    await db.transaction(async (tx) => {
+    const persistLogic = async (txClient: any) => {
       // Clear any existing awards for this year (idempotent)
-      await tx.delete(playerAwards).where(eq(playerAwards.seasonYear, seasonYear));
-      await tx.delete(allLeagueTeams).where(eq(allLeagueTeams.seasonYear, seasonYear));
+      await txClient.delete(playerAwards).where(eq(playerAwards.seasonYear, seasonYear));
+      await txClient.delete(allLeagueTeams).where(eq(allLeagueTeams.seasonYear, seasonYear));
 
       // Insert individual awards
       const awardsToInsert: (typeof playerAwards.$inferInsert)[] = [];
@@ -275,7 +276,7 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
       }
 
       if (awardsToInsert.length > 0) {
-        await tx.insert(playerAwards).values(awardsToInsert);
+        await txClient.insert(playerAwards).values(awardsToInsert);
       }
 
       // Insert All-League teams
@@ -296,9 +297,11 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number) {
       addSlots(defTeamSlots, "All-Defensive");
 
       if (allLeagueToInsert.length > 0) {
-        await tx.insert(allLeagueTeams).values(allLeagueToInsert);
+        await txClient.insert(allLeagueTeams).values(allLeagueToInsert);
       }
-    });
+    };
+
+    await persistLogic(tx || db);
 
     console.log(`[Awards Engine] Season ${seasonYear} regular-season awards calculated and saved.`);
     return {
@@ -319,13 +322,15 @@ export async function calculateFinalsMvpAction(
   seasonYear: number,
   winningTeamId: string,
   losingTeamId: string,
-  seriesScore: string
+  seriesScore: string,
+  tx?: any
 ) {
   try {
     console.log(`[Awards Engine] Calculating Finals MVP for Season ${seasonYear}...`);
+    const client = (tx || db) as typeof db;
 
     // Fetch all Grand Finals game IDs
-    const gfGames = await db
+    const gfGames = await client
       .select({ id: games.id })
       .from(games)
       .where(and(eq(games.seriesId, "GF_GrandFinals"), eq(games.status, "Completed")));
@@ -337,7 +342,7 @@ export async function calculateFinalsMvpAction(
     const gfGameIds = gfGames.map((g) => g.id);
 
     // Fetch stats from winning team players only in those games
-    const gfLogs = await db
+    const gfLogs = await client
       .select({
         playerId: playerGameStats.playerId,
         points: playerGameStats.points,
@@ -351,7 +356,7 @@ export async function calculateFinalsMvpAction(
       .where(inArray(playerGameStats.gameId, gfGameIds));
 
     // Filter to winning team players
-    const winningRoster = await db
+    const winningRoster = await client
       .select({ id: players.id })
       .from(players)
       .where(eq(players.teamId, winningTeamId));
@@ -382,16 +387,25 @@ export async function calculateFinalsMvpAction(
     }
 
     // Get the Finals MVP's team (should be winning team)
-    const [fmvpPlayer] = await db.select({ teamId: players.teamId }).from(players).where(eq(players.id, bestPlayerId)).limit(1);
+    const [fmvpPlayer] = await client.select({ teamId: players.teamId }).from(players).where(eq(players.id, bestPlayerId)).limit(1);
 
     // Insert season champion record (idempotent clear first)
-    await db.delete(seasonChampions).where(eq(seasonChampions.seasonYear, seasonYear));
-    await db.insert(seasonChampions).values({
+    await client.delete(seasonChampions).where(eq(seasonChampions.seasonYear, seasonYear));
+    await client.insert(seasonChampions).values({
       seasonYear,
       championTeamId: winningTeamId,
       runnerUpTeamId: losingTeamId,
       finalsMvpPlayerId: bestPlayerId,
       seriesScore,
+    });
+
+    // Log the Finals MVP award row (idempotent clear first if any FMVP exists for this year)
+    await client.delete(playerAwards).where(and(eq(playerAwards.seasonYear, seasonYear), eq(playerAwards.awardType, "FMVP")));
+    await client.insert(playerAwards).values({
+      seasonYear,
+      awardType: "FMVP",
+      playerId: bestPlayerId,
+      teamId: winningTeamId,
     });
 
     console.log(`[Awards Engine] Finals MVP: ${bestPlayerId} (avg PS: ${bestAvgPS.toFixed(1)}). Champion: ${winningTeamId}`);
@@ -405,25 +419,61 @@ export async function calculateFinalsMvpAction(
 // ─── History Fetch Action ─────────────────────────────────────────────────────
 export async function getLeagueHistoryAction() {
   try {
-    const [champions, awards, allLeague, allPlayers, allTeamsData] = await Promise.all([
-      db.select().from(seasonChampions).orderBy(seasonChampions.seasonYear),
-      db.select().from(playerAwards).orderBy(playerAwards.seasonYear),
-      db.select().from(allLeagueTeams).orderBy(allLeagueTeams.seasonYear),
-      // Fetch ALL players regardless of status so historical winners always resolve
-      db.select({
-        id: players.id,
-        firstName: players.firstName,
-        lastName: players.lastName,
-        position: players.position,
-        teamId: players.teamId,
-      }).from(players),
-      db.select({ id: teams.id, name: teams.name, city: teams.city }).from(teams),
-    ]);
+    const teamsHome = aliasedTable(teams, "teams_home");
+    const teamsAway = aliasedTable(teams, "teams_away");
+    const playersMVP = aliasedTable(players, "players_mvp");
+    const teamsMVP = aliasedTable(teams, "teams_mvp");
 
-    const playerNameMap = new Map(
-      allPlayers.map((p) => [p.id, { name: `${p.firstName} ${p.lastName}`, position: p.position, teamId: p.teamId ?? "" }])
-    );
-    const teamNameMap = new Map(allTeamsData.map((t) => [t.id, `${t.city} ${t.name}`]));
+    const [champions, awards, allLeague] = await Promise.all([
+      db
+        .select({
+          id: seasonChampions.id,
+          seasonYear: seasonChampions.seasonYear,
+          championTeamId: seasonChampions.championTeamId,
+          championTeam: sql<string>`coalesce(concat(${teamsHome.city}, ' ', ${teamsHome.name}), 'Unknown Team')`,
+          runnerUpTeamId: seasonChampions.runnerUpTeamId,
+          runnerUpTeam: sql<string>`coalesce(concat(${teamsAway.city}, ' ', ${teamsAway.name}), 'Unknown Team')`,
+          finalsMvpPlayerId: seasonChampions.finalsMvpPlayerId,
+          finalsMvp: sql<string>`coalesce(concat(${playersMVP.firstName}, ' ', ${playersMVP.lastName}), 'Unknown Player')`,
+          finalsMvpTeam: sql<string>`coalesce(concat(${teamsMVP.city}, ' ', ${teamsMVP.name}), '')`,
+          seriesScore: seasonChampions.seriesScore,
+        })
+        .from(seasonChampions)
+        .leftJoin(teamsHome, eq(seasonChampions.championTeamId, teamsHome.id))
+        .leftJoin(teamsAway, eq(seasonChampions.runnerUpTeamId, teamsAway.id))
+        .leftJoin(playersMVP, eq(seasonChampions.finalsMvpPlayerId, playersMVP.id))
+        .leftJoin(teamsMVP, eq(playersMVP.teamId, teamsMVP.id))
+        .orderBy(seasonChampions.seasonYear),
+
+      db
+        .select({
+          id: playerAwards.id,
+          seasonYear: playerAwards.seasonYear,
+          type: playerAwards.awardType,
+          playerId: playerAwards.playerId,
+          playerName: sql<string>`coalesce(concat(${players.firstName}, ' ', ${players.lastName}), 'Unknown Player')`,
+          teamId: playerAwards.teamId,
+          teamName: sql<string>`coalesce(concat(${teams.city}, ' ', ${teams.name}), 'Unknown Team')`,
+          position: players.position,
+        })
+        .from(playerAwards)
+        .leftJoin(players, eq(playerAwards.playerId, players.id))
+        .leftJoin(teams, eq(playerAwards.teamId, teams.id))
+        .orderBy(playerAwards.seasonYear),
+
+      db
+        .select({
+          id: allLeagueTeams.id,
+          seasonYear: allLeagueTeams.seasonYear,
+          type: allLeagueTeams.type,
+          position: allLeagueTeams.position,
+          playerId: allLeagueTeams.playerId,
+          playerName: sql<string>`coalesce(concat(${players.firstName}, ' ', ${players.lastName}), 'Unknown Player')`,
+        })
+        .from(allLeagueTeams)
+        .leftJoin(players, eq(allLeagueTeams.playerId, players.id))
+        .orderBy(allLeagueTeams.seasonYear),
+    ]);
 
     // All unique season years — newest first
     const allYears = Array.from(
@@ -442,25 +492,25 @@ export async function getLeagueHistoryAction() {
       // Award order for display
       const awardOrder = ["MVP", "ROY", "DPOY", "6MOTY"];
       const sortedAwards = [...seasonAwards].sort(
-        (a, b) => awardOrder.indexOf(a.awardType) - awardOrder.indexOf(b.awardType)
+        (a, b) => awardOrder.indexOf(a.type) - awardOrder.indexOf(b.type)
       );
 
       return {
         year,
         champion: champion
           ? {
-              championTeam: teamNameMap.get(champion.championTeamId) ?? "Unknown",
-              runnerUpTeam: teamNameMap.get(champion.runnerUpTeamId) ?? "Unknown",
-              finalsMvp: playerNameMap.get(champion.finalsMvpPlayerId)?.name ?? "Unknown",
-              finalsMvpTeam: teamNameMap.get(playerNameMap.get(champion.finalsMvpPlayerId)?.teamId ?? "") ?? "",
+              championTeam: champion.championTeam,
+              runnerUpTeam: champion.runnerUpTeam,
+              finalsMvp: champion.finalsMvp,
+              finalsMvpTeam: champion.finalsMvpTeam,
               seriesScore: champion.seriesScore,
             }
           : null,
         awards: sortedAwards.map((a) => ({
-          type: a.awardType,
-          playerName: playerNameMap.get(a.playerId)?.name ?? "Unknown",
-          teamName: teamNameMap.get(a.teamId) ?? "Unknown",
-          position: playerNameMap.get(a.playerId)?.position ?? "",
+          type: a.type,
+          playerName: a.playerName,
+          teamName: a.teamName,
+          position: a.position ?? "",
         })),
         allLeagueTeams: (["All-League 1st", "All-League 2nd", "All-League 3rd", "All-Defensive"] as const)
           .map((teamType) => ({
@@ -469,7 +519,7 @@ export async function getLeagueHistoryAction() {
               .filter((m) => m.type === teamType)
               .map((m) => ({
                 position: m.position,
-                playerName: playerNameMap.get(m.playerId)?.name ?? "Unknown",
+                playerName: m.playerName,
               }))
               .sort((a, b) => {
                 const order: Record<string, number> = { G: 0, F: 1, C: 2 };
@@ -484,5 +534,47 @@ export async function getLeagueHistoryAction() {
   } catch (error: any) {
     console.error("[Awards Engine] Failed to fetch league history:", error);
     return { success: false, seasons: [], error: error.message || "Failed to fetch league history." };
+  }
+}
+
+export async function getSeasonAwardsAction(seasonYear: number) {
+  try {
+    const awards = await db
+      .select({
+        id: playerAwards.id,
+        seasonYear: playerAwards.seasonYear,
+        type: playerAwards.awardType,
+        playerId: playerAwards.playerId,
+        playerName: sql<string>`coalesce(concat(${players.firstName}, ' ', ${players.lastName}), 'Unknown Player')`,
+        teamName: sql<string>`coalesce(concat(${teams.city}, ' ', ${teams.name}), 'Unknown Team')`,
+        position: players.position,
+        overall: players.overall,
+      })
+      .from(playerAwards)
+      .leftJoin(players, eq(playerAwards.playerId, players.id))
+      .leftJoin(teams, eq(playerAwards.teamId, teams.id))
+      .where(eq(playerAwards.seasonYear, seasonYear));
+
+    const allLeague = await db
+      .select({
+        id: allLeagueTeams.id,
+        seasonYear: allLeagueTeams.seasonYear,
+        type: allLeagueTeams.type,
+        position: allLeagueTeams.position,
+        playerId: allLeagueTeams.playerId,
+        playerName: sql<string>`coalesce(concat(${players.firstName}, ' ', ${players.lastName}), 'Unknown Player')`,
+        teamName: sql<string>`coalesce(concat(${teams.city}, ' ', ${teams.name}), 'Unknown Team')`,
+        playerOverall: players.overall,
+        playerPosition: players.position,
+      })
+      .from(allLeagueTeams)
+      .leftJoin(players, eq(allLeagueTeams.playerId, players.id))
+      .leftJoin(teams, eq(players.teamId, teams.id))
+      .where(eq(allLeagueTeams.seasonYear, seasonYear));
+
+    return { success: true, awards, allLeague };
+  } catch (error: any) {
+    console.error("Failed to fetch season awards:", error);
+    return { success: false, error: error.message || "Failed to fetch awards." };
   }
 }

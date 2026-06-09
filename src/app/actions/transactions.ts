@@ -132,8 +132,8 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
       .from(players)
       .where(eq(players.teamId, teamId));
 
-    if (currentTeamPlayers.length >= 15) {
-      return { success: false, error: "Roster size limit reached. A team can have a maximum of 15 players." };
+    if (currentTeamPlayers.length >= 18) {
+      return { success: false, error: "Roster size limit reached. A team can have a maximum of 18 players." };
     }
 
     const totalSalaries = currentTeamPlayers.reduce((sum, p) => sum + p.salary, 0);
@@ -191,7 +191,16 @@ export async function releasePlayerAction(playerId: string) {
     }
 
     if (!player.teamId) {
-      return { success: false, error: "Player is already a free agent." };
+      return { success: false, error: "Player is not assigned to a team." };
+    }
+
+    const currentTeamPlayers = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, player.teamId), eq(players.status, "Active")));
+
+    if (currentTeamPlayers.length <= 12) {
+      return { success: false, error: "Roster size cannot fall below the league minimum of 12 players." };
     }
 
     const [team] = await db
@@ -300,11 +309,17 @@ export async function executeTradeAction(
     const newRosterCountA = fullRosterA.length - rosterA.length + rosterB.length;
     const newRosterCountB = fullRosterB.length - rosterB.length + rosterA.length;
 
-    if (newRosterCountA > 15) {
-      return { success: false, error: `Trade rejected: ${teamA.city} ${teamA.name} cannot have more than 15 players (would have ${newRosterCountA} after trade).` };
+    if (newRosterCountA > 18) {
+      return { success: false, error: `Trade rejected: ${teamA.city} ${teamA.name} cannot have more than 18 players (would have ${newRosterCountA} after trade).` };
     }
-    if (newRosterCountB > 15) {
-      return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have more than 15 players (would have ${newRosterCountB} after trade).` };
+    if (newRosterCountA < 12) {
+      return { success: false, error: `Trade rejected: ${teamA.city} ${teamA.name} cannot have fewer than 12 players (would have ${newRosterCountA} after trade).` };
+    }
+    if (newRosterCountB > 18) {
+      return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have more than 18 players (would have ${newRosterCountB} after trade).` };
+    }
+    if (newRosterCountB < 12) {
+      return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have fewer than 12 players (would have ${newRosterCountB} after trade).` };
     }
 
     if (newSalariesA > SALARY_CAP) {

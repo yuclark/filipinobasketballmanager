@@ -124,6 +124,9 @@ export default function OffseasonWizardPage() {
   const [revealedLotteryPicks, setRevealedLotteryPicks] = useState<Record<number, Team>>({});
   const [lotteryRevealIndex, setLotteryRevealIndex] = useState<number>(14);
 
+  // Phase 5: Launching state
+  const [launching, setLaunching] = useState<boolean>(false);
+
   // Phase 4: Rookie Draft State
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [selectedProspectId, setSelectedProspectId] = useState<string>("");
@@ -555,7 +558,7 @@ export default function OffseasonWizardPage() {
   // Phase 5 Actions: Pre-Season Launch
   const handleLaunchSeason = async () => {
     try {
-      setLoading(true);
+      setLaunching(true);
       const res = await finalizeOffseasonAction();
       if (res.success) {
         // Clear wizard state from localStorage
@@ -565,12 +568,12 @@ export default function OffseasonWizardPage() {
         router.push("/dashboard");
       } else {
         alert(res.error || "Failed to reset season.");
-        setLoading(false);
+        setLaunching(false);
       }
     } catch (e: any) {
       console.error(e);
       alert("Failed to advance season.");
-      setLoading(false);
+      setLaunching(false);
     }
   };
 
@@ -1257,10 +1260,20 @@ export default function OffseasonWizardPage() {
 
           <button
             onClick={handleLaunchSeason}
-            className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_20px_rgba(249,115,22,0.3)] hover:scale-[1.02] cursor-pointer transition-all active:scale-[0.98]"
+            disabled={launching}
+            className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_20px_rgba(249,115,22,0.3)] hover:scale-[1.02] cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>🚀 Initialize Season {nextSeasonYear}</span>
+            {launching ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Verifying League Roster Compliance & Generating Schedule...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>🚀 Initialize Season {nextSeasonYear}</span>
+              </>
+            )}
           </button>
         </div>
       )}

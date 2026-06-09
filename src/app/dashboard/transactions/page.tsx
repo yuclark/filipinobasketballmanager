@@ -10,22 +10,28 @@ import {
   UserPlus,
   UserMinus,
   Calendar,
+  Activity,
+  GraduationCap,
 } from "lucide-react";
+import React from "react";
 
 interface Transaction {
   id: string;
-  type: "Trade" | "Signing" | "Release";
+  type: "Trade" | "Signing" | "Release" | "Injury" | "Draft";
   description: string;
   seasonYear: number;
   gameDay: number;
-  createdAt: Date;
+  createdAt: string | Date;
 }
+
+type FilterType = "All" | "Trade" | "Signing" | "Injury" | "Draft";
 
 export default function TransactionsPage() {
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [filter, setFilter] = useState<FilterType>("All");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,6 +63,15 @@ export default function TransactionsPage() {
     }
   }, [mounted]);
 
+  // Filter transactions dynamically
+  const filteredTransactions = transactions.filter((tx) => {
+    if (filter === "All") return true;
+    if (filter === "Signing") {
+      return tx.type === "Signing" || tx.type === "Release";
+    }
+    return tx.type === filter;
+  });
+
   if (!mounted || loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -66,7 +81,7 @@ export default function TransactionsPage() {
   }
 
   // Helper for type badges
-  const getBadgeConfig = (type: "Trade" | "Signing" | "Release") => {
+  const getBadgeConfig = (type: string) => {
     switch (type) {
       case "Signing":
         return {
@@ -76,7 +91,7 @@ export default function TransactionsPage() {
         };
       case "Release":
         return {
-          bg: "bg-red-500/10 text-red-400 border-red-500/20",
+          bg: "bg-rose-500/10 text-rose-400 border-rose-500/20",
           label: "Waiver",
           icon: UserMinus,
         };
@@ -85,6 +100,18 @@ export default function TransactionsPage() {
           bg: "bg-amber-500/10 text-amber-400 border-amber-500/20",
           label: "Trade",
           icon: ArrowLeftRight,
+        };
+      case "Injury":
+        return {
+          bg: "bg-red-500/10 text-red-400 border-red-500/20",
+          label: "Injury",
+          icon: Activity,
+        };
+      case "Draft":
+        return {
+          bg: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+          label: "Draft Pick",
+          icon: GraduationCap,
         };
       default:
         return {
@@ -96,7 +123,7 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="space-y-8 relative">
+    <div className="space-y-6 relative">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 shadow-xl">
         <div className="flex items-center gap-4">
@@ -106,7 +133,7 @@ export default function TransactionsPage() {
           <div>
             <h3 className="text-2xl font-bold text-white tracking-tight">League News & Logs</h3>
             <p className="text-zinc-500 text-sm font-semibold tracking-wide">
-              Official front-office movements, roster trades, and waiver wire transactions
+              Official front-office movements, roster trades, waivers, and injury updates
             </p>
           </div>
         </div>
@@ -121,6 +148,29 @@ export default function TransactionsPage() {
         </button>
       </div>
 
+      {/* Segmented Filter Bar */}
+      <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 self-start max-w-full overflow-x-auto gap-1">
+        {[
+          { label: "All News", value: "All" },
+          { label: "Trades", value: "Trade" },
+          { label: "Signings", value: "Signing" },
+          { label: "Injuries", value: "Injury" },
+          { label: "Draft Picks", value: "Draft" },
+        ].map((item) => (
+          <button
+            key={item.value}
+            onClick={() => setFilter(item.value as FilterType)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer whitespace-nowrap ${
+              filter === item.value
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {error ? (
         <div className="text-center py-12 text-zinc-500">
           <p className="mb-4">{error}</p>
@@ -131,19 +181,19 @@ export default function TransactionsPage() {
             Try Again
           </button>
         </div>
-      ) : transactions.length === 0 ? (
+      ) : filteredTransactions.length === 0 ? (
         <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-900 rounded-3xl p-12 text-center max-w-xl mx-auto shadow-2xl">
           <Calendar className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-          <h4 className="text-lg font-bold text-zinc-200">No Transaction History</h4>
+          <h4 className="text-lg font-bold text-zinc-200">No News to Display</h4>
           <p className="text-zinc-500 text-xs mt-2 max-w-xs mx-auto">
-            Roster signings, waiver releases, and team trade activities will be logged here once they occur.
+            Roster activity matching your filter will be displayed here once it occurs.
           </p>
         </div>
       ) : (
         <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm max-w-4xl mx-auto">
           {/* Feed Timeline */}
-          <div className="relative border-l border-zinc-805 ml-3 md:ml-6 space-y-8 py-2">
-            {transactions.map((tx) => {
+          <div className="relative border-l border-zinc-900 ml-3 md:ml-6 space-y-8 py-2">
+            {filteredTransactions.map((tx) => {
               const { bg, label, icon: Icon } = getBadgeConfig(tx.type);
               const formattedDate = new Date(tx.createdAt).toLocaleDateString("en-PH", {
                 month: "short",

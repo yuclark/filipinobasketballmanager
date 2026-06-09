@@ -24,6 +24,7 @@ import {
   BookOpen,
   BarChart2,
   GraduationCap,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -134,37 +135,59 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {/* Navigation Links */}
           <nav className="flex flex-col gap-1.5">
             {[
-              { name: "Roster", path: "/dashboard", icon: Users },
-              { name: "Schedule", path: "/dashboard/schedule", icon: Calendar },
-              { name: "Standings", path: "/dashboard/standings", icon: BarChart3 },
-              { name: "Playoffs", path: "/dashboard/playoffs", icon: Trophy },
-              { name: "League News", path: "/dashboard/transactions", icon: FileText },
-              { name: "League Leaders", path: "/dashboard/leaders", icon: BarChart2 },
-              { name: "League Teams", path: "/dashboard/teams", icon: Globe },
-              { name: "Free Agency", path: "/dashboard/free-agency", icon: Briefcase },
-              { name: "Trades Office", path: "/dashboard/trades", icon: ArrowLeftRight },
-              { name: "Draft Prospects", path: "/dashboard/prospects", icon: GraduationCap },
-              { name: "Offseason Hub", path: "/dashboard/offseason", icon: RefreshCw },
-              { name: "League History", path: "/dashboard/history", icon: BookOpen },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.path;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.path}
-                  className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold tracking-wide transition-all ${
-                    isActive
-                      ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-[0_4px_15px_rgba(249,115,22,0.15)]"
-                      : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
-                  }`}
-                >
-                  <Icon className="w-4.5 h-4.5" />
-                  <span>{item.name}</span>
-                  {isActive && <ChevronRight className="w-4 h-4 ml-auto" />}
-                </Link>
-              );
-            })}
+              {
+                title: "FRANCHISE MANAGEMENT",
+                links: [
+                  { name: "Active Roster", path: "/dashboard", icon: Users },
+                  { name: "Team Schedule", path: "/dashboard/schedule", icon: Calendar },
+                  { name: "Transactions Office", path: "/dashboard/trades", icon: ArrowLeftRight },
+                  { name: "Free Agency Market", path: "/dashboard/free-agency", icon: Briefcase },
+                ],
+              },
+              {
+                title: "LEAGUE CORE HUB",
+                links: [
+                  { name: "Conference Standings", path: "/dashboard/standings", icon: BarChart3 },
+                  { name: "Playoffs", path: "/dashboard/playoffs", icon: Trophy },
+                  { name: "Statistical Leaders", path: "/dashboard/leaders", icon: TrendingUp },
+                  { name: "League Directory", path: "/dashboard/teams", icon: Globe },
+                  { name: "Draft Prospects Board", path: "/dashboard/prospects", icon: GraduationCap },
+                ],
+              },
+              {
+                title: "RECORDS & TIMELINES",
+                links: [
+                  { name: "League History", path: "/dashboard/history", icon: BookOpen },
+                  { name: "League News Feed", path: "/dashboard/transactions", icon: FileText },
+                  { name: "Offseason Hub", path: "/dashboard/offseason", icon: Sparkles },
+                ],
+              },
+            ].map((group) => (
+              <div key={group.title} className="flex flex-col gap-1">
+                <div className="text-xs font-semibold text-zinc-500 mt-6 mb-2 px-3 tracking-wider uppercase">
+                  {group.title}
+                </div>
+                {group.links.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.path;
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.path}
+                      className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold tracking-wide transition-all ${
+                        isActive
+                          ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-[0_4px_15px_rgba(249,115,22,0.15)]"
+                          : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
+                      }`}
+                    >
+                      <Icon className="w-4.5 h-4.5" />
+                      <span>{item.name}</span>
+                      {isActive && <ChevronRight className="w-4 h-4 ml-auto" />}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
 

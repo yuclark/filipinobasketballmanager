@@ -31,6 +31,8 @@ export const players = pgTable("players", {
   contractYearsRemaining: integer("contract_years_remaining").default(3).notNull(),
   status: varchar("status", { length: 20 }).default("Active").notNull(), // 'Active' | 'Retired' | 'DraftPool'
   isRookie: boolean("is_rookie").default(false).notNull(),
+  injuryDaysRemaining: integer("injury_days_remaining").default(0).notNull(),
+  injuryType: varchar("injury_type", { length: 100 }),
 });
 
 export const games = pgTable("games", {

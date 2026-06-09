@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import {
@@ -11,6 +11,7 @@ import {
   getGameBoxScore,
   simulateBatchDaysAction,
   simulateUntilPlayoffsAction,
+  simulateWeekChunkAction,
 } from "@/app/actions/leagueEngine";
 import { initializePlayoffsAction } from "@/app/actions/playoffEngine";
 import {
@@ -72,7 +73,16 @@ interface BoxScoreStat {
 
 export default function SchedulePage() {
   const router = useRouter();
-  const { userTeamId, currentLeagueDay, advanceDay, isSimulating, setSimulating, setTradeDeadlinePassed, setLeagueDay } = useGameStore();
+  const [isSimulating, setIsSimulating] = useState(false);
+  const stopSimulationRef = useRef(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const { userTeamId, currentLeagueDay, advanceDay, setSimulating: storeSetSimulating, setTradeDeadlinePassed, setLeagueDay } = useGameStore();
+
+  const setSimulating = (val: boolean) => {
+    setIsSimulating(val);
+    storeSetSimulating(val);
+  };
 
   const [mounted, setMounted] = useState(false);
   const [gamesList, setGamesList] = useState<Game[]>([]);
@@ -82,6 +92,13 @@ export default function SchedulePage() {
   const [hasConfirmedDeadline, setHasConfirmedDeadline] = useState(false);
   const [pendingDays, setPendingDays] = useState<number>(0);
   const [isMacroSimPlayoffs, setIsMacroSimPlayoffs] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Box score modal state
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -183,6 +200,10 @@ export default function SchedulePage() {
       if (res.currentDay) {
         setLeagueDay(res.currentDay);
       }
+      if (res.status === "REGULAR_SEASON_COMPLETE") {
+        router.push("/dashboard/awards");
+        return;
+      }
       if (res.status === "DEADLINE_REACHED") {
         setTradeDeadlinePassed(true);
         setShowDeadlineModal(true);
@@ -195,21 +216,56 @@ export default function SchedulePage() {
     }
   };
 
-  const handleSimulateUntilPlayoffs = async (bypass: boolean = false) => {
-    setIsMacroSimPlayoffs(true);
+  const handleFastForwardSimulation = async (bypass: boolean = false) => {
     setSimulating(true);
+    stopSimulationRef.current = false;
+    let currentDay = currentLeagueDay;
+    const seasonYear = gamesList[0]?.seasonYear ?? 2026;
+
     try {
-      const res = await simulateUntilPlayoffsAction(bypass || hasConfirmedDeadline, userTeamId);
-      if (res.currentDay) {
-        setLeagueDay(res.currentDay);
-      }
-      if (res.status === "DEADLINE_REACHED") {
-        setTradeDeadlinePassed(true);
-        setShowDeadlineModal(true);
+      while (currentDay <= 82) {
+        if (stopSimulationRef.current) {
+          setToastMessage("Simulation paused by manager.");
+          break;
+        }
+
+        const res = await simulateWeekChunkAction(
+          currentDay,
+          seasonYear,
+          bypass || hasConfirmedDeadline,
+          userTeamId
+        );
+
+        if (res.status === "REGULAR_SEASON_COMPLETE") {
+          setLeagueDay(82);
+          router.push("/dashboard/awards");
+          return;
+        }
+
+        if (res.status === "DEADLINE_REACHED") {
+          setTradeDeadlinePassed(true);
+          setShowDeadlineModal(true);
+          setPendingDays(82 - currentDay + 1);
+          break;
+        }
+
+        if (res.status === "ERROR") {
+          alert(res.error || "Simulation failed.");
+          break;
+        }
+
+        if (res.status === "CHUNK_COMPLETE" && res.nextDay) {
+          currentDay = res.nextDay;
+          setLeagueDay(currentDay);
+          const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
+          setGamesList(data);
+        } else {
+          break;
+        }
       }
     } catch (err) {
       console.error(err);
-      alert("Error executing simulation until playoffs.");
+      alert("Error executing simulation.");
     } finally {
       setSimulating(false);
     }
@@ -265,19 +321,13 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-8 relative">
-      {/* Simulation Overlay */}
+      {/* Simulation Overlay Blocker */}
       {isSimulating && (
-        <div className="fixed inset-0 bg-zinc-950/70 flex flex-col items-center justify-center z-50 backdrop-blur-sm">
-          <div className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl text-center shadow-2xl flex flex-col items-center gap-4">
-            <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
-            <h3 className="text-xl font-bold text-white">Simulating Matchups...</h3>
-            <p className="text-zinc-400 text-sm max-w-xs">Running core game engine algorithms and generating individual player box scores.</p>
-          </div>
-        </div>
+        <div className="fixed inset-0 bg-black/15 z-40 cursor-wait backdrop-blur-[1px]" />
       )}
 
       {/* Main Header / Status Controls */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 shadow-xl">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 shadow-xl relative z-50">
         <div className="flex items-center gap-4">
           <div className="p-3.5 bg-orange-500/10 rounded-2xl text-orange-500">
             <Calendar className="w-7 h-7" />
@@ -292,7 +342,25 @@ export default function SchedulePage() {
 
         {hasSchedule && (
           <div className="flex flex-wrap gap-3 w-full md:w-auto">
-            {currentLeagueDay === 82 && areAllGamesPlayed ? (
+            {isSimulating ? (
+              <div className="flex items-center gap-3">
+                <button
+                  disabled
+                  className="flex items-center gap-2 px-5 py-3 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-xl font-bold text-sm animate-pulse cursor-not-allowed"
+                >
+                  <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
+                  <span>Simulating Calendar (Day {currentLeagueDay} / 82)...</span>
+                </button>
+                <button
+                  onClick={() => {
+                    stopSimulationRef.current = true;
+                  }}
+                  className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm shadow-[0_4px_12px_rgba(220,38,38,0.2)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer transition-all"
+                >
+                  <span>🛑 Stop Simulating</span>
+                </button>
+              </div>
+            ) : currentLeagueDay === 82 && areAllGamesPlayed ? (
               <button
                 onClick={handleAdvanceToPlayoffs}
                 disabled={actionLoading}
@@ -349,7 +417,10 @@ export default function SchedulePage() {
 
                 {/* Simulate Until Playoffs */}
                 <button
-                  onClick={() => handleSimulateUntilPlayoffs()}
+                  onClick={() => {
+                    setIsMacroSimPlayoffs(true);
+                    handleFastForwardSimulation();
+                  }}
                   disabled={isSimulating}
                   className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-xl font-bold cursor-pointer text-sm transition-all shadow-[0_2px_8px_rgba(249,115,22,0.1)] hover:scale-[1.01] active:scale-[0.98]"
                 >
@@ -692,7 +763,7 @@ export default function SchedulePage() {
                   setTradeDeadlinePassed(true);
                   // Re-trigger with bypass flag set to true
                   if (isMacroSimPlayoffs) {
-                    await handleSimulateUntilPlayoffs(true);
+                    await handleFastForwardSimulation(true);
                   } else {
                     await handleBatchSimulation(pendingDays, true);
                   }
@@ -709,6 +780,14 @@ export default function SchedulePage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Slide-in custom toast alert */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 bg-zinc-950 border border-zinc-800 text-zinc-100 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-50 animate-bounce">
+          <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-ping" />
+          <span className="font-bold text-sm">{toastMessage}</span>
         </div>
       )}
     </div>

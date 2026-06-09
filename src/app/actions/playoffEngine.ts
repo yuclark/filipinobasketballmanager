@@ -3,8 +3,9 @@
 import { db } from "@/db";
 import { eq, and, sql, or, inArray, desc } from "drizzle-orm";
 import { teams, players, games, playerGameStats } from "@/db/schema";
-import { simulateGameAction } from "@/app/actions/leagueEngine";
-import { calculateFinalsMvpAction } from "@/app/actions/awardsEngine";
+import { simulateGameAction, simulateGameLogic, DBPlayer } from "@/app/actions/leagueEngine";
+import { calculateFinalsMvpAction, calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
+import crypto from "crypto";
 
 interface Team {
   id: string;
@@ -553,9 +554,11 @@ export async function simulatePlayoffDayAction() {
         const seasonYearVal = gfGames[0]?.seasonYear ?? new Date().getFullYear();
 
         console.log(`[Playoff Engine] Grand Finals complete! Champion: ${championTeamId}, Series: ${seriesScoreStr}`);
-        await calculateFinalsMvpAction(seasonYearVal, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) =>
-          console.error("[Playoff Engine] Finals MVP calculation failed silently:", err)
-        );
+        
+        // Run Finals MVP calculation sequentially directly on flat db
+        await calculateFinalsMvpAction(seasonYearVal, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) => {
+          console.error("[Playoff Engine] Finals MVP calculation failed:", err);
+        });
       }
       return { success: true, advancedRound: true, simulatedCount };
     }
@@ -601,35 +604,420 @@ export async function getSeriesGamesAction(seriesId: string) {
   }
 }
 
+interface InMemoryGame {
+  id: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  seasonYear: number;
+  gameNumber: number;
+  status: string;
+  stage: string;
+  playoffRound: "Quarterfinals" | "Semifinals" | "ConferenceFinals" | "GrandFinals";
+  seriesId: string;
+  homeScore: number;
+  awayScore: number;
+  isNew?: boolean;
+  isModified?: boolean;
+  isDeleted?: boolean;
+}
+
+function schedulePlayoffSeriesInMemory(
+  seriesId: string,
+  teamA: any,
+  teamB: any,
+  startDay: number,
+  totalGames: number,
+  round: "Quarterfinals" | "Semifinals" | "ConferenceFinals" | "GrandFinals",
+  seasonYear: number
+): InMemoryGame[] {
+  const gamesToInsert: InMemoryGame[] = [];
+  for (let i = 0; i < totalGames; i++) {
+    const gameNumber = startDay + i;
+    let homeTeamId = teamA.id;
+    let awayTeamId = teamB.id;
+
+    if (totalGames === 5) {
+      if (i === 2 || i === 3) {
+        homeTeamId = teamB.id;
+        awayTeamId = teamA.id;
+      }
+    } else if (totalGames === 7) {
+      if (i === 2 || i === 3 || i === 5) {
+        homeTeamId = teamB.id;
+        awayTeamId = teamA.id;
+      }
+    }
+
+    gamesToInsert.push({
+      id: crypto.randomUUID(),
+      homeTeamId,
+      awayTeamId,
+      seasonYear,
+      gameNumber,
+      status: "Scheduled",
+      stage: "Playoffs",
+      playoffRound: round,
+      seriesId,
+      homeScore: 0,
+      awayScore: 0,
+      isNew: true,
+    });
+  }
+  return gamesToInsert;
+}
+
+function getWinnerOfSeriesInMemory(
+  seriesId: string,
+  completedGames: InMemoryGame[],
+  teamsList: any[],
+  seedMap: Map<string, number>
+) {
+  const seriesGames = completedGames.filter((g) => g.seriesId === seriesId);
+  if (seriesGames.length === 0) return null;
+
+  const team1Id = seriesGames[0].homeTeamId;
+  const team2Id = seriesGames[0].awayTeamId;
+
+  let team1Wins = 0;
+  let team2Wins = 0;
+
+  for (const g of seriesGames) {
+    if (g.status !== "Completed") continue;
+    const isHome = g.homeTeamId === team1Id;
+    const teamScore = isHome ? g.homeScore : g.awayScore;
+    const oppScore = isHome ? g.awayScore : g.homeScore;
+
+    if (teamScore > oppScore) {
+      team1Wins++;
+    } else {
+      team2Wins++;
+    }
+  }
+
+  const round = seriesGames[0].playoffRound;
+  const targetWins = round === "GrandFinals" ? 4 : 3;
+
+  if (team1Wins >= targetWins) {
+    const t = teamsList.find((x) => x.id === team1Id)!;
+    return { ...t, seed: seedMap.get(team1Id) ?? 1 };
+  }
+  if (team2Wins >= targetWins) {
+    const t = teamsList.find((x) => x.id === team2Id)!;
+    return { ...t, seed: seedMap.get(team2Id) ?? 8 };
+  }
+  return null;
+}
+
 export async function simulateUntilGrandFinalsAction() {
   try {
+    console.log("[Playoff Engine] Starting fast-forward simulation until Grand Finals...");
+
+    // 1. Fetch active playoff games
+    const dbPlayoffGames = await db
+      .select()
+      .from(games)
+      .where(eq(games.stage, "Playoffs"));
+
+    const inMemoryGames: InMemoryGame[] = dbPlayoffGames.map((g) => ({
+      id: g.id,
+      homeTeamId: g.homeTeamId,
+      awayTeamId: g.awayTeamId,
+      seasonYear: g.seasonYear,
+      gameNumber: g.gameNumber,
+      status: g.status,
+      stage: g.stage,
+      playoffRound: g.playoffRound as any,
+      seriesId: g.seriesId || "",
+      homeScore: g.homeScore,
+      awayScore: g.awayScore,
+      isNew: false,
+      isModified: false,
+      isDeleted: false,
+    }));
+
+    const allTeams = await db.select().from(teams);
+    const activePlayers = await db
+      .select()
+      .from(players)
+      .where(eq(players.status, "Active"));
+
+    // Pre-calculate final standings seeds
+    const { north, south } = await getFinalStandings();
+    const seedMap = new Map<string, number>();
+    north.forEach((t, i) => seedMap.set(t.id, i + 1));
+    south.forEach((t, i) => seedMap.set(t.id, i + 1));
+
+    // Group players into roster maps
+    const rostersByTeam = new Map<string, typeof players.$inferSelect[]>();
+    for (const p of activePlayers) {
+      if (p.teamId) {
+        if (!rostersByTeam.has(p.teamId)) {
+          rostersByTeam.set(p.teamId, []);
+        }
+        rostersByTeam.get(p.teamId)!.push(p);
+      }
+    }
+
+    const inMemoryStats: any[] = [];
     let safetyCounter = 0;
-    const maxDays = 100;
+    const maxIterations = 200;
 
-    while (safetyCounter < maxDays) {
-      const nextGame = await db
-        .select({ playoffRound: games.playoffRound })
-        .from(games)
-        .where(and(eq(games.stage, "Playoffs"), eq(games.status, "Scheduled")))
-        .orderBy(games.gameNumber)
-        .limit(1);
+    while (safetyCounter < maxIterations) {
+      // Find scheduled games in memory
+      const scheduledGames = inMemoryGames.filter(
+        (g) => g.status === "Scheduled" && !g.isDeleted
+      );
 
-      if (nextGame.length > 0 && nextGame[0].playoffRound === "GrandFinals") {
+      if (scheduledGames.length === 0) {
+        // Round completion check & next round generation
+        const completedGames = inMemoryGames.filter(
+          (g) => g.status === "Completed" && !g.isDeleted
+        );
+        if (completedGames.length === 0) {
+          break;
+        }
+
+        const roundsPresent = new Set(completedGames.map((g) => g.playoffRound));
+
+        // QF Completed -> Semis
+        if (
+          roundsPresent.has("Quarterfinals") &&
+          !roundsPresent.has("Semifinals") &&
+          !inMemoryGames.some((g) => g.playoffRound === "Semifinals" && !g.isDeleted)
+        ) {
+          const qGames = completedGames.filter((g) => g.playoffRound === "Quarterfinals");
+          const startDay = Math.max(...qGames.map((g) => g.gameNumber)) + 1;
+          const seasonYear = qGames[0]?.seasonYear ?? 2026;
+
+          const wLuzon1v8 = getWinnerOfSeriesInMemory("Q_Luzon_1v8", qGames, allTeams, seedMap);
+          const wLuzon4v5 = getWinnerOfSeriesInMemory("Q_Luzon_4v5", qGames, allTeams, seedMap);
+          const wLuzon2v7 = getWinnerOfSeriesInMemory("Q_Luzon_2v7", qGames, allTeams, seedMap);
+          const wLuzon3v6 = getWinnerOfSeriesInMemory("Q_Luzon_3v6", qGames, allTeams, seedMap);
+
+          const wVisMin1v8 = getWinnerOfSeriesInMemory("Q_VisMin_1v8", qGames, allTeams, seedMap);
+          const wVisMin4v5 = getWinnerOfSeriesInMemory("Q_VisMin_4v5", qGames, allTeams, seedMap);
+          const wVisMin2v7 = getWinnerOfSeriesInMemory("Q_VisMin_2v7", qGames, allTeams, seedMap);
+          const wVisMin3v6 = getWinnerOfSeriesInMemory("Q_VisMin_3v6", qGames, allTeams, seedMap);
+
+          if (
+            wLuzon1v8 && wLuzon4v5 && wLuzon2v7 && wLuzon3v6 &&
+            wVisMin1v8 && wVisMin4v5 && wVisMin2v7 && wVisMin3v6
+          ) {
+            const lSemis1A = wLuzon1v8.seed < wLuzon4v5.seed ? wLuzon1v8 : wLuzon4v5;
+            const lSemis1B = wLuzon1v8.seed < wLuzon4v5.seed ? wLuzon4v5 : wLuzon1v8;
+            const s1 = schedulePlayoffSeriesInMemory("S_Luzon_1v8_vs_4v5", lSemis1A, lSemis1B, startDay, 5, "Semifinals", seasonYear);
+
+            const lSemis2A = wLuzon2v7.seed < wLuzon3v6.seed ? wLuzon2v7 : wLuzon3v6;
+            const lSemis2B = wLuzon2v7.seed < wLuzon3v6.seed ? wLuzon3v6 : wLuzon2v7;
+            const s2 = schedulePlayoffSeriesInMemory("S_Luzon_2v7_vs_3v6", lSemis2A, lSemis2B, startDay, 5, "Semifinals", seasonYear);
+
+            const vSemis1A = wVisMin1v8.seed < wVisMin4v5.seed ? wVisMin1v8 : wVisMin4v5;
+            const vSemis1B = wVisMin1v8.seed < wVisMin4v5.seed ? wVisMin4v5 : wVisMin1v8;
+            const s3 = schedulePlayoffSeriesInMemory("S_VisMin_1v8_vs_4v5", vSemis1A, vSemis1B, startDay, 5, "Semifinals", seasonYear);
+
+            const vSemis2A = wVisMin2v7.seed < wVisMin3v6.seed ? wVisMin2v7 : wVisMin3v6;
+            const vSemis2B = wVisMin2v7.seed < wVisMin3v6.seed ? wVisMin3v6 : wVisMin2v7;
+            const s4 = schedulePlayoffSeriesInMemory("S_VisMin_2v7_vs_3v6", vSemis2A, vSemis2B, startDay, 5, "Semifinals", seasonYear);
+
+            inMemoryGames.push(...s1, ...s2, ...s3, ...s4);
+            continue;
+          } else {
+            throw new Error("Quarterfinals complete in memory, but could not determine all winners.");
+          }
+        }
+
+        // Semis Completed -> CF
+        if (
+          roundsPresent.has("Semifinals") &&
+          !roundsPresent.has("ConferenceFinals") &&
+          !inMemoryGames.some((g) => g.playoffRound === "ConferenceFinals" && !g.isDeleted)
+        ) {
+          const sGames = completedGames.filter((g) => g.playoffRound === "Semifinals" || g.playoffRound === "Quarterfinals");
+          const startDay = Math.max(...completedGames.filter((g) => g.playoffRound === "Semifinals").map((g) => g.gameNumber)) + 1;
+          const seasonYear = sGames[0]?.seasonYear ?? 2026;
+
+          const wLuzon1 = getWinnerOfSeriesInMemory("S_Luzon_1v8_vs_4v5", sGames, allTeams, seedMap);
+          const wLuzon2 = getWinnerOfSeriesInMemory("S_Luzon_2v7_vs_3v6", sGames, allTeams, seedMap);
+          const wVisMin1 = getWinnerOfSeriesInMemory("S_VisMin_1v8_vs_4v5", sGames, allTeams, seedMap);
+          const wVisMin2 = getWinnerOfSeriesInMemory("S_VisMin_2v7_vs_3v6", sGames, allTeams, seedMap);
+
+          if (wLuzon1 && wLuzon2 && wVisMin1 && wVisMin2) {
+            const lCfA = wLuzon1.seed < wLuzon2.seed ? wLuzon1 : wLuzon2;
+            const lCfB = wLuzon1.seed < wLuzon2.seed ? wLuzon2 : wLuzon1;
+            const cf1 = schedulePlayoffSeriesInMemory("CF_Luzon", lCfA, lCfB, startDay, 5, "ConferenceFinals", seasonYear);
+
+            const vCfA = wVisMin1.seed < wVisMin2.seed ? wVisMin1 : wVisMin2;
+            const vCfB = wVisMin1.seed < wVisMin2.seed ? wVisMin2 : wVisMin1;
+            const cf2 = schedulePlayoffSeriesInMemory("CF_VisMin", vCfA, vCfB, startDay, 5, "ConferenceFinals", seasonYear);
+
+            inMemoryGames.push(...cf1, ...cf2);
+            continue;
+          } else {
+            throw new Error("Semifinals complete in memory, but could not determine all winners.");
+          }
+        }
+
+        // CF Completed -> GF
+        if (
+          roundsPresent.has("ConferenceFinals") &&
+          !roundsPresent.has("GrandFinals") &&
+          !inMemoryGames.some((g) => g.playoffRound === "GrandFinals" && !g.isDeleted)
+        ) {
+          const cfGames = completedGames.filter((g) => g.playoffRound === "ConferenceFinals" || g.playoffRound === "Semifinals" || g.playoffRound === "Quarterfinals");
+          const startDay = Math.max(...completedGames.filter((g) => g.playoffRound === "ConferenceFinals").map((g) => g.gameNumber)) + 1;
+          const seasonYear = cfGames[0]?.seasonYear ?? 2026;
+
+          const lChamp = getWinnerOfSeriesInMemory("CF_Luzon", cfGames, allTeams, seedMap);
+          const vChamp = getWinnerOfSeriesInMemory("CF_VisMin", cfGames, allTeams, seedMap);
+
+          if (lChamp && vChamp) {
+            const gfGamesList = schedulePlayoffSeriesInMemory("GF_GrandFinals", lChamp, vChamp, startDay, 7, "GrandFinals", seasonYear);
+            inMemoryGames.push(...gfGamesList);
+            // Break loop immediately, because Grand Finals is now scheduled
+            break;
+          } else {
+            throw new Error("Conference Finals complete in memory, but could not determine both champions.");
+          }
+        }
+
         break;
       }
 
-      if (nextGame.length === 0) {
-        break;
+      // Check if next games to simulate are Grand Finals
+      const minDay = Math.min(...scheduledGames.map((g) => g.gameNumber));
+      const dayGames = scheduledGames.filter((g) => g.gameNumber === minDay);
+      const dayRound = dayGames[0].playoffRound;
+
+      if (dayRound === "GrandFinals") {
+        break; // Terminate loop the exact moment the bracket advances to 'GrandFinals'
       }
 
-      const res = await simulatePlayoffDayAction();
-      if (!res.success) {
-        throw new Error(res.error || "Failed to simulate playoff day.");
+      // Simulate dayGames in memory
+      for (const game of dayGames) {
+        const homeRoster = rostersByTeam.get(game.homeTeamId) || [];
+        const awayRoster = rostersByTeam.get(game.awayTeamId) || [];
+
+        const healthyHome = homeRoster.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+        const healthyAway = awayRoster.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+
+        const finalHome = healthyHome.length >= 5 ? healthyHome : [...homeRoster].sort((a, b) => b.overall - a.overall).slice(0, 5);
+        const finalAway = healthyAway.length >= 5 ? healthyAway : [...awayRoster].sort((a, b) => b.overall - a.overall).slice(0, 5);
+
+        const res = await simulateGameLogic(
+          game,
+          finalHome as any,
+          finalAway as any
+        );
+
+        game.status = "Completed";
+        game.homeScore = res.updatedGame.homeScore;
+        game.awayScore = res.updatedGame.awayScore;
+        game.isModified = true;
+
+        res.playerStatsToInsert.forEach((stat) => {
+          stat.gameId = game.id;
+          inMemoryStats.push(stat);
+        });
+      }
+
+      // Series clinches check
+      const activeSeriesIds = Array.from(new Set(dayGames.map((g) => g.seriesId).filter(Boolean))) as string[];
+      for (const seriesId of activeSeriesIds) {
+        const seriesGames = inMemoryGames.filter((g) => g.seriesId === seriesId && !g.isDeleted);
+        if (seriesGames.length === 0) continue;
+
+        const team1Id = seriesGames[0].homeTeamId;
+        let w1 = 0;
+        let w2 = 0;
+        const round = seriesGames[0].playoffRound;
+        const targetWins = round === "GrandFinals" ? 4 : 3;
+
+        for (const sg of seriesGames) {
+          if (sg.status !== "Completed") continue;
+          const isHome = sg.homeTeamId === team1Id;
+          const wonHome = sg.homeScore > sg.awayScore;
+          if (isHome) {
+            if (wonHome) w1++; else w2++;
+          } else {
+            if (wonHome) w2++; else w1++;
+          }
+        }
+
+        if (w1 >= targetWins || w2 >= targetWins) {
+          for (const sg of inMemoryGames) {
+            if (sg.seriesId === seriesId && sg.status === "Scheduled") {
+              sg.isDeleted = true;
+            }
+          }
+        }
       }
 
       safetyCounter++;
     }
 
+    // Commit changes
+    const batchQueries: any[] = [];
+
+    const gamesToDelete = inMemoryGames.filter((g) => !g.isNew && g.isDeleted).map((g) => g.id);
+    if (gamesToDelete.length > 0) {
+      batchQueries.push(db.delete(games).where(inArray(games.id, gamesToDelete)));
+    }
+
+    const gamesToUpdate = inMemoryGames.filter((g) => !g.isNew && g.isModified && !g.isDeleted);
+    for (const g of gamesToUpdate) {
+      batchQueries.push(
+        db.update(games)
+          .set({
+            status: "Completed",
+            homeScore: g.homeScore,
+            awayScore: g.awayScore,
+          })
+          .where(eq(games.id, g.id))
+      );
+    }
+
+    const gamesToInsert = inMemoryGames
+      .filter((g) => g.isNew && !g.isDeleted)
+      .map((g) => ({
+        id: g.id,
+        homeTeamId: g.homeTeamId,
+        awayTeamId: g.awayTeamId,
+        seasonYear: g.seasonYear,
+        gameNumber: g.gameNumber,
+        status: g.status,
+        stage: g.stage,
+        playoffRound: g.playoffRound,
+        seriesId: g.seriesId,
+        homeScore: g.homeScore,
+        awayScore: g.awayScore,
+      }));
+
+    if (gamesToInsert.length > 0) {
+      const gameChunkSize = 100;
+      for (let i = 0; i < gamesToInsert.length; i += gameChunkSize) {
+        batchQueries.push(
+          db.insert(games).values(gamesToInsert.slice(i, i + gameChunkSize))
+        );
+      }
+    }
+
+    if (inMemoryStats.length > 0) {
+      const statsChunkSize = 500;
+      for (let i = 0; i < inMemoryStats.length; i += statsChunkSize) {
+        batchQueries.push(
+          db.insert(playerGameStats).values(inMemoryStats.slice(i, i + statsChunkSize))
+        );
+      }
+    }
+
+    if (batchQueries.length > 0) {
+      const queryChunkSize = 50;
+      for (let i = 0; i < batchQueries.length; i += queryChunkSize) {
+        await db.batch(batchQueries.slice(i, i + queryChunkSize) as any);
+      }
+    }
+
+    console.log(`[Playoff Engine] Fast-forward simulation complete. Committed ${gamesToUpdate.length} game updates, ${gamesToInsert.length} new games, and ${inMemoryStats.length} player stats.`);
     return { success: true, status: "GRAND_FINALS_READY" };
   } catch (error: any) {
     console.error("Fast-forward to Grand Finals failed:", error);

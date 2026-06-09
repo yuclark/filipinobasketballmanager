@@ -1,9 +1,10 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql, isNotNull } from "drizzle-orm";
 import { teams, players, games, playerGameStats, transactions } from "@/db/schema";
 import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
+import { enforceLeagueRosterLimitsAction, runCpuDailyAiEngineAction } from "@/app/actions/cpuAiEngine";
 
 // Box-Muller transform for Gaussian/Normal distribution
 function randomNormal(mean = 0, stdDev = 1): number {
@@ -37,7 +38,7 @@ export async function simulateCpuTradesAction(
 ) {
   try {
     if (gameDay >= 50) return null;
-    if (Math.random() >= 0.05) return null;
+    if (Math.random() >= 0.10) return null; // 10% chance of execution
 
     console.log(`[CPU Trade Engine] Attempting trade on Day ${gameDay}, Season ${seasonYear}`);
 
@@ -45,82 +46,96 @@ export async function simulateCpuTradesAction(
     const cpuTeams = allTeams.filter((t) => t.id !== userTeamId);
     if (cpuTeams.length < 2) return null;
 
-    // Pick two CPU teams
-    const idxA = Math.floor(Math.random() * cpuTeams.length);
-    let idxB = Math.floor(Math.random() * cpuTeams.length);
-    while (idxA === idxB) {
-      idxB = Math.floor(Math.random() * cpuTeams.length);
+    const cpuTeamIds = cpuTeams.map((t) => t.id);
+    const allCpuPlayers = await db
+      .select()
+      .from(players)
+      .where(and(inArray(players.teamId, cpuTeamIds), eq(players.status, "Active")));
+
+    const rosterByTeam = new Map<string, typeof players.$inferSelect[]>();
+    for (const p of allCpuPlayers) {
+      if (p.teamId) {
+        if (!rosterByTeam.has(p.teamId)) {
+          rosterByTeam.set(p.teamId, []);
+        }
+        rosterByTeam.get(p.teamId)!.push(p);
+      }
     }
 
-    const teamA = cpuTeams[idxA];
-    const teamB = cpuTeams[idxB];
+    const getPositionClass = (pos: string): "G" | "F" | "C" | null => {
+      const p = pos.toUpperCase();
+      if (p === "PG" || p === "SG" || p === "G") return "G";
+      if (p === "SF" || p === "PF" || p === "F") return "F";
+      if (p === "C") return "C";
+      return null;
+    };
 
-    // Query active rosters
-    const rosterA = await db
-      .select()
-      .from(players)
-      .where(and(eq(players.teamId, teamA.id), eq(players.status, "Active")));
+    const shuffledTeams = [...cpuTeams].sort(() => Math.random() - 0.5);
 
-    const rosterB = await db
-      .select()
-      .from(players)
-      .where(and(eq(players.teamId, teamB.id), eq(players.status, "Active")));
+    for (const teamA of shuffledTeams) {
+      const rosterA = rosterByTeam.get(teamA.id) || [];
+      if (rosterA.length < 12 || rosterA.length > 18) continue;
 
-    if (rosterA.length === 0 || rosterB.length === 0) return null;
+      const shuffledRosterA = [...rosterA].sort(() => Math.random() - 0.5);
 
-    // Find candidates: lower overall (bottom 8 players)
-    const candidatesA = [...rosterA].sort((a, b) => a.overall - b.overall).slice(0, 8);
-    const candidatesB = [...rosterB].sort((a, b) => a.overall - b.overall).slice(0, 8);
+      for (const playerA of shuffledRosterA) {
+        const classA = getPositionClass(playerA.position);
+        if (!classA) continue;
 
-    const salaryA = rosterA.reduce((sum, p) => sum + p.salary, 0);
-    const salaryB = rosterB.reduce((sum, p) => sum + p.salary, 0);
+        const otherTeams = cpuTeams.filter((t) => t.id !== teamA.id).sort(() => Math.random() - 0.5);
 
-    const validPairs: Array<{ playerA: typeof players.$inferSelect; playerB: typeof players.$inferSelect }> = [];
+        for (const teamB of otherTeams) {
+          const rosterB = rosterByTeam.get(teamB.id) || [];
+          if (rosterB.length < 12 || rosterB.length > 18) continue;
 
-    for (const pA of candidatesA) {
-      for (const pB of candidatesB) {
-        const ovrDiff = Math.abs(pA.overall - pB.overall);
-        const maxOvr = Math.max(pA.overall, pB.overall);
-        if (ovrDiff <= maxOvr * 0.15) {
-          const newSalA = salaryA - pA.salary + pB.salary;
-          const newSalB = salaryB - pB.salary + pA.salary;
-          if (newSalA <= 50000000 && newSalB <= 50000000) {
-            validPairs.push({ playerA: pA, playerB: pB });
+          const shuffledRosterB = [...rosterB].sort(() => Math.random() - 0.5);
+
+          for (const playerB of shuffledRosterB) {
+            const classB = getPositionClass(playerB.position);
+            if (classA !== classB) continue;
+
+            // Check overall variance (15% limit)
+            const ovrDiff = Math.abs(playerA.overall - playerB.overall);
+            const maxOvr = Math.max(playerA.overall, playerB.overall);
+            if (ovrDiff > maxOvr * 0.15) continue;
+
+            // Check salary cap limits
+            const totalSalaryA = rosterA.reduce((sum, p) => sum + p.salary, 0);
+            const totalSalaryB = rosterB.reduce((sum, p) => sum + p.salary, 0);
+            const newSalaryA = totalSalaryA - playerA.salary + playerB.salary;
+            const newSalaryB = totalSalaryB - playerB.salary + playerA.salary;
+
+            if (newSalaryA > 50000000 || newSalaryB > 50000000) continue;
+
+            // Valid trade found, execute transaction and exit immediately
+            await db.transaction(async (tx) => {
+              await tx.update(players).set({ teamId: teamB.id }).where(eq(players.id, playerA.id));
+              await tx.update(players).set({ teamId: teamA.id }).where(eq(players.id, playerB.id));
+
+              const description = `TRADE: The ${teamA.city} ${teamA.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}) to the ${teamB.city} ${teamB.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}).`;
+              await tx.insert(transactions).values({
+                type: "Trade",
+                description,
+                seasonYear,
+                gameDay,
+              });
+
+              console.log(`[CPU Trade Engine] Trade executed: ${description}`);
+            });
+
+            return {
+              playerAId: playerA.id,
+              playerBId: playerB.id,
+              teamAId: teamA.id,
+              teamBId: teamB.id,
+            };
           }
         }
       }
     }
 
-    if (validPairs.length === 0) {
-      console.log(`[CPU Trade Engine] No valid player swap found between ${teamA.city} and ${teamB.city}.`);
-      return null;
-    }
-
-    const { playerA, playerB } = validPairs[Math.floor(Math.random() * validPairs.length)];
-
-    await db.transaction(async (tx) => {
-      // Transactionally swap teamId
-      await tx.update(players).set({ teamId: teamB.id }).where(eq(players.id, playerA.id));
-      await tx.update(players).set({ teamId: teamA.id }).where(eq(players.id, playerB.id));
-
-      // Log transaction
-      const description = `TRADE: The ${teamA.city} traded ${playerA.firstName} ${playerA.lastName} to the ${teamB.city} in exchange for ${playerB.firstName} ${playerB.lastName}.`;
-      await tx.insert(transactions).values({
-        type: "Trade",
-        description,
-        seasonYear,
-        gameDay,
-      });
-
-      console.log(`[CPU Trade Engine] Trade executed: ${description}`);
-    });
-
-    return {
-      playerAId: playerA.id,
-      playerBId: playerB.id,
-      teamAId: teamA.id,
-      teamBId: teamB.id,
-    };
+    console.log(`[CPU Trade Engine] No valid trades found on Day ${gameDay}.`);
+    return null;
   } catch (error) {
     console.error("[CPU Trade Engine] Error simulating trade:", error);
     return null;
@@ -252,7 +267,7 @@ export async function getGameBoxScore(gameId: string) {
   }
 }
 
-interface DBPlayer {
+export interface DBPlayer {
   id: string;
   teamId: string | null;
   firstName: string;
@@ -273,9 +288,11 @@ interface DBPlayer {
   stamina: number;
   contractYearsRemaining: number;
   status: string;
+  injuryDaysRemaining?: number;
+  injuryType?: string | null;
 }
 
-function simulateGameLogic(
+export async function simulateGameLogic(
   game: { id: string; homeTeamId: string; awayTeamId: string; stage?: string; playoffRound?: string | null; seriesId?: string | null },
   homePlayersList: DBPlayer[],
   awayPlayersList: DBPlayer[]
@@ -487,10 +504,17 @@ export async function simulateGameAction(gameId: string) {
       .from(players)
       .where(and(eq(players.teamId, game.awayTeamId), eq(players.status, "Active")));
 
-    const res = simulateGameLogic(
+    // Filter out injured players, ensuring at least 5 healthy players remain
+    const healthyHomeList = homePlayersList.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+    const healthyAwayList = awayPlayersList.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+
+    const finalHomeRoster = healthyHomeList.length >= 5 ? healthyHomeList : [...homePlayersList].sort((a, b) => b.overall - a.overall).slice(0, 5);
+    const finalAwayRoster = healthyAwayList.length >= 5 ? healthyAwayList : [...awayPlayersList].sort((a, b) => b.overall - a.overall).slice(0, 5);
+
+    const res = await simulateGameLogic(
       game,
-      homePlayersList as unknown as DBPlayer[],
-      awayPlayersList as unknown as DBPlayer[]
+      finalHomeRoster as unknown as DBPlayer[],
+      finalAwayRoster as unknown as DBPlayer[]
     );
 
     await db.insert(playerGameStats).values(res.playerStatsToInsert);
@@ -556,21 +580,14 @@ export async function simulateBatchDaysAction(
   userTeamId?: string | null
 ) {
   try {
-    const allTeams = await db.select().from(teams);
-    const allPlayers = await db
+    // Enforce strict roster limits (12-18) at the start of the batch run
+    await enforceLeagueRosterLimitsAction();
+
+    let localTeams = await db.select().from(teams);
+    let localPlayers = await db
       .select()
       .from(players)
       .where(eq(players.status, "Active"));
-
-    const rostersByTeam = new Map<string, typeof players.$inferSelect[]>();
-    for (const player of allPlayers) {
-      if (player.teamId) {
-        if (!rostersByTeam.has(player.teamId)) {
-          rostersByTeam.set(player.teamId, []);
-        }
-        rostersByTeam.get(player.teamId)!.push(player);
-      }
-    }
 
     const nextGame = await db
       .select({ day: games.gameNumber, seasonYear: games.seasonYear })
@@ -580,7 +597,7 @@ export async function simulateBatchDaysAction(
       .limit(1);
 
     if (nextGame.length === 0) {
-      return { status: "SUCCESS", daysSimulated: 0, currentDay: 82 };
+      return { status: "REGULAR_SEASON_COMPLETE", daysSimulated: 0, currentDay: 82 };
     }
 
     const startDay = nextGame[0].day;
@@ -624,8 +641,25 @@ export async function simulateBatchDaysAction(
 
       const gamesToUpdate: Array<{ id: string; homeScore: number; awayScore: number }> = [];
       const statsToInsert: Array<typeof playerGameStats.$inferInsert> = [];
+      const injuryTransactionsToInsert: Array<typeof transactions.$inferInsert> = [];
 
       for (const day of daysToSimulateList) {
+        // Run daily CPU-CPU trade & signing AI logic in local memory arrays
+        const aiResult = await runCpuDailyAiEngineAction(localPlayers, localTeams, day, seasonYear, userTeamId);
+        localPlayers = aiResult.updatedPlayers;
+        localTeams = aiResult.updatedTeams;
+
+        // Refresh rosters mapping from local memory state
+        const rostersByTeam = new Map<string, typeof players.$inferSelect[]>();
+        for (const player of localPlayers) {
+          if (player.teamId) {
+            if (!rostersByTeam.has(player.teamId)) {
+              rostersByTeam.set(player.teamId, []);
+            }
+            rostersByTeam.get(player.teamId)!.push(player);
+          }
+        }
+
         const dayGames = gamesByDay.get(day) || [];
         for (const game of dayGames) {
           const homeRoster = rostersByTeam.get(game.homeTeamId) || [];
@@ -635,40 +669,70 @@ export async function simulateBatchDaysAction(
             continue;
           }
 
-          const res = simulateGameLogic(
+          // Filter out injured players, ensuring at least 5 players remain
+          const activeHome = homeRoster.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+          const activeAway = awayRoster.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+
+          const finalHome = activeHome.length >= 5 ? activeHome : [...homeRoster].sort((a, b) => b.overall - a.overall).slice(0, 5);
+          const finalAway = activeAway.length >= 5 ? activeAway : [...awayRoster].sort((a, b) => b.overall - a.overall).slice(0, 5);
+
+          const res = await simulateGameLogic(
             game,
-            homeRoster as unknown as DBPlayer[],
-            awayRoster as unknown as DBPlayer[]
+            finalHome as unknown as DBPlayer[],
+            finalAway as unknown as DBPlayer[]
           );
           gamesToUpdate.push(res.updatedGame);
           statsToInsert.push(...res.playerStatsToInsert);
+
+          // Injury Logic: 1.5% chance per game played
+          if (Math.random() < 0.015) {
+            const INJURY_TYPES = [
+              "Sprained Ankle",
+              "Hamstring Strain",
+              "Knee Hyperextension",
+              "Groin Pull",
+              "Wrist Sprain",
+              "Bruised Ribs",
+              "Lower Back Spasm",
+              "Shin Splints",
+              "Calf Strain",
+              "Thumb Sprain"
+            ];
+            const chosenRoster = Math.random() < 0.5 ? finalHome : finalAway;
+            if (chosenRoster.length > 0) {
+              const injuredPlayer = chosenRoster[Math.floor(Math.random() * chosenRoster.length)];
+              const injuryDays = Math.floor(Math.random() * 12) + 3; // 3 to 14 days
+              const injuryType = INJURY_TYPES[Math.floor(Math.random() * INJURY_TYPES.length)];
+
+              injuredPlayer.injuryDaysRemaining = injuryDays;
+              injuredPlayer.injuryType = injuryType;
+
+              const teamObj = localTeams.find((t) => t.id === injuredPlayer.teamId);
+              const teamName = teamObj ? `${teamObj.city} ${teamObj.name}` : "Unknown Team";
+
+              injuryTransactionsToInsert.push({
+                type: "Injury",
+                description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                seasonYear,
+                gameDay: day,
+              });
+            }
+          }
         }
         daysSimulated++;
 
-        // Simulate CPU-CPU Trades
-        const tradeRes = await simulateCpuTradesAction(day, seasonYear, userTeamId);
-        if (tradeRes) {
-          const { playerAId, playerBId, teamAId, teamBId } = tradeRes;
-          const rosterA = rostersByTeam.get(teamAId) || [];
-          const rosterB = rostersByTeam.get(teamBId) || [];
-
-          const idxA = rosterA.findIndex((p) => p.id === playerAId);
-          const idxB = rosterB.findIndex((p) => p.id === playerBId);
-
-          if (idxA !== -1 && idxB !== -1) {
-            const playerA = rosterA[idxA];
-            const playerB = rosterB[idxB];
-
-            // Swap in memory to ensure remaining simulated days use correct roster
-            playerA.teamId = teamBId;
-            playerB.teamId = teamAId;
-
-            rosterA[idxA] = playerB;
-            rosterB[idxB] = playerA;
+        // Decrement injury days remaining for all players in local memory state at the end of day
+        for (const player of localPlayers) {
+          if (player.injuryDaysRemaining && player.injuryDaysRemaining > 0) {
+            player.injuryDaysRemaining--;
+            if (player.injuryDaysRemaining === 0) {
+              player.injuryType = null;
+            }
           }
         }
       }
 
+      // Bulk persist game completions and stats
       if (gamesToUpdate.length > 0) {
         const batchQueries: any[] = [];
 
@@ -696,6 +760,34 @@ export async function simulateBatchDaysAction(
           await db.batch(queryChunk as any);
         }
       }
+
+      // Persist injury transactions to database
+      if (injuryTransactionsToInsert.length > 0) {
+        const txChunkSize = 100;
+        for (let i = 0; i < injuryTransactionsToInsert.length; i += txChunkSize) {
+          await db.insert(transactions).values(injuryTransactionsToInsert.slice(i, i + txChunkSize));
+        }
+      }
+
+      // Bulk write all updated player records (including trade, signing, and injury mutations) back to database
+      if (localPlayers.length > 0) {
+        const playerUpdateQueries = localPlayers.map((p) =>
+          db.update(players)
+            .set({
+              teamId: p.teamId,
+              contractYearsRemaining: p.contractYearsRemaining,
+              injuryDaysRemaining: p.injuryDaysRemaining ?? 0,
+              injuryType: p.injuryType ?? null,
+              status: p.status,
+              salary: p.salary,
+            })
+            .where(eq(players.id, p.id))
+        );
+        const playerChunkSize = 100;
+        for (let i = 0; i < playerUpdateQueries.length; i += playerChunkSize) {
+          await db.batch(playerUpdateQueries.slice(i, i + playerChunkSize) as any);
+        }
+      }
     }
 
     if (hitDeadline) {
@@ -717,6 +809,9 @@ export async function simulateBatchDaysAction(
       await calculateRegularSeasonAwardsAction(seasonYear).catch((err) =>
         console.error("[League Engine] Awards calculation failed silently:", err)
       );
+      // Heartbeat Hook: Enforce roster limits at the conclusion of Day 82
+      await enforceLeagueRosterLimitsAction();
+      return { status: "REGULAR_SEASON_COMPLETE", daysSimulated, currentDay: 82 };
     }
 
     return { status: "SUCCESS", daysSimulated, currentDay: finalDay };
@@ -732,22 +827,274 @@ export async function simulateUntilPlayoffsAction(
 ) {
   try {
     const nextGame = await db
-      .select({ day: games.gameNumber })
+      .select({ day: games.gameNumber, seasonYear: games.seasonYear })
       .from(games)
       .where(and(eq(games.status, "Scheduled"), eq(games.stage, "Regular")))
       .orderBy(games.gameNumber)
       .limit(1);
 
     if (nextGame.length === 0) {
-      return { status: "SUCCESS", daysSimulated: 0, currentDay: 82 };
+      return { status: "REGULAR_SEASON_COMPLETE", daysSimulated: 0, currentDay: 82 };
     }
 
     const startDay = nextGame[0].day;
+    const seasonYear = nextGame[0].seasonYear;
     const daysToSimulate = 82 - startDay + 1;
-    return await simulateBatchDaysAction(daysToSimulate, bypassDeadline, userTeamId);
+    const res = await simulateBatchDaysAction(daysToSimulate, bypassDeadline, userTeamId);
+
+    // If regular season concludes, execute awards calculation
+    const remainingGames = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(games)
+      .where(and(eq(games.stage, "Regular"), eq(games.status, "Scheduled")));
+    
+    if (Number(remainingGames[0]?.count ?? 0) === 0 || res.status === "REGULAR_SEASON_COMPLETE") {
+      console.log(`[League Engine] Regular season complete (simulateUntilPlayoffsAction). Triggering Season ${seasonYear} awards calculation...`);
+      await calculateRegularSeasonAwardsAction(seasonYear).catch((err) =>
+        console.error("[League Engine] Awards calculation in simulateUntilPlayoffsAction failed silently:", err)
+      );
+      // Heartbeat Hook: Enforce roster limits at the conclusion of Day 82
+      await enforceLeagueRosterLimitsAction();
+      return { status: "REGULAR_SEASON_COMPLETE", daysSimulated: res.daysSimulated, currentDay: 82 };
+    }
+
+    return res;
   } catch (error: any) {
     console.error("Simulate until playoffs failed:", error);
     return { status: "ERROR", error: error.message || "Failed to simulate until playoffs.", currentDay: 1 };
   }
 }
+
+export async function simulateWeekChunkAction(
+  startDay: number,
+  seasonYear: number,
+  bypassDeadline: boolean = false,
+  userTeamId?: string | null
+) {
+  try {
+    console.log(`[League Engine] Simulating week chunk starting from Day ${startDay}, Season ${seasonYear}...`);
+
+    if (startDay > 82) {
+      console.log(`[League Engine] Regular season complete (startDay > 82). Triggering awards calculation...`);
+      await calculateRegularSeasonAwardsAction(seasonYear).catch((err) =>
+        console.error("[League Engine] Awards calculation failed silently:", err)
+      );
+      await enforceLeagueRosterLimitsAction();
+      return { status: "REGULAR_SEASON_COMPLETE", nextDay: 82 };
+    }
+
+    const endDay = Math.min(82, startDay + 6);
+    const daysToSimulateList: number[] = [];
+    let hitDeadline = false;
+
+    for (let d = startDay; d <= endDay; d++) {
+      if (d === 50 && !bypassDeadline) {
+        hitDeadline = true;
+        break;
+      }
+      daysToSimulateList.push(d);
+    }
+
+    if (daysToSimulateList.length === 0 && hitDeadline) {
+      return { status: "DEADLINE_REACHED", nextDay: 50 };
+    }
+
+    // Enforce roster limits (12-18) once at start of chunk
+    await enforceLeagueRosterLimitsAction();
+
+    let localTeams = await db.select().from(teams);
+    let localPlayers = await db
+      .select()
+      .from(players)
+      .where(eq(players.status, "Active"));
+
+    const scheduledGames = await db
+      .select()
+      .from(games)
+      .where(and(
+        inArray(games.gameNumber, daysToSimulateList),
+        eq(games.status, "Scheduled"),
+        eq(games.stage, "Regular")
+      ))
+      .orderBy(games.gameNumber);
+
+    const gamesByDay = new Map<number, typeof games.$inferSelect[]>();
+    for (const game of scheduledGames) {
+      if (!gamesByDay.has(game.gameNumber)) {
+        gamesByDay.set(game.gameNumber, []);
+      }
+      gamesByDay.get(game.gameNumber)!.push(game);
+    }
+
+    const gamesToUpdate: Array<{ id: string; homeScore: number; awayScore: number }> = [];
+    const statsToInsert: Array<typeof playerGameStats.$inferInsert> = [];
+    const injuryTransactionsToInsert: Array<typeof transactions.$inferInsert> = [];
+
+    for (const day of daysToSimulateList) {
+      // Run daily CPU front-office simulation using in-memory state arrays
+      const aiResult = await runCpuDailyAiEngineAction(localPlayers, localTeams, day, seasonYear, userTeamId);
+      localPlayers = aiResult.updatedPlayers;
+      localTeams = aiResult.updatedTeams;
+
+      // Populate rosters from local memory array
+      const rostersByTeam = new Map<string, typeof players.$inferSelect[]>();
+      for (const player of localPlayers) {
+        if (player.teamId) {
+          if (!rostersByTeam.has(player.teamId)) {
+            rostersByTeam.set(player.teamId, []);
+          }
+          rostersByTeam.get(player.teamId)!.push(player);
+        }
+      }
+
+      const dayGames = gamesByDay.get(day) || [];
+      for (const game of dayGames) {
+        const homeRoster = rostersByTeam.get(game.homeTeamId) || [];
+        const awayRoster = rostersByTeam.get(game.awayTeamId) || [];
+
+        if (homeRoster.length === 0 || awayRoster.length === 0) continue;
+
+        const activeHome = homeRoster.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+        const activeAway = awayRoster.filter((p) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+
+        const finalHome = activeHome.length >= 5 ? activeHome : [...homeRoster].sort((a, b) => b.overall - a.overall).slice(0, 5);
+        const finalAway = activeAway.length >= 5 ? activeAway : [...awayRoster].sort((a, b) => b.overall - a.overall).slice(0, 5);
+
+        const res = await simulateGameLogic(
+          game,
+          finalHome as unknown as DBPlayer[],
+          finalAway as unknown as DBPlayer[]
+        );
+        gamesToUpdate.push(res.updatedGame);
+        statsToInsert.push(...res.playerStatsToInsert);
+
+        // Injury Logic
+        if (Math.random() < 0.015) {
+          const INJURY_TYPES = [
+            "Sprained Ankle",
+            "Hamstring Strain",
+            "Knee Hyperextension",
+            "Groin Pull",
+            "Wrist Sprain",
+            "Bruised Ribs",
+            "Lower Back Spasm",
+            "Shin Splints",
+            "Calf Strain",
+            "Thumb Sprain"
+          ];
+          const chosenRoster = Math.random() < 0.5 ? finalHome : finalAway;
+          if (chosenRoster.length > 0) {
+            const injuredPlayer = chosenRoster[Math.floor(Math.random() * chosenRoster.length)];
+            const injuryDays = Math.floor(Math.random() * 12) + 3;
+            const injuryType = INJURY_TYPES[Math.floor(Math.random() * INJURY_TYPES.length)];
+
+            injuredPlayer.injuryDaysRemaining = injuryDays;
+            injuredPlayer.injuryType = injuryType;
+
+            const teamObj = localTeams.find((t) => t.id === injuredPlayer.teamId);
+            const teamName = teamObj ? `${teamObj.city} ${teamObj.name}` : "Unknown Team";
+
+            injuryTransactionsToInsert.push({
+              type: "Injury",
+              description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+              seasonYear,
+              gameDay: day,
+            });
+          }
+        }
+      }
+
+      // Decrement injury days in local state
+      for (const player of localPlayers) {
+        if (player.injuryDaysRemaining && player.injuryDaysRemaining > 0) {
+          player.injuryDaysRemaining--;
+          if (player.injuryDaysRemaining === 0) {
+            player.injuryType = null;
+          }
+        }
+      }
+    }
+
+    // Bulk writes to database
+    if (gamesToUpdate.length > 0) {
+      const batchQueries: any[] = [];
+      const statChunkSize = 1000;
+      for (let i = 0; i < statsToInsert.length; i += statChunkSize) {
+        batchQueries.push(db.insert(playerGameStats).values(statsToInsert.slice(i, i + statChunkSize)));
+      }
+
+      for (const g of gamesToUpdate) {
+        batchQueries.push(
+          db.update(games)
+            .set({
+              status: "Completed",
+              homeScore: g.homeScore,
+              awayScore: g.awayScore,
+            })
+            .where(eq(games.id, g.id))
+        );
+      }
+
+      const queryChunkSize = 100;
+      for (let i = 0; i < batchQueries.length; i += queryChunkSize) {
+        await db.batch(batchQueries.slice(i, i + queryChunkSize) as any);
+      }
+    }
+
+    if (injuryTransactionsToInsert.length > 0) {
+      const txChunkSize = 100;
+      for (let i = 0; i < injuryTransactionsToInsert.length; i += txChunkSize) {
+        await db.insert(transactions).values(injuryTransactionsToInsert.slice(i, i + txChunkSize));
+      }
+    }
+
+    // Bulk write all updated player records (including trade, signing, and injury mutations) back to database
+    if (localPlayers.length > 0) {
+      const playerUpdateQueries = localPlayers.map((p) =>
+        db.update(players)
+          .set({
+            teamId: p.teamId,
+            contractYearsRemaining: p.contractYearsRemaining,
+            injuryDaysRemaining: p.injuryDaysRemaining ?? 0,
+            injuryType: p.injuryType ?? null,
+            status: p.status,
+            salary: p.salary,
+          })
+          .where(eq(players.id, p.id))
+      );
+      const playerChunkSize = 100;
+      for (let i = 0; i < playerUpdateQueries.length; i += playerChunkSize) {
+        await db.batch(playerUpdateQueries.slice(i, i + playerChunkSize) as any);
+      }
+    }
+
+    if (hitDeadline) {
+      return { status: "DEADLINE_REACHED", nextDay: 50 };
+    }
+
+    const nextGameAfter = await db
+      .select({ day: games.gameNumber })
+      .from(games)
+      .where(and(eq(games.status, "Scheduled"), eq(games.stage, "Regular")))
+      .orderBy(games.gameNumber)
+      .limit(1);
+
+    const finalDay = nextGameAfter[0]?.day ?? 82;
+
+    if (nextGameAfter.length === 0 || finalDay > 82) {
+      console.log(`[League Engine] Regular season complete. Triggering Season ${seasonYear} awards calculation...`);
+      await calculateRegularSeasonAwardsAction(seasonYear).catch((err) =>
+        console.error("[League Engine] Awards calculation failed silently:", err)
+      );
+      await enforceLeagueRosterLimitsAction();
+      return { status: "REGULAR_SEASON_COMPLETE", nextDay: 82 };
+    }
+
+    return { status: "CHUNK_COMPLETE", nextDay: finalDay };
+  } catch (error: any) {
+    console.error("simulateWeekChunkAction failed:", error);
+    return { status: "ERROR", error: error.message || "Failed to simulate week chunk." };
+  }
+}
+
 
