@@ -11,14 +11,15 @@ export const teams = pgTable("teams", {
 export const players = pgTable("players", {
   id: uuid("id").defaultRandom().primaryKey(),
   teamId: uuid("team_id")
-    .references(() => teams.id, { onDelete: "cascade" })
-    .notNull(),
+    .references(() => teams.id, { onDelete: "set null" }), // Nullable so free agents can exist
   firstName: varchar("first_name", { length: 50 }).notNull(),
   lastName: varchar("last_name", { length: 50 }).notNull(),
   age: integer("age").notNull(),
   hometown: varchar("hometown", { length: 100 }).notNull(),
   isFilAm: boolean("is_fil_am").default(false).notNull(),
   overall: integer("overall").notNull(),
+  salary: integer("salary").default(3000000).notNull(), // Added in Phase 2
+  position: varchar("position", { length: 5 }).default("SG").notNull(), // Added in Phase 2
   threePoint: integer("three_point").notNull(),
   insideScoring: integer("inside_scoring").notNull(),
   playmaking: integer("playmaking").notNull(),
@@ -27,4 +28,37 @@ export const players = pgTable("players", {
   rebounding: integer("rebounding").notNull(),
   speed: integer("speed").notNull(),
   stamina: integer("stamina").notNull(),
+});
+
+export const games = pgTable("games", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  homeTeamId: uuid("home_team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+  awayTeamId: uuid("away_team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+  seasonYear: integer("season_year").notNull(),
+  gameNumber: integer("game_number").notNull(), // 1 to 82 for schedule days
+  status: varchar("status", { length: 20 }).default("Scheduled").notNull(), // 'Scheduled' or 'Completed'
+  homeScore: integer("home_score").default(0).notNull(),
+  awayScore: integer("away_score").default(0).notNull(),
+});
+
+export const playerGameStats = pgTable("player_game_stats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gameId: uuid("game_id")
+    .references(() => games.id, { onDelete: "cascade" })
+    .notNull(),
+  playerId: uuid("player_id")
+    .references(() => players.id, { onDelete: "cascade" })
+    .notNull(),
+  points: integer("points").notNull(),
+  rebounds: integer("rebounds").notNull(),
+  assists: integer("assists").notNull(),
+  steals: integer("steals").notNull(),
+  blocks: integer("blocks").notNull(),
+  turnovers: integer("turnovers").notNull(),
+  fieldGoalsMade: integer("field_goals_made").notNull(),
+  fieldGoalsAttempted: integer("field_goals_attempted").notNull(),
 });

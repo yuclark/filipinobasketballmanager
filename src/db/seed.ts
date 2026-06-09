@@ -43,6 +43,8 @@ const FILAM_SURNAMES = [
   "Green", "Tautuaa", "Ellis", "Harris", "Parks", "Williams", "Smith", "Johnson"
 ];
 
+const POSITIONS = ["PG", "SG", "SF", "PF", "C"];
+
 // Region-specific Hotspots
 const LUZON_HOMETOWNS = [
   "Manila", "Quezon City", "Makati", "Pampanga", "Bulacan", "Laguna", 
@@ -101,10 +103,10 @@ function getRandomNumber(min: number, max: number): number {
 }
 
 async function main() {
-  console.log("Starting database seeding process...");
+  console.log("Starting database seeding process (Phase 2)...");
 
   try {
-    // 1. Clean up existing data (players deleted cascade via team delete)
+    // 1. Clean up existing data (cascades will clean everything else)
     console.log("Cleaning up old database entries...");
     await db.delete(schema.teams);
     console.log("Database cleaned.");
@@ -136,12 +138,13 @@ async function main() {
           ? getRandomElement(FILAM_SURNAMES)
           : getRandomElement(FILIPINO_SURNAMES);
 
-        // Demographics
+        // Demographics & Details
         const age = getRandomNumber(19, 38);
         const hometown =
           team.conference === "Luzon"
             ? getRandomElement(LUZON_HOMETOWNS)
             : getRandomElement(VISMIN_HOMETOWNS);
+        const position = getRandomElement(POSITIONS);
 
         // Attributes (50 to 99)
         const threePoint = getRandomNumber(50, 99);
@@ -166,6 +169,9 @@ async function main() {
             8
         );
 
+        // Calculate Salary based on overall (approx 2M - 4M PHP)
+        const salary = overall * 40000;
+
         playersToInsert.push({
           teamId: team.id,
           firstName,
@@ -174,6 +180,8 @@ async function main() {
           hometown,
           isFilAm,
           overall,
+          salary,
+          position,
           threePoint,
           insideScoring,
           playmaking,
@@ -186,9 +194,71 @@ async function main() {
       }
     }
 
-    // 4. Batch Insert Players
-    console.log(`Generating and inserting ${playersToInsert.length} players...`);
-    // Batch in chunks to prevent database payload limits
+    // 4. Generate 35 Free Agent Players (teamId is null)
+    console.log("Generating 35 free agents...");
+    for (let i = 0; i < 35; i++) {
+      const isFilAm = Math.random() < 0.2; // 20% chance of Fil-Am free agents
+
+      const firstName = isFilAm
+        ? getRandomElement(FILAM_FIRST_NAMES)
+        : getRandomElement(FILIPINO_FIRST_NAMES);
+      const lastName = isFilAm
+        ? getRandomElement(FILAM_SURNAMES)
+        : getRandomElement(FILIPINO_SURNAMES);
+
+      const age = getRandomNumber(19, 38);
+      const hometown =
+        Math.random() < 0.5
+          ? getRandomElement(LUZON_HOMETOWNS)
+          : getRandomElement(VISMIN_HOMETOWNS);
+      const position = getRandomElement(POSITIONS);
+
+      const threePoint = getRandomNumber(50, 99);
+      const insideScoring = getRandomNumber(50, 99);
+      const playmaking = getRandomNumber(50, 99);
+      const perimeterDefense = getRandomNumber(50, 99);
+      const interiorDefense = getRandomNumber(50, 99);
+      const rebounding = getRandomNumber(50, 99);
+      const speed = getRandomNumber(50, 99);
+      const stamina = getRandomNumber(50, 99);
+
+      const overall = Math.round(
+        (threePoint +
+          insideScoring +
+          playmaking +
+          perimeterDefense +
+          interiorDefense +
+          rebounding +
+          speed +
+          stamina) /
+          8
+      );
+
+      const salary = overall * 40000;
+
+      playersToInsert.push({
+        teamId: null, // Free agent
+        firstName,
+        lastName,
+        age,
+        hometown,
+        isFilAm,
+        overall,
+        salary,
+        position,
+        threePoint,
+        insideScoring,
+        playmaking,
+        perimeterDefense,
+        interiorDefense,
+        rebounding,
+        speed,
+        stamina,
+      });
+    }
+
+    // 5. Batch Insert Players
+    console.log(`Generating and inserting ${playersToInsert.length} total players...`);
     const chunkSize = 100;
     for (let i = 0; i < playersToInsert.length; i += chunkSize) {
       const chunk = playersToInsert.slice(i, i + chunkSize);
