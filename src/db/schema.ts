@@ -39,10 +39,13 @@ export const games = pgTable("games", {
     .references(() => teams.id, { onDelete: "cascade" })
     .notNull(),
   seasonYear: integer("season_year").notNull(),
-  gameNumber: integer("game_number").notNull(), // 1 to 82 for schedule days
+  gameNumber: integer("game_number").notNull(), // 1 to 82 for schedule days, 83+ for playoffs
   status: varchar("status", { length: 20 }).default("Scheduled").notNull(), // 'Scheduled' or 'Completed'
   homeScore: integer("home_score").default(0).notNull(),
   awayScore: integer("away_score").default(0).notNull(),
+  stage: varchar("stage", { length: 20 }).default("Regular").notNull(), // 'Regular' or 'Playoffs'
+  playoffRound: varchar("playoff_round", { length: 30 }), // 'Quarterfinals', 'Semifinals', etc.
+  seriesId: varchar("series_id", { length: 50 }), // 'Q_Luzon_1v8', etc.
 });
 
 export const playerGameStats = pgTable("player_game_stats", {

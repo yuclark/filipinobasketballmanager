@@ -131,6 +131,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               { name: "Roster", path: "/dashboard", icon: Users },
               { name: "Schedule", path: "/dashboard/schedule", icon: Calendar },
               { name: "Standings", path: "/dashboard/standings", icon: BarChart3 },
+              { name: "Playoffs", path: "/dashboard/playoffs", icon: Trophy },
               { name: "Free Agency", path: "/dashboard/free-agency", icon: Briefcase },
               { name: "Trades Office", path: "/dashboard/trades", icon: ArrowLeftRight },
             ].map((item) => {
@@ -190,6 +191,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Link href="/dashboard" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Roster</Link>
             <Link href="/dashboard/schedule" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Games</Link>
             <Link href="/dashboard/standings" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Standings</Link>
+            <Link href="/dashboard/playoffs" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Playoffs</Link>
             <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">FA</Link>
             <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
           </div>
