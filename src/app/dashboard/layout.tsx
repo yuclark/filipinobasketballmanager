@@ -122,13 +122,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <aside className="w-64 border-r border-zinc-900 bg-zinc-950/80 backdrop-blur-md p-6 hidden md:flex flex-col justify-between relative z-10">
         <div>
           {/* Logo / Title */}
-          <div className="flex items-center gap-3 mb-8 px-2">
-            <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
-              <Trophy className="w-6 h-6" />
-            </div>
+          <div className="flex items-center gap-1.5 mb-8 px-2">
+            <Trophy className="w-5 h-5 text-orange-500 mr-2 animate-pulse" />
             <div>
-              <span className="font-extrabold text-sm tracking-widest text-zinc-500 block uppercase">Manager</span>
-              <span className="font-bold text-zinc-100 tracking-tight text-base block">PBA Dashboard</span>
+              <span className="font-extrabold text-[10px] tracking-widest text-zinc-500 block uppercase">Filipino Basketball</span>
+              <span className="font-bold text-zinc-100 tracking-tight text-base block">PBA MANAGER</span>
             </div>
           </div>
 
