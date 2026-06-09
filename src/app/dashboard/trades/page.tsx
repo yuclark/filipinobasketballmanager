@@ -48,7 +48,7 @@ interface CapInfo {
 
 export default function TradesPage() {
   const router = useRouter();
-  const { userTeamId } = useGameStore();
+  const { userTeamId, currentLeagueDay } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [opposingTeams, setOpposingTeams] = useState<Team[]>([]);
@@ -132,6 +132,23 @@ export default function TradesPage() {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+      </div>
+    );
+  }
+
+  const isDeadlinePassed = currentLeagueDay > 50;
+
+  if (isDeadlinePassed) {
+    return (
+      <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 rounded-3xl p-12 text-center max-w-2xl mx-auto shadow-2xl relative overflow-hidden mt-8">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-red-500/5 blur-[80px] rounded-full pointer-events-none" />
+        <span className="p-4 bg-red-500/10 rounded-2xl text-red-500 inline-block mb-6 border border-red-500/20">
+          <ArrowLeftRight className="w-10 h-10" />
+        </span>
+        <h3 className="text-2xl font-extrabold text-white tracking-tight mb-3">🔒 Trade Window Closed</h3>
+        <p className="text-zinc-400 text-sm max-w-md mx-auto leading-relaxed">
+          The trade deadline passed on Day 50. Trade operations, roster swaps, and player negotiations are locked until the offseason.
+        </p>
       </div>
     );
   }

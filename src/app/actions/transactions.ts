@@ -1,8 +1,8 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, inArray, isNull, desc } from "drizzle-orm";
-import { teams, players } from "@/db/schema";
+import { eq, inArray, isNull, desc, and } from "drizzle-orm";
+import { teams, players, transactions, games } from "@/db/schema";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
 
@@ -11,7 +11,7 @@ export async function getFreeAgents() {
     return await db
       .select()
       .from(players)
-      .where(isNull(players.teamId))
+      .where(and(isNull(players.teamId), eq(players.status, "Active")))
       .orderBy(desc(players.overall));
   } catch (error) {
     console.error("Failed to fetch free agents:", error);
@@ -53,6 +53,50 @@ export async function getTeamSalarySpace(teamId: string) {
   }
 }
 
+async function getCurrentLeagueDayAndYear() {
+  try {
+    const nextGame = await db
+      .select({ day: games.gameNumber, year: games.seasonYear })
+      .from(games)
+      .where(eq(games.status, "Scheduled"))
+      .orderBy(games.gameNumber)
+      .limit(1);
+
+    if (nextGame.length > 0) {
+      return { day: nextGame[0].day, year: nextGame[0].year };
+    }
+
+    const lastCompletedGame = await db
+      .select({ day: games.gameNumber, year: games.seasonYear })
+      .from(games)
+      .where(eq(games.status, "Completed"))
+      .orderBy(desc(games.gameNumber))
+      .limit(1);
+
+    if (lastCompletedGame.length > 0) {
+      return { day: lastCompletedGame[0].day, year: lastCompletedGame[0].year };
+    }
+
+    return { day: 1, year: 2026 };
+  } catch (error) {
+    console.error("Failed to query league day/year:", error);
+    return { day: 1, year: 2026 };
+  }
+}
+
+export async function getTransactionsAction() {
+  try {
+    return await db
+      .select()
+      .from(transactions)
+      .orderBy(desc(transactions.createdAt))
+      .limit(50);
+  } catch (error) {
+    console.error("Failed to fetch transactions:", error);
+    return [];
+  }
+}
+
 export async function signFreeAgentAction(playerId: string, teamId: string) {
   try {
     const [player] = await db
@@ -63,6 +107,10 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
 
     if (!player) {
       return { success: false, error: "Player not found." };
+    }
+
+    if (player.status !== "Active") {
+      return { success: false, error: "Player is not active (retired or in draft pool)." };
     }
 
     if (player.teamId !== null) {
@@ -103,8 +151,21 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
 
     await db
       .update(players)
-      .set({ teamId })
+      .set({ teamId, contractYearsRemaining: 3 })
       .where(eq(players.id, playerId));
+
+    const { day, year } = await getCurrentLeagueDayAndYear();
+    const description = `${team.city} ${team.name} signed free agent ${player.firstName} ${player.lastName} for ${new Intl.NumberFormat(
+      "en-PH",
+      { style: "currency", currency: "PHP", maximumFractionDigits: 0 }
+    ).format(player.salary)}.`;
+
+    await db.insert(transactions).values({
+      type: "Signing",
+      description,
+      seasonYear: year,
+      gameDay: day,
+    });
 
     return { success: true };
   } catch (error: any) {
@@ -115,10 +176,45 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
 
 export async function releasePlayerAction(playerId: string) {
   try {
+    const [player] = await db
+      .select()
+      .from(players)
+      .where(eq(players.id, playerId))
+      .limit(1);
+
+    if (!player) {
+      return { success: false, error: "Player not found." };
+    }
+
+    if (player.status !== "Active") {
+      return { success: false, error: "Player is not active." };
+    }
+
+    if (!player.teamId) {
+      return { success: false, error: "Player is already a free agent." };
+    }
+
+    const [team] = await db
+      .select()
+      .from(teams)
+      .where(eq(teams.id, player.teamId))
+      .limit(1);
+
     await db
       .update(players)
       .set({ teamId: null })
       .where(eq(players.id, playerId));
+
+    const { day, year } = await getCurrentLeagueDayAndYear();
+    const teamNameStr = team ? `${team.city} ${team.name}` : "their team";
+    const description = `${player.firstName} ${player.lastName} was waived by ${teamNameStr} into free agency.`;
+
+    await db.insert(transactions).values({
+      type: "Release",
+      description,
+      seasonYear: year,
+      gameDay: day,
+    });
 
     return { success: true };
   } catch (error: any) {
@@ -138,6 +234,11 @@ export async function executeTradeAction(
   }
 
   try {
+    const { day, year } = await getCurrentLeagueDayAndYear();
+    if (day > 50) {
+      throw new Error("The trade deadline has passed. Roster adjustments are locked until the offseason.");
+    }
+
     const [teamA] = await db.select().from(teams).where(eq(teams.id, teamAId)).limit(1);
     const [teamB] = await db.select().from(teams).where(eq(teams.id, teamBId)).limit(1);
 
@@ -159,11 +260,11 @@ export async function executeTradeAction(
       return { success: false, error: "Some players involved in the trade proposal were not found." };
     }
 
-    const invalidA = rosterA.some((p) => p.teamId !== teamAId);
-    const invalidB = rosterB.some((p) => p.teamId !== teamBId);
+    const invalidA = rosterA.some((p) => p.teamId !== teamAId || p.status !== "Active");
+    const invalidB = rosterB.some((p) => p.teamId !== teamBId || p.status !== "Active");
 
     if (invalidA || invalidB) {
-      return { success: false, error: "Roster discrepancy: some players do not belong to their specified team." };
+      return { success: false, error: "Roster discrepancy: some players do not belong to their specified team or are not active." };
     }
 
     // Check point deficit (fair trade evaluation)
@@ -238,6 +339,18 @@ export async function executeTradeAction(
       .update(players)
       .set({ teamId: teamAId })
       .where(inArray(players.id, playerBIds));
+
+    const namesA = rosterA.map((p) => `${p.firstName} ${p.lastName}`).join(", ");
+    const namesB = rosterB.map((p) => `${p.firstName} ${p.lastName}`).join(", ");
+    
+    const tradeDesc = `TRADE: ${teamA.city} ${teamA.name} sent ${namesA} to ${teamB.city} ${teamB.name} in exchange for ${namesB}.`;
+
+    await db.insert(transactions).values({
+      type: "Trade",
+      description: tradeDesc,
+      seasonYear: year,
+      gameDay: day,
+    });
 
     return { success: true };
   } catch (error: any) {

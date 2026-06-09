@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, boolean, timestamp, text } from "drizzle-orm/pg-core";
 
 export const teams = pgTable("teams", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -28,6 +28,8 @@ export const players = pgTable("players", {
   rebounding: integer("rebounding").notNull(),
   speed: integer("speed").notNull(),
   stamina: integer("stamina").notNull(),
+  contractYearsRemaining: integer("contract_years_remaining").default(3).notNull(),
+  status: varchar("status", { length: 20 }).default("Active").notNull(), // 'Active' | 'Retired' | 'DraftPool'
 });
 
 export const games = pgTable("games", {
@@ -64,4 +66,13 @@ export const playerGameStats = pgTable("player_game_stats", {
   turnovers: integer("turnovers").notNull(),
   fieldGoalsMade: integer("field_goals_made").notNull(),
   fieldGoalsAttempted: integer("field_goals_attempted").notNull(),
+});
+
+export const transactions = pgTable("transactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  type: varchar("type", { length: 20 }).notNull(), // 'Trade' | 'Signing' | 'Release'
+  description: text("description").notNull(),
+  seasonYear: integer("season_year").notNull(),
+  gameDay: integer("game_day").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });

@@ -22,6 +22,20 @@
       "when": 1780992699723,
       "tag": "0002_cultured_overlord",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780993657251,
+      "tag": "0003_outgoing_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780994330549,
+      "tag": "0004_curious_siren",
+      "breakpoints": true
     }
   ]
 }

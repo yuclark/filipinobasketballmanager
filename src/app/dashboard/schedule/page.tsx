@@ -8,6 +8,7 @@ import {
   simulateGameAction,
   simulateRemainingDayGames,
   getGameBoxScore,
+  simulateBatchDaysAction,
 } from "@/app/actions/leagueEngine";
 import {
   Calendar,
@@ -66,12 +67,13 @@ interface BoxScoreStat {
 }
 
 export default function SchedulePage() {
-  const { userTeamId, currentLeagueDay, advanceDay, isSimulating, setSimulating } = useGameStore();
+  const { userTeamId, currentLeagueDay, advanceDay, isSimulating, setSimulating, setTradeDeadlinePassed, setLeagueDay } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [gamesList, setGamesList] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showDeadlineModal, setShowDeadlineModal] = useState(false);
 
   // Box score modal state
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -152,13 +154,32 @@ export default function SchedulePage() {
     try {
       const res = await simulateRemainingDayGames(currentLeagueDay);
       if (res.success) {
-        loadDayGames();
+        advanceDay();
       } else {
         alert("Simulation failed.");
       }
     } catch (err) {
       console.error(err);
       alert("Error simulating remaining games.");
+    } finally {
+      setSimulating(false);
+    }
+  };
+
+  const handleBatchSimulation = async (days: number) => {
+    setSimulating(true);
+    try {
+      const res = await simulateBatchDaysAction(days);
+      if (res.currentDay) {
+        setLeagueDay(res.currentDay);
+      }
+      if (res.status === "DEADLINE_REACHED") {
+        setTradeDeadlinePassed(true);
+        setShowDeadlineModal(true);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error executing batch simulation.");
     } finally {
       setSimulating(false);
     }
@@ -222,27 +243,49 @@ export default function SchedulePage() {
         </div>
 
         {hasSchedule && (
-          <div className="flex gap-3 w-full md:w-auto">
-            {hasRemainingCpuGames && (
-              <button
-                onClick={handleSimulateRestOfDay}
-                disabled={isSimulating}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
-              >
-                <Play className="w-4 h-4 text-zinc-400" />
-                <span>Simulate Rest of Day</span>
-              </button>
-            )}
-
+          <div className="flex flex-wrap gap-3 w-full md:w-auto">
+            {/* Advance day button */}
             {areAllGamesPlayed && (
               <button
                 onClick={() => advanceDay()}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:shadow-[0_4px_25px_rgba(249,115,22,0.4)] cursor-pointer transition-all hover:scale-[1.01]"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.2)] hover:scale-[1.01] cursor-pointer transition-all"
               >
                 <span>Advance to Day {currentLeagueDay + 1}</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             )}
+
+            {/* Simulate Day */}
+            {!areAllGamesPlayed && (
+              <button
+                onClick={() => handleBatchSimulation(1)}
+                disabled={isSimulating}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
+              >
+                <Play className="w-4 h-4 text-zinc-400" />
+                <span>Simulate Day</span>
+              </button>
+            )}
+
+            {/* Simulate Week */}
+            <button
+              onClick={() => handleBatchSimulation(7)}
+              disabled={isSimulating}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
+            >
+              <Calendar className="w-4 h-4 text-zinc-400" />
+              <span>Simulate Week (7 Days)</span>
+            </button>
+
+            {/* Simulate Month */}
+            <button
+              onClick={() => handleBatchSimulation(30)}
+              disabled={isSimulating}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
+            >
+              <TrendingUp className="w-4 h-4 text-zinc-400" />
+              <span>Simulate Month (30 Days)</span>
+            </button>
           </div>
         )}
       </div>
@@ -554,6 +597,27 @@ export default function SchedulePage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* Trade Deadline Interruption Modal */}
+      {showDeadlineModal && (
+        <div className="fixed inset-0 bg-zinc-950/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 md:p-8 shadow-2xl text-center space-y-6 relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-red-500/5 blur-[60px] rounded-full pointer-events-none" />
+            <span className="text-red-500 text-4xl block animate-bounce">🚨</span>
+            <div>
+              <h4 className="text-xl font-extrabold text-white tracking-tight">TRADE DEADLINE REACHED!</h4>
+              <p className="text-zinc-400 text-sm mt-3 leading-relaxed">
+                All trading windows across Luzon and VisMin will lock after today. Make your final front-office moves now.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowDeadlineModal(false)}
+              className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+            >
+              Enter Front Office
+            </button>
           </div>
         </div>
       )}
