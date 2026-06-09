@@ -400,3 +400,19 @@ export async function simulateRemainingDayGames(day: number) {
     return { success: false, error: error.message || "Simulation failed." };
   }
 }
+
+export async function getStandingsDataAction() {
+  try {
+    const allTeams = await db.select().from(teams);
+    const completedGames = await db
+      .select()
+      .from(games)
+      .where(eq(games.status, "Completed"));
+
+    return { success: true, teams: allTeams, completedGames };
+  } catch (error: any) {
+    console.error("Failed to fetch standings data:", error);
+    return { success: false, error: error.message || "Failed to fetch standings data." };
+  }
+}
+

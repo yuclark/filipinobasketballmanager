@@ -17,6 +17,7 @@ import {
   Trophy,
   ChevronRight,
   TrendingUp,
+  ArrowLeftRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -129,8 +130,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {[
               { name: "Roster", path: "/dashboard", icon: Users },
               { name: "Schedule", path: "/dashboard/schedule", icon: Calendar },
+              { name: "Standings", path: "/dashboard/standings", icon: BarChart3 },
               { name: "Free Agency", path: "/dashboard/free-agency", icon: Briefcase },
-              { name: "Trades Office", path: "/dashboard/trades", icon: BarChart3 },
+              { name: "Trades Office", path: "/dashboard/trades", icon: ArrowLeftRight },
             ].map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.path;
@@ -184,11 +186,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
 
           {/* Quick links for mobile */}
-          <div className="flex md:hidden gap-1 text-xs">
-            <Link href="/dashboard" className="px-2 py-1 bg-zinc-900 rounded">Roster</Link>
-            <Link href="/dashboard/schedule" className="px-2 py-1 bg-zinc-900 rounded">Games</Link>
-            <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded">FA</Link>
-            <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded">Trades</Link>
+          <div className="flex md:hidden gap-1 text-[10px] sm:text-xs overflow-x-auto pb-1 max-w-full">
+            <Link href="/dashboard" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Roster</Link>
+            <Link href="/dashboard/schedule" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Games</Link>
+            <Link href="/dashboard/standings" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Standings</Link>
+            <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">FA</Link>
+            <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
           </div>
         </header>
 

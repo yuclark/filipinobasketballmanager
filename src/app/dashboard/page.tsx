@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getTeamRoster } from "@/app/actions";
 import { releasePlayerAction } from "@/app/actions/transactions";
+import { getTeamSeasonStatsAction } from "@/app/actions/statsEngine";
 import {
   Users,
   Search,
@@ -60,6 +61,10 @@ export default function RosterPage() {
   const [sortKey, setSortKey] = useState<SortKey>("overall");
   const [sortAsc, setSortAsc] = useState(false);
 
+  // View mode and season stats
+  const [viewMode, setViewMode] = useState<"attributes" | "stats">("attributes");
+  const [seasonStats, setSeasonStats] = useState<any[]>([]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -72,6 +77,11 @@ export default function RosterPage() {
         setError("Team roster details not found.");
       } else {
         setPlayersList(rosterData.players as Player[]);
+      }
+
+      const statsRes = await getTeamSeasonStatsAction(userTeamId!);
+      if (statsRes.success && statsRes.averages) {
+        setSeasonStats(statsRes.averages);
       }
     } catch (err) {
       console.error(err);
@@ -212,17 +222,43 @@ export default function RosterPage() {
           <p className="text-zinc-500 text-sm">Active squad of 15 players. Manage positions, salaries, and releases.</p>
         </div>
 
-        <div className="relative w-full md:w-72">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
-            <Search className="w-4 h-4" />
-          </span>
-          <input
-            type="text"
-            placeholder="Search roster..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-800 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none transition-all"
-          />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+          {/* Attributes vs Season Stats Toggle */}
+          <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 self-start sm:self-auto">
+            <button
+              onClick={() => setViewMode("attributes")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                viewMode === "attributes"
+                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Attributes
+            </button>
+            <button
+              onClick={() => setViewMode("stats")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                viewMode === "stats"
+                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Season Stats
+            </button>
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
+              <Search className="w-4 h-4" />
+            </span>
+            <input
+              type="text"
+              placeholder="Search roster..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-800 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none transition-all"
+            />
+          </div>
         </div>
       </div>
 
@@ -285,10 +321,24 @@ export default function RosterPage() {
                   <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
                 </div>
               </th>
-              <th className="py-4.5 px-4 text-center">3PT</th>
-              <th className="py-4.5 px-4 text-center">INS</th>
-              <th className="py-4.5 px-4 text-center">DEF</th>
-              <th className="py-4.5 px-4 text-center">REB</th>
+              {viewMode === "attributes" ? (
+                <>
+                  <th className="py-4.5 px-4 text-center">3PT</th>
+                  <th className="py-4.5 px-4 text-center">INS</th>
+                  <th className="py-4.5 px-4 text-center">DEF</th>
+                  <th className="py-4.5 px-4 text-center">REB</th>
+                </>
+              ) : (
+                <>
+                  <th className="py-4.5 px-4 text-center">GP</th>
+                  <th className="py-4.5 px-4 text-center">MIN</th>
+                  <th className="py-4.5 px-4 text-center">PPG</th>
+                  <th className="py-4.5 px-4 text-center">RPG</th>
+                  <th className="py-4.5 px-4 text-center">APG</th>
+                  <th className="py-4.5 px-4 text-center">SPG</th>
+                  <th className="py-4.5 px-4 text-center">BPG</th>
+                </>
+              )}
               <th className="py-4.5 px-6 text-center">Action</th>
             </tr>
           </thead>
@@ -371,11 +421,42 @@ export default function RosterPage() {
                       </span>
                     </td>
 
-                    {/* Performance attributes */}
-                    <td className="py-4 px-4 text-center">{renderStatBar(player.threePoint)}</td>
-                    <td className="py-4 px-4 text-center">{renderStatBar(player.insideScoring)}</td>
-                    <td className="py-4 px-4 text-center">{renderStatBar(defScore)}</td>
-                    <td className="py-4 px-4 text-center">{renderStatBar(player.rebounding)}</td>
+                    {/* Performance attributes or Season Stats */}
+                    {viewMode === "attributes" ? (
+                      <>
+                        <td className="py-4 px-4 text-center">{renderStatBar(player.threePoint)}</td>
+                        <td className="py-4 px-4 text-center">{renderStatBar(player.insideScoring)}</td>
+                        <td className="py-4 px-4 text-center">{renderStatBar(defScore)}</td>
+                        <td className="py-4 px-4 text-center">{renderStatBar(player.rebounding)}</td>
+                      </>
+                    ) : (() => {
+                      const pStats = seasonStats.find((s) => s.playerId === player.id);
+                      return (
+                        <>
+                          <td className="py-4 px-4 text-center font-bold text-zinc-300">
+                            {pStats?.gp ?? 0}
+                          </td>
+                          <td className="py-4 px-4 text-center font-semibold text-zinc-300">
+                            {(pStats?.mpg ?? 0).toFixed(1)}
+                          </td>
+                          <td className="py-4 px-4 text-center font-bold text-orange-400">
+                            {(pStats?.ppg ?? 0).toFixed(1)}
+                          </td>
+                          <td className="py-4 px-4 text-center font-semibold text-zinc-300">
+                            {(pStats?.rpg ?? 0).toFixed(1)}
+                          </td>
+                          <td className="py-4 px-4 text-center font-semibold text-zinc-300">
+                            {(pStats?.apg ?? 0).toFixed(1)}
+                          </td>
+                          <td className="py-4 px-4 text-center text-zinc-400">
+                            {(pStats?.spg ?? 0).toFixed(1)}
+                          </td>
+                          <td className="py-4 px-4 text-center text-zinc-400">
+                            {(pStats?.bpg ?? 0).toFixed(1)}
+                          </td>
+                        </>
+                      );
+                    })()}
 
                     {/* Release Button */}
                     <td className="py-4 px-6 text-center">
@@ -392,7 +473,7 @@ export default function RosterPage() {
               })
             ) : (
               <tr>
-                <td colSpan={11} className="py-12 text-center text-zinc-500">
+                <td colSpan={viewMode === "attributes" ? 11 : 14} className="py-12 text-center text-zinc-500">
                   No active players found.
                 </td>
               </tr>
