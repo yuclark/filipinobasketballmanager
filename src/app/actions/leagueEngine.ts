@@ -437,7 +437,7 @@ export async function getStandingsDataAction() {
   }
 }
 
-export async function simulateBatchDaysAction(daysToSimulate: number) {
+export async function simulateBatchDaysAction(daysToSimulate: number, bypassDeadline: boolean = false) {
   try {
     const allTeams = await db.select().from(teams);
     const allPlayers = await db
@@ -474,7 +474,7 @@ export async function simulateBatchDaysAction(daysToSimulate: number) {
     let hitDeadline = false;
 
     for (let d = startDay; d <= endDay; d++) {
-      if (d === 50) {
+      if (d === 50 && !bypassDeadline) {
         hitDeadline = true;
         break;
       }

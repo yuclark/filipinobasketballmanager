@@ -74,6 +74,8 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
+  const [hasConfirmedDeadline, setHasConfirmedDeadline] = useState(false);
+  const [pendingDays, setPendingDays] = useState<number>(0);
 
   // Box score modal state
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -166,10 +168,11 @@ export default function SchedulePage() {
     }
   };
 
-  const handleBatchSimulation = async (days: number) => {
+  const handleBatchSimulation = async (days: number, bypass: boolean = false) => {
+    setPendingDays(days);
     setSimulating(true);
     try {
-      const res = await simulateBatchDaysAction(days);
+      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline);
       if (res.currentDay) {
         setLeagueDay(res.currentDay);
       }
@@ -609,15 +612,29 @@ export default function SchedulePage() {
             <div>
               <h4 className="text-xl font-extrabold text-white tracking-tight">TRADE DEADLINE REACHED!</h4>
               <p className="text-zinc-400 text-sm mt-3 leading-relaxed">
-                All trading windows across Luzon and VisMin will lock after today. Make your final front-office moves now.
+                All trading windows across Luzon and VisMin will lock after today. Make your final front-office moves now, or confirm to bypass and lock trades.
               </p>
             </div>
-            <button
-              onClick={() => setShowDeadlineModal(false)}
-              className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
-            >
-              Enter Front Office
-            </button>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={async () => {
+                  setShowDeadlineModal(false);
+                  setHasConfirmedDeadline(true);
+                  setTradeDeadlinePassed(true);
+                  // Re-trigger with bypass flag set to true
+                  await handleBatchSimulation(pendingDays, true);
+                }}
+                className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                Confirm & Proceed to Simulation
+              </button>
+              <button
+                onClick={() => setShowDeadlineModal(false)}
+                className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 text-zinc-400 rounded-xl font-bold text-sm border border-zinc-850 transition-all cursor-pointer"
+              >
+                Review Trade Options
+              </button>
+            </div>
           </div>
         </div>
       )}
