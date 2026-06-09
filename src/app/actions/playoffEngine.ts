@@ -543,3 +543,37 @@ export async function simulatePlayoffDayAction() {
     return { success: false, error: error.message || "Failed to simulate playoff day." };
   }
 }
+
+export async function getSeriesGamesAction(seriesId: string) {
+  try {
+    const seriesGames = await db
+      .select({
+        id: games.id,
+        homeTeamId: games.homeTeamId,
+        awayTeamId: games.awayTeamId,
+        homeScore: games.homeScore,
+        awayScore: games.awayScore,
+        status: games.status,
+        gameNumber: games.gameNumber,
+        seasonYear: games.seasonYear,
+      })
+      .from(games)
+      .where(eq(games.seriesId, seriesId))
+      .orderBy(games.gameNumber);
+
+    const allTeams = await db.select().from(teams);
+    const teamMap = new Map(allTeams.map((t) => [t.id, t]));
+
+    return {
+      success: true,
+      games: seriesGames.map((g) => ({
+        ...g,
+        homeTeam: teamMap.get(g.homeTeamId),
+        awayTeam: teamMap.get(g.awayTeamId),
+      }))
+    };
+  } catch (error: any) {
+    console.error("Failed to fetch series games:", error);
+    return { success: false, error: error.message || "Failed to load series games." };
+  }
+}

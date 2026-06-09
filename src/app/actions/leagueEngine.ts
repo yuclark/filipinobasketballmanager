@@ -328,6 +328,16 @@ function simulateGameLogic(
       const accuracy = p.overall * 0.0035 + 0.25;
       const fga = fgm + Math.max(0, Math.round(fgm * (1 / accuracy - 1) + randomNormal(0, 1.5)));
 
+      const ftm = Math.max(0, pts - fg3m * 3 - fg2m * 2);
+      const fta = ftm + Math.max(0, Math.round(ftm * 0.25 + Math.floor(Math.random() * 2)));
+
+      const threeAccuracy = p.threePoint * 0.0035 + 0.2;
+      const fg3a = fg3m + Math.max(0, Math.round(fg3m * (1 / threeAccuracy - 1) + Math.random() * 2));
+
+      const minutes = i < 5
+        ? Math.floor(Math.random() * 11) + 28
+        : Math.floor(Math.random() * 15) + 10;
+
       playerStatsToInsert.push({
         gameId: game.id,
         playerId: p.id,
@@ -339,6 +349,11 @@ function simulateGameLogic(
         turnovers,
         fieldGoalsMade: fgm,
         fieldGoalsAttempted: Math.max(fgm, fga),
+        minutes,
+        threePointMade: fg3m,
+        threePointAttempted: Math.max(fg3m, fg3a),
+        freeThrowsMade: ftm,
+        freeThrowsAttempted: Math.max(ftm, fta),
       });
     }
   };

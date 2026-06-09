@@ -7,8 +7,9 @@ import {
   initializePlayoffsAction,
   getPlayoffBracketAction,
   simulatePlayoffDayAction,
+  getSeriesGamesAction,
 } from "@/app/actions/playoffEngine";
-import { getStandingsDataAction } from "@/app/actions/leagueEngine";
+import { getStandingsDataAction, getGameBoxScore } from "@/app/actions/leagueEngine";
 import {
   Trophy,
   Loader2,
@@ -21,6 +22,7 @@ import {
   ChevronRight,
   TrendingUp,
   RefreshCw,
+  X,
 } from "lucide-react";
 
 interface Team {
@@ -66,6 +68,14 @@ export default function PlayoffsPage() {
   const [scheduledGames, setScheduledGames] = useState(0);
   const [bracket, setBracket] = useState<BracketNode[]>([]);
   const [activeTab, setActiveTab] = useState<"luzon" | "vismin" | "finals">("luzon");
+
+  // Playoff Box Score Modal State
+  const [selectedSeries, setSelectedSeries] = useState<BracketNode | null>(null);
+  const [seriesGames, setSeriesGames] = useState<any[]>([]);
+  const [loadingSeriesGames, setLoadingSeriesGames] = useState(false);
+  const [activeBoxScoreGame, setActiveBoxScoreGame] = useState<any | null>(null);
+  const [boxScoreStats, setBoxScoreStats] = useState<any[]>([]);
+  const [loadingBoxScore, setLoadingBoxScore] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -193,6 +203,40 @@ export default function PlayoffsPage() {
     }
   };
 
+  const handleViewSeriesGames = async (node: BracketNode) => {
+    setSelectedSeries(node);
+    setLoadingSeriesGames(true);
+    try {
+      const res = await getSeriesGamesAction(node.seriesId);
+      if (res.success && res.games) {
+        setSeriesGames(res.games);
+      } else {
+        alert(res.error || "Failed to load series games.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error loading series games.");
+    } finally {
+      setLoadingSeriesGames(false);
+    }
+  };
+
+  const handleViewGameBoxScore = async (game: any) => {
+    setActiveBoxScoreGame(game);
+    setLoadingBoxScore(true);
+    try {
+      const stats = await getGameBoxScore(game.id);
+      // Sort players by points descending
+      const sorted = (stats as any[]).sort((a, b) => b.points - a.points);
+      setBoxScoreStats(sorted);
+    } catch (err) {
+      console.error(err);
+      alert("Error loading box score.");
+    } finally {
+      setLoadingBoxScore(false);
+    }
+  };
+
   if (!mounted || loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -257,10 +301,11 @@ export default function PlayoffsPage() {
 
     return (
       <div
-        className={`bg-zinc-900/40 border rounded-2xl p-4 shadow-md transition-all relative ${
+        onClick={() => handleViewSeriesGames(node)}
+        className={`bg-zinc-900/40 border rounded-2xl p-4 shadow-md transition-all relative cursor-pointer hover:border-zinc-700 hover:scale-[1.01] ${
           isUserTeamA || isUserTeamB
             ? "border-orange-500/40 bg-orange-500/5 shadow-orange-500/5 ring-1 ring-orange-500/20"
-            : "border-zinc-905 hover:border-zinc-800"
+            : "border-zinc-905"
         }`}
       >
         {isUserTeamA || isUserTeamB ? (
@@ -662,7 +707,253 @@ export default function PlayoffsPage() {
               )}
             </div>
           )}
+        </div>
+      )}
 
+      {/* Playoff Series Details & Box Score Modal */}
+      {selectedSeries && (
+        <div className="fixed inset-0 bg-zinc-950/85 flex items-center justify-center z-40 p-4 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-4xl max-h-[85vh] overflow-y-auto flex flex-col shadow-2xl">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center sticky top-0 bg-zinc-900 z-10">
+              <div>
+                {activeBoxScoreGame ? (
+                  <div>
+                    <h4 className="text-xl font-bold text-white flex items-center gap-2">
+                      <button 
+                        onClick={() => {
+                          setActiveBoxScoreGame(null);
+                          setBoxScoreStats([]);
+                        }}
+                        className="text-orange-500 hover:text-orange-400 font-bold text-sm bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800 mr-2"
+                      >
+                        ← Back to Series
+                      </button>
+                      Box Score: Game {activeBoxScoreGame.gameNumber - 82}
+                    </h4>
+                    <p className="text-xs text-zinc-400 mt-2">
+                      {activeBoxScoreGame.homeTeam?.city} {activeBoxScoreGame.homeTeam?.name} ({activeBoxScoreGame.homeScore}) vs{" "}
+                      {activeBoxScoreGame.awayTeam?.city} {activeBoxScoreGame.awayTeam?.name} ({activeBoxScoreGame.awayScore})
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <h4 className="text-xl font-bold text-white flex items-center gap-2">
+                      <Trophy className="w-5 h-5 text-orange-500" />
+                      {selectedSeries.round}: {selectedSeries.teamA.city} vs {selectedSeries.teamB.city}
+                    </h4>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      Division: {selectedSeries.conference === "Cross" ? "Grand Finals" : selectedSeries.conference} • Best-of-{selectedSeries.round === "GrandFinals" ? 7 : 5} Series
+                    </p>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedSeries(null);
+                  setSeriesGames([]);
+                  setActiveBoxScoreGame(null);
+                  setBoxScoreStats([]);
+                }}
+                className="p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {activeBoxScoreGame ? (
+                /* Box Score Table View */
+                loadingBoxScore ? (
+                  <div className="flex justify-center items-center py-20">
+                    <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {/* Home Team Stats */}
+                    <div>
+                      <h5 className="font-bold text-sm text-orange-500 uppercase tracking-wider mb-3 px-2">
+                        {activeBoxScoreGame.homeTeam?.city} {activeBoxScoreGame.homeTeam?.name} Stats
+                      </h5>
+                      <div className="overflow-x-auto border border-zinc-800 rounded-xl bg-zinc-950/40">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-zinc-950 text-zinc-400 font-bold border-b border-zinc-800 uppercase tracking-wider text-[10px]">
+                              <th className="py-3 px-4">Player</th>
+                              <th className="py-3 px-2 text-center">Pos</th>
+                              <th className="py-3 px-2 text-center">MIN</th>
+                              <th className="py-3 px-2 text-center">PTS</th>
+                              <th className="py-3 px-2 text-center">REB</th>
+                              <th className="py-3 px-2 text-center">AST</th>
+                              <th className="py-3 px-2 text-center">STL</th>
+                              <th className="py-3 px-2 text-center">BLK</th>
+                              <th className="py-3 px-2 text-center">TO</th>
+                              <th className="py-3 px-4 text-center">FG (M-A)</th>
+                              <th className="py-3 px-4 text-center">3P (M-A)</th>
+                              <th className="py-3 px-4 text-center">FT (M-A)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-800 font-medium text-zinc-300">
+                            {boxScoreStats
+                              .filter((s) => s.player && (s.player as any).teamId === activeBoxScoreGame.homeTeamId)
+                              .map((stat) => (
+                                <tr key={stat.id} className="hover:bg-zinc-800/40">
+                                  <td className="py-3 px-4 font-bold text-zinc-200">
+                                    {stat.player.firstName} {stat.player.lastName}
+                                    {stat.player.isFilAm && (
+                                      <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold bg-cyan-500/10 text-cyan-400">
+                                        Fil-Am
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-2 text-center text-zinc-400 font-bold">{stat.player.position}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-400 font-semibold">{stat.minutes || 0}</td>
+                                  <td className="py-3 px-2 text-center font-bold text-white">{stat.points}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-300">{stat.rebounds}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-300">{stat.assists}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-400">{stat.steals}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-400">{stat.blocks}</td>
+                                  <td className="py-3 px-2 text-center text-red-400">{stat.turnovers}</td>
+                                  <td className="py-3 px-4 text-center text-zinc-400 font-mono">
+                                    {stat.fieldGoalsMade}-{stat.fieldGoalsAttempted}
+                                  </td>
+                                  <td className="py-3 px-4 text-center text-zinc-400 font-mono">
+                                    {stat.threePointMade || 0}-{stat.threePointAttempted || 0}
+                                  </td>
+                                  <td className="py-3 px-4 text-center text-zinc-400 font-mono">
+                                    {stat.freeThrowsMade || 0}-{stat.freeThrowsAttempted || 0}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Away Team Stats */}
+                    <div>
+                      <h5 className="font-bold text-sm text-orange-500 uppercase tracking-wider mb-3 px-2">
+                        {activeBoxScoreGame.awayTeam?.city} {activeBoxScoreGame.awayTeam?.name} Stats
+                      </h5>
+                      <div className="overflow-x-auto border border-zinc-800 rounded-xl bg-zinc-950/40">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-zinc-950 text-zinc-400 font-bold border-b border-zinc-800 uppercase tracking-wider text-[10px]">
+                              <th className="py-3 px-4">Player</th>
+                              <th className="py-3 px-2 text-center">Pos</th>
+                              <th className="py-3 px-2 text-center">MIN</th>
+                              <th className="py-3 px-2 text-center">PTS</th>
+                              <th className="py-3 px-2 text-center">REB</th>
+                              <th className="py-3 px-2 text-center">AST</th>
+                              <th className="py-3 px-2 text-center">STL</th>
+                              <th className="py-3 px-2 text-center">BLK</th>
+                              <th className="py-3 px-2 text-center">TO</th>
+                              <th className="py-3 px-4 text-center">FG (M-A)</th>
+                              <th className="py-3 px-4 text-center">3P (M-A)</th>
+                              <th className="py-3 px-4 text-center">FT (M-A)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-800 font-medium text-zinc-300">
+                            {boxScoreStats
+                              .filter((s) => s.player && (s.player as any).teamId === activeBoxScoreGame.awayTeamId)
+                              .map((stat) => (
+                                <tr key={stat.id} className="hover:bg-zinc-800/40">
+                                  <td className="py-3 px-4 font-bold text-zinc-200">
+                                    {stat.player.firstName} {stat.player.lastName}
+                                    {stat.player.isFilAm && (
+                                      <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold bg-cyan-500/10 text-cyan-400">
+                                        Fil-Am
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-2 text-center text-zinc-400 font-bold">{stat.player.position}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-400 font-semibold">{stat.minutes || 0}</td>
+                                  <td className="py-3 px-2 text-center font-bold text-white">{stat.points}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-300">{stat.rebounds}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-300">{stat.assists}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-400">{stat.steals}</td>
+                                  <td className="py-3 px-2 text-center text-zinc-400">{stat.blocks}</td>
+                                  <td className="py-3 px-2 text-center text-red-400">{stat.turnovers}</td>
+                                  <td className="py-3 px-4 text-center text-zinc-400 font-mono">
+                                    {stat.fieldGoalsMade}-{stat.fieldGoalsAttempted}
+                                  </td>
+                                  <td className="py-3 px-4 text-center text-zinc-400 font-mono">
+                                    {stat.threePointMade || 0}-{stat.threePointAttempted || 0}
+                                  </td>
+                                  <td className="py-3 px-4 text-center text-zinc-400 font-mono">
+                                    {stat.freeThrowsMade || 0}-{stat.freeThrowsAttempted || 0}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : (
+                /* Series Games List View */
+                loadingSeriesGames ? (
+                  <div className="flex justify-center items-center py-20">
+                    <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <h5 className="text-sm font-bold text-zinc-400 px-1">Games in this Series</h5>
+                    <div className="grid grid-cols-1 gap-3">
+                      {seriesGames.map((game, idx) => {
+                        const isCompleted = game.status === "Completed";
+                        return (
+                          <div 
+                            key={game.id} 
+                            className="bg-zinc-950/40 border border-zinc-800 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-zinc-700 transition-colors"
+                          >
+                            <div>
+                              <span className="text-[10px] bg-zinc-950 px-2 py-1 rounded text-zinc-500 font-bold uppercase tracking-wider block w-max mb-1.5">
+                                Game {idx + 1}
+                              </span>
+                              <div className="text-sm font-bold text-zinc-200">
+                                {game.homeTeam?.city} {game.homeTeam?.name}{" "}
+                                <span className={isCompleted && game.homeScore > game.awayScore ? "text-orange-500 font-extrabold" : ""}>
+                                  {isCompleted ? game.homeScore : ""}
+                                </span>{" "}
+                                vs{" "}
+                                {game.awayTeam?.city} {game.awayTeam?.name}{" "}
+                                <span className={isCompleted && game.awayScore > game.homeScore ? "text-orange-500 font-extrabold" : ""}>
+                                  {isCompleted ? game.awayScore : ""}
+                                </span>
+                              </div>
+                            </div>
+                            <div>
+                              {isCompleted ? (
+                                <button
+                                  onClick={() => handleViewGameBoxScore(game)}
+                                  className="px-4 py-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-750 text-orange-500 hover:text-orange-400 rounded-xl font-extrabold text-xs transition-colors cursor-pointer animate-pulse-slow"
+                                >
+                                  View Box Score
+                                </button>
+                              ) : (
+                                <span className="text-xs text-zinc-600 font-bold uppercase tracking-wider px-3 py-1.5 border border-zinc-900 bg-zinc-950/20 rounded-xl">
+                                  Scheduled
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {seriesGames.length === 0 && (
+                        <div className="py-10 text-center text-zinc-500 italic text-sm">
+                          No games have been scheduled for this series yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

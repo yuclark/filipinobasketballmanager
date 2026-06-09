@@ -66,6 +66,11 @@ export const playerGameStats = pgTable("player_game_stats", {
   turnovers: integer("turnovers").notNull(),
   fieldGoalsMade: integer("field_goals_made").notNull(),
   fieldGoalsAttempted: integer("field_goals_attempted").notNull(),
+  minutes: integer("minutes").default(0).notNull(),
+  threePointMade: integer("three_point_made").default(0).notNull(),
+  threePointAttempted: integer("three_point_attempted").default(0).notNull(),
+  freeThrowsMade: integer("free_throws_made").default(0).notNull(),
+  freeThrowsAttempted: integer("free_throws_attempted").default(0).notNull(),
 });
 
 export const transactions = pgTable("transactions", {

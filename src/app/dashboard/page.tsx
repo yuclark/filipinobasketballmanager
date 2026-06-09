@@ -63,7 +63,8 @@ export default function RosterPage() {
 
   // View mode and season stats
   const [viewMode, setViewMode] = useState<"attributes" | "stats">("attributes");
-  const [seasonStats, setSeasonStats] = useState<any[]>([]);
+  const [statsTab, setStatsTab] = useState<"regular" | "playoffs" | "career">("regular");
+  const [allStatsSplits, setAllStatsSplits] = useState<{ regularSeason: any[]; playoffs: any[]; career: any[] } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -80,8 +81,12 @@ export default function RosterPage() {
       }
 
       const statsRes = await getTeamSeasonStatsAction(userTeamId!);
-      if (statsRes.success && statsRes.averages) {
-        setSeasonStats(statsRes.averages);
+      if (statsRes.success && statsRes.regularSeason && statsRes.playoffs && statsRes.career) {
+        setAllStatsSplits({
+          regularSeason: statsRes.regularSeason,
+          playoffs: statsRes.playoffs,
+          career: statsRes.career,
+        });
       }
     } catch (err) {
       console.error(err);
@@ -207,6 +212,14 @@ export default function RosterPage() {
       return 0;
     });
 
+  const activeStats = allStatsSplits
+    ? (statsTab === "regular"
+        ? allStatsSplits.regularSeason
+        : statsTab === "playoffs"
+        ? allStatsSplits.playoffs
+        : allStatsSplits.career)
+    : [];
+
   return (
     <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm relative">
       {reloading && (
@@ -224,27 +237,64 @@ export default function RosterPage() {
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
           {/* Attributes vs Season Stats Toggle */}
-          <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 self-start sm:self-auto">
-            <button
-              onClick={() => setViewMode("attributes")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
-                viewMode === "attributes"
-                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Attributes
-            </button>
-            <button
-              onClick={() => setViewMode("stats")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
-                viewMode === "stats"
-                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Season Stats
-            </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 self-start sm:self-auto">
+              <button
+                onClick={() => setViewMode("attributes")}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                  viewMode === "attributes"
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Attributes
+              </button>
+              <button
+                onClick={() => setViewMode("stats")}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                  viewMode === "stats"
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Season Stats
+              </button>
+            </div>
+
+            {viewMode === "stats" && (
+              <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 self-start sm:self-auto">
+                <button
+                  onClick={() => setStatsTab("regular")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                    statsTab === "regular"
+                      ? "bg-zinc-900 text-white shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Regular
+                </button>
+                <button
+                  onClick={() => setStatsTab("playoffs")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                    statsTab === "playoffs"
+                      ? "bg-zinc-900 text-white shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Playoffs
+                </button>
+                <button
+                  onClick={() => setStatsTab("career")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
+                    statsTab === "career"
+                      ? "bg-zinc-900 text-white shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  Career
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="relative w-full sm:w-64">
@@ -337,6 +387,9 @@ export default function RosterPage() {
                   <th className="py-4.5 px-4 text-center">APG</th>
                   <th className="py-4.5 px-4 text-center">SPG</th>
                   <th className="py-4.5 px-4 text-center">BPG</th>
+                  <th className="py-4.5 px-4 text-center">FG%</th>
+                  <th className="py-4.5 px-4 text-center">3P%</th>
+                  <th className="py-4.5 px-4 text-center">FT%</th>
                 </>
               )}
               <th className="py-4.5 px-6 text-center">Action</th>
@@ -430,7 +483,7 @@ export default function RosterPage() {
                         <td className="py-4 px-4 text-center">{renderStatBar(player.rebounding)}</td>
                       </>
                     ) : (() => {
-                      const pStats = seasonStats.find((s) => s.playerId === player.id);
+                      const pStats = activeStats.find((s) => s.playerId === player.id);
                       return (
                         <>
                           <td className="py-4 px-4 text-center font-bold text-zinc-300">
@@ -453,6 +506,15 @@ export default function RosterPage() {
                           </td>
                           <td className="py-4 px-4 text-center text-zinc-400">
                             {(pStats?.bpg ?? 0).toFixed(1)}
+                          </td>
+                          <td className="py-4 px-4 text-center text-zinc-300 font-mono">
+                            {pStats?.fgPct ? `${pStats.fgPct}%` : "0%"}
+                          </td>
+                          <td className="py-4 px-4 text-center text-zinc-300 font-mono">
+                            {pStats?.fg3Pct ? `${pStats.fg3Pct}%` : "0%"}
+                          </td>
+                          <td className="py-4 px-4 text-center text-zinc-300 font-mono">
+                            {pStats?.ftPct ? `${pStats.ftPct}%` : "0%"}
                           </td>
                         </>
                       );

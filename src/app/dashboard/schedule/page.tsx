@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import {
   generateScheduleAction,
@@ -10,6 +11,7 @@ import {
   getGameBoxScore,
   simulateBatchDaysAction,
 } from "@/app/actions/leagueEngine";
+import { initializePlayoffsAction } from "@/app/actions/playoffEngine";
 import {
   Calendar,
   Play,
@@ -67,6 +69,7 @@ interface BoxScoreStat {
 }
 
 export default function SchedulePage() {
+  const router = useRouter();
   const { userTeamId, currentLeagueDay, advanceDay, isSimulating, setSimulating, setTradeDeadlinePassed, setLeagueDay } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
@@ -188,6 +191,24 @@ export default function SchedulePage() {
     }
   };
 
+  const handleAdvanceToPlayoffs = async () => {
+    setActionLoading(true);
+    try {
+      const res = await initializePlayoffsAction();
+      if (res.success) {
+        alert("Playoffs initialized successfully! Redirecting to Postseason Tournament.");
+        router.push("/dashboard/playoffs");
+      } else {
+        alert(res.error || "Failed to initialize playoffs.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error initializing playoffs.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // View Box Score Modal Trigger
   const handleViewBoxScore = async (game: Game) => {
     setSelectedGame(game);
@@ -247,48 +268,62 @@ export default function SchedulePage() {
 
         {hasSchedule && (
           <div className="flex flex-wrap gap-3 w-full md:w-auto">
-            {/* Advance day button */}
-            {areAllGamesPlayed && (
+            {currentLeagueDay === 82 && areAllGamesPlayed ? (
               <button
-                onClick={() => advanceDay()}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.2)] hover:scale-[1.01] cursor-pointer transition-all"
+                onClick={handleAdvanceToPlayoffs}
+                disabled={actionLoading}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_20px_rgba(249,115,22,0.3)] hover:scale-[1.01] cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
               >
-                <span>Advance to Day {currentLeagueDay + 1}</span>
+                <Trophy className="w-4 h-4 text-white" />
+                <span>🏆 Advance to Postseason Playoffs</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
+            ) : (
+              <>
+                {/* Advance day button */}
+                {areAllGamesPlayed && (
+                  <button
+                    onClick={() => advanceDay()}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.2)] hover:scale-[1.01] cursor-pointer transition-all"
+                  >
+                    <span>Advance to Day {currentLeagueDay + 1}</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* Simulate Day */}
+                {!areAllGamesPlayed && (
+                  <button
+                    onClick={() => handleBatchSimulation(1)}
+                    disabled={isSimulating}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
+                  >
+                    <Play className="w-4 h-4 text-zinc-400" />
+                    <span>Simulate Day</span>
+                  </button>
+                )}
+
+                {/* Simulate Week */}
+                <button
+                  onClick={() => handleBatchSimulation(7)}
+                  disabled={isSimulating}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
+                >
+                  <Calendar className="w-4 h-4 text-zinc-400" />
+                  <span>Simulate Week (7 Days)</span>
+                </button>
+
+                {/* Simulate Month */}
+                <button
+                  onClick={() => handleBatchSimulation(30)}
+                  disabled={isSimulating}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
+                >
+                  <TrendingUp className="w-4 h-4 text-zinc-400" />
+                  <span>Simulate Month (30 Days)</span>
+                </button>
+              </>
             )}
-
-            {/* Simulate Day */}
-            {!areAllGamesPlayed && (
-              <button
-                onClick={() => handleBatchSimulation(1)}
-                disabled={isSimulating}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
-              >
-                <Play className="w-4 h-4 text-zinc-400" />
-                <span>Simulate Day</span>
-              </button>
-            )}
-
-            {/* Simulate Week */}
-            <button
-              onClick={() => handleBatchSimulation(7)}
-              disabled={isSimulating}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
-            >
-              <Calendar className="w-4 h-4 text-zinc-400" />
-              <span>Simulate Week (7 Days)</span>
-            </button>
-
-            {/* Simulate Month */}
-            <button
-              onClick={() => handleBatchSimulation(30)}
-              disabled={isSimulating}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-sm transition-all"
-            >
-              <TrendingUp className="w-4 h-4 text-zinc-400" />
-              <span>Simulate Month (30 Days)</span>
-            </button>
           </div>
         )}
       </div>
