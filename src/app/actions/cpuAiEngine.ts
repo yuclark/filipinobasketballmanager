@@ -387,6 +387,92 @@ export async function runCpuDailyAiEngineAction(
           }
         }
       }
+
+      // Alternative "Asset Optimization" Trade Pathway
+      if (!tradeExecuted && Math.random() < 0.08) {
+        console.log("[CPU Daily AI Engine] Asset Optimization trade trigger hit (8% roll). Searching for swaps...");
+        
+        // Generate all ordered pairs of distinct CPU teams
+        const pairs: Array<{
+          teamA: typeof tradeMatchingTeams[0];
+          teamB: typeof tradeMatchingTeams[0];
+        }> = [];
+        
+        for (let i = 0; i < tradeMatchingTeams.length; i++) {
+          for (let j = 0; j < tradeMatchingTeams.length; j++) {
+            if (i === j) continue;
+            pairs.push({
+              teamA: tradeMatchingTeams[i],
+              teamB: tradeMatchingTeams[j],
+            });
+          }
+        }
+
+        // Shuffle pairs using Fisher-Yates
+        for (let i = pairs.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const temp = pairs[i];
+          pairs[i] = pairs[j];
+          pairs[j] = temp;
+        }
+
+        // Search for a qualifying 1-for-1 swap
+        for (const pair of pairs) {
+          const tA = pair.teamA;
+          const tB = pair.teamB;
+
+          // Safeguard active roster bounds (bounds remain identical after 1-for-1 swap)
+          if (tA.roster.length < 12 || tA.roster.length > 18) continue;
+          if (tB.roster.length < 12 || tB.roster.length > 18) continue;
+
+          for (const playerA of tA.roster) {
+            for (const playerB of tB.roster) {
+              // Position group must match exactly
+              if (getPositionGroup(playerA.position) !== getPositionGroup(playerB.position)) {
+                continue;
+              }
+
+              // Team A wants to clear cap space: higher salary, and target player (playerB) is younger or within 5 OVR points
+              const isHigherSalary = playerA.salary > playerB.salary;
+              if (!isHigherSalary) continue;
+
+              const isYounger = playerB.age < playerA.age;
+              const isWithinOvrLimit = (playerA.overall - playerB.overall) <= 5;
+              if (!isYounger && !isWithinOvrLimit) continue;
+
+              // Team B wants to upgrade: incoming player (playerA) is +3 or greater OVR rating than outgoing player (playerB)
+              const isUpgrade = playerA.overall >= playerB.overall + 3;
+              if (!isUpgrade) continue;
+
+              // Enforce cap space limits for both teams post-trade
+              const newSalaryA = tA.totalSalary - playerA.salary + playerB.salary;
+              const newSalaryB = tB.totalSalary - playerB.salary + playerA.salary;
+
+              if (newSalaryA <= SALARY_CAP && newSalaryB <= SALARY_CAP) {
+                // Execute the swap directly in memory
+                playerA.teamId = tB.team.id;
+                playerB.teamId = tA.team.id;
+
+                const descStr = `🔄 TRADE: The ${tA.team.city} ${tA.team.name} cleared cap space by sending ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${tB.team.city} ${tB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}).`;
+
+                await db.insert(transactions).values({
+                  type: "Trade",
+                  description: descStr,
+                  seasonYear,
+                  gameDay,
+                });
+
+                console.log(`[CPU Daily AI Engine] Asset Optimization Trade Executed: ${descStr}`);
+
+                tradeExecuted = true;
+                break;
+              }
+            }
+            if (tradeExecuted) break;
+          }
+          if (tradeExecuted) break;
+        }
+      }
     }
 
     return { updatedPlayers: currentPlayersState, updatedTeams: currentTeamsState };
