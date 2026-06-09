@@ -10,6 +10,7 @@ import {
   simulateRemainingDayGames,
   getGameBoxScore,
   simulateBatchDaysAction,
+  simulateUntilPlayoffsAction,
 } from "@/app/actions/leagueEngine";
 import { initializePlayoffsAction } from "@/app/actions/playoffEngine";
 import {
@@ -24,6 +25,7 @@ import {
   MapPin,
   Trophy,
   X,
+  FastForward,
 } from "lucide-react";
 
 interface Team {
@@ -79,6 +81,7 @@ export default function SchedulePage() {
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [hasConfirmedDeadline, setHasConfirmedDeadline] = useState(false);
   const [pendingDays, setPendingDays] = useState<number>(0);
+  const [isMacroSimPlayoffs, setIsMacroSimPlayoffs] = useState<boolean>(false);
 
   // Box score modal state
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
@@ -172,6 +175,7 @@ export default function SchedulePage() {
   };
 
   const handleBatchSimulation = async (days: number, bypass: boolean = false) => {
+    setIsMacroSimPlayoffs(false);
     setPendingDays(days);
     setSimulating(true);
     try {
@@ -186,6 +190,26 @@ export default function SchedulePage() {
     } catch (err) {
       console.error(err);
       alert("Error executing batch simulation.");
+    } finally {
+      setSimulating(false);
+    }
+  };
+
+  const handleSimulateUntilPlayoffs = async (bypass: boolean = false) => {
+    setIsMacroSimPlayoffs(true);
+    setSimulating(true);
+    try {
+      const res = await simulateUntilPlayoffsAction(bypass || hasConfirmedDeadline);
+      if (res.currentDay) {
+        setLeagueDay(res.currentDay);
+      }
+      if (res.status === "DEADLINE_REACHED") {
+        setTradeDeadlinePassed(true);
+        setShowDeadlineModal(true);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error executing simulation until playoffs.");
     } finally {
       setSimulating(false);
     }
@@ -321,6 +345,16 @@ export default function SchedulePage() {
                 >
                   <TrendingUp className="w-4 h-4 text-zinc-400" />
                   <span>Simulate Month (30 Days)</span>
+                </button>
+
+                {/* Simulate Until Playoffs */}
+                <button
+                  onClick={() => handleSimulateUntilPlayoffs()}
+                  disabled={isSimulating}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-xl font-bold cursor-pointer text-sm transition-all shadow-[0_2px_8px_rgba(249,115,22,0.1)] hover:scale-[1.01] active:scale-[0.98]"
+                >
+                  <FastForward className="w-4 h-4 text-orange-400" />
+                  <span>Simulate Until Playoffs</span>
                 </button>
               </>
             )}
@@ -657,7 +691,11 @@ export default function SchedulePage() {
                   setHasConfirmedDeadline(true);
                   setTradeDeadlinePassed(true);
                   // Re-trigger with bypass flag set to true
-                  await handleBatchSimulation(pendingDays, true);
+                  if (isMacroSimPlayoffs) {
+                    await handleSimulateUntilPlayoffs(true);
+                  } else {
+                    await handleBatchSimulation(pendingDays, true);
+                  }
                 }}
                 className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
               >

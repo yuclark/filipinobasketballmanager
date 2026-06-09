@@ -592,3 +592,25 @@ export async function simulateBatchDaysAction(daysToSimulate: number, bypassDead
   }
 }
 
+export async function simulateUntilPlayoffsAction(bypassDeadline: boolean = false) {
+  try {
+    const nextGame = await db
+      .select({ day: games.gameNumber })
+      .from(games)
+      .where(and(eq(games.status, "Scheduled"), eq(games.stage, "Regular")))
+      .orderBy(games.gameNumber)
+      .limit(1);
+
+    if (nextGame.length === 0) {
+      return { status: "SUCCESS", daysSimulated: 0, currentDay: 82 };
+    }
+
+    const startDay = nextGame[0].day;
+    const daysToSimulate = 82 - startDay + 1;
+    return await simulateBatchDaysAction(daysToSimulate, bypassDeadline);
+  } catch (error: any) {
+    console.error("Simulate until playoffs failed:", error);
+    return { status: "ERROR", error: error.message || "Failed to simulate until playoffs.", currentDay: 1 };
+  }
+}
+

@@ -8,6 +8,7 @@ import {
   getPlayoffBracketAction,
   simulatePlayoffDayAction,
   getSeriesGamesAction,
+  simulateUntilGrandFinalsAction,
 } from "@/app/actions/playoffEngine";
 import { getStandingsDataAction, getGameBoxScore } from "@/app/actions/leagueEngine";
 import {
@@ -23,6 +24,7 @@ import {
   TrendingUp,
   RefreshCw,
   X,
+  FastForward,
 } from "lucide-react";
 
 interface Team {
@@ -76,6 +78,7 @@ export default function PlayoffsPage() {
   const [activeBoxScoreGame, setActiveBoxScoreGame] = useState<any | null>(null);
   const [boxScoreStats, setBoxScoreStats] = useState<any[]>([]);
   const [loadingBoxScore, setLoadingBoxScore] = useState(false);
+  const [isMacroSimGrandFinals, setIsMacroSimGrandFinals] = useState<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
@@ -182,6 +185,7 @@ export default function PlayoffsPage() {
 
   // Handle Playoff Day Simulation
   const handleSimulatePlayoffDay = async () => {
+    setIsMacroSimGrandFinals(false);
     try {
       setSimulating(true);
       const res = await simulatePlayoffDayAction();
@@ -200,6 +204,26 @@ export default function PlayoffsPage() {
       alert("Error simulating postseason matchups.");
     } finally {
       setSimulating(false);
+    }
+  };
+
+  const handleSimulateUntilGrandFinals = async () => {
+    setIsMacroSimGrandFinals(true);
+    try {
+      setSimulating(true);
+      const res = await simulateUntilGrandFinalsAction();
+      if (res.success) {
+        alert("Playoffs advanced to the Grand Finals! Matchups generated.");
+        await loadPlayoffData();
+      } else {
+        alert(res.error || "Failed to fast-forward playoffs.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error fast-forwarding playoffs.");
+    } finally {
+      setSimulating(false);
+      setIsMacroSimGrandFinals(false);
     }
   };
 
@@ -261,6 +285,9 @@ export default function PlayoffsPage() {
     : null;
 
   const isPlayoffsActive = bracket.length > 0;
+  const hasProgressedPastQuarterfinals = bracket.some(
+    (n) => n.round === "Semifinals" || n.round === "ConferenceFinals" || n.round === "GrandFinals"
+  );
 
   // Renders a series card inside the bracket layout
   const renderSeriesCard = (seriesId: string) => {
@@ -362,8 +389,14 @@ export default function PlayoffsPage() {
         <div className="fixed inset-0 bg-zinc-950/70 flex flex-col items-center justify-center z-50 backdrop-blur-sm">
           <div className="p-6 bg-zinc-900 border border-zinc-800 rounded-3xl text-center shadow-2xl flex flex-col items-center gap-4">
             <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
-            <h3 className="text-xl font-bold text-white">Simulating Playoff Day...</h3>
-            <p className="text-zinc-400 text-sm max-w-xs">Simulating active series match-ups and evaluating clinching matches.</p>
+            <h3 className="text-xl font-bold text-white">
+              {isMacroSimGrandFinals ? "Simulating Postseason Rounds..." : "Simulating Playoff Day..."}
+            </h3>
+            <p className="text-zinc-400 text-sm max-w-xs">
+              {isMacroSimGrandFinals 
+                ? "Fast-forwarding through Quarterfinals, Semifinals, and Conference Finals series..." 
+                : "Simulating active series match-ups and evaluating clinching matches."}
+            </p>
           </div>
         </div>
       )}
@@ -389,14 +422,27 @@ export default function PlayoffsPage() {
         </div>
 
         {isPlayoffsActive && !championTeam && (
-          <button
-            onClick={handleSimulatePlayoffDay}
-            disabled={simulating}
-            className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.02] cursor-pointer transition-all active:scale-[0.98]"
-          >
-            <Play className="w-4 h-4 fill-white" />
-            <span>Simulate Playoff Day</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <button
+              onClick={handleSimulatePlayoffDay}
+              disabled={simulating}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-xs transition-all active:scale-[0.98]"
+            >
+              <Play className="w-3.5 h-3.5 fill-zinc-400 text-zinc-400" />
+              <span>Simulate Playoff Day</span>
+            </button>
+
+            {!hasProgressedPastQuarterfinals && (
+              <button
+                onClick={handleSimulateUntilGrandFinals}
+                disabled={simulating}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-xs shadow-[0_4px_12px_rgba(249,115,22,0.25)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer ring-1 ring-orange-500/20"
+              >
+                <FastForward className="w-3.5 h-3.5 text-white" />
+                <span>🔥 Fast-Forward to Grand Finals</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 

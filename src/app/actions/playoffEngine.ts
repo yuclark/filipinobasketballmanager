@@ -577,3 +577,39 @@ export async function getSeriesGamesAction(seriesId: string) {
     return { success: false, error: error.message || "Failed to load series games." };
   }
 }
+
+export async function simulateUntilGrandFinalsAction() {
+  try {
+    let safetyCounter = 0;
+    const maxDays = 100;
+
+    while (safetyCounter < maxDays) {
+      const nextGame = await db
+        .select({ playoffRound: games.playoffRound })
+        .from(games)
+        .where(and(eq(games.stage, "Playoffs"), eq(games.status, "Scheduled")))
+        .orderBy(games.gameNumber)
+        .limit(1);
+
+      if (nextGame.length > 0 && nextGame[0].playoffRound === "GrandFinals") {
+        break;
+      }
+
+      if (nextGame.length === 0) {
+        break;
+      }
+
+      const res = await simulatePlayoffDayAction();
+      if (!res.success) {
+        throw new Error(res.error || "Failed to simulate playoff day.");
+      }
+
+      safetyCounter++;
+    }
+
+    return { success: true, status: "GRAND_FINALS_READY" };
+  } catch (error: any) {
+    console.error("Fast-forward to Grand Finals failed:", error);
+    return { success: false, error: error.message || "Failed to fast-forward to Grand Finals." };
+  }
+}
