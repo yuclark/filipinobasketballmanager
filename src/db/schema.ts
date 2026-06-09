@@ -30,6 +30,7 @@ export const players = pgTable("players", {
   stamina: integer("stamina").notNull(),
   contractYearsRemaining: integer("contract_years_remaining").default(3).notNull(),
   status: varchar("status", { length: 20 }).default("Active").notNull(), // 'Active' | 'Retired' | 'DraftPool'
+  isRookie: boolean("is_rookie").default(false).notNull(),
 });
 
 export const games = pgTable("games", {
@@ -80,4 +81,41 @@ export const transactions = pgTable("transactions", {
   seasonYear: integer("season_year").notNull(),
   gameDay: integer("game_day").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const seasonChampions = pgTable("season_champions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  seasonYear: integer("season_year").notNull(),
+  championTeamId: uuid("champion_team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+  runnerUpTeamId: uuid("runner_up_team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+  finalsMvpPlayerId: uuid("finals_mvp_player_id")
+    .references(() => players.id, { onDelete: "cascade" })
+    .notNull(),
+  seriesScore: varchar("series_score", { length: 20 }).notNull(), // e.g. "4-2"
+});
+
+export const playerAwards = pgTable("player_awards", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  seasonYear: integer("season_year").notNull(),
+  awardType: varchar("award_type", { length: 20 }).notNull(), // 'MVP' | 'ROY' | 'DPOY' | '6MOTY'
+  playerId: uuid("player_id")
+    .references(() => players.id, { onDelete: "cascade" })
+    .notNull(),
+  teamId: uuid("team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+});
+
+export const allLeagueTeams = pgTable("all_league_teams", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  seasonYear: integer("season_year").notNull(),
+  type: varchar("type", { length: 30 }).notNull(), // 'All-League 1st' | 'All-League 2nd' | 'All-League 3rd' | 'All-Defensive'
+  position: varchar("position", { length: 5 }).notNull(), // 'G' | 'F' | 'C'
+  playerId: uuid("player_id")
+    .references(() => players.id, { onDelete: "cascade" })
+    .notNull(),
 });

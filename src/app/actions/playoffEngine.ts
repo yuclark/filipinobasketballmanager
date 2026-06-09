@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { eq, and, sql, or, inArray, desc } from "drizzle-orm";
 import { teams, players, games, playerGameStats } from "@/db/schema";
 import { simulateGameAction } from "@/app/actions/leagueEngine";
+import { calculateFinalsMvpAction } from "@/app/actions/awardsEngine";
 
 interface Team {
   id: string;
@@ -533,6 +534,28 @@ export async function simulatePlayoffDayAction() {
         if (lChamp && vChamp) {
           await schedulePlayoffSeries("GF_GrandFinals", lChamp, vChamp, startDay, 7, "GrandFinals", "Cross");
         }
+      } else if (currentRound === "GrandFinals") {
+        // Grand Finals concluded — determine champion and Finals MVP
+        const gfGames = allRoundGames;
+        const team1Id = gfGames[0]?.homeTeamId;
+        const team2Id = gfGames[0]?.awayTeamId;
+        let w1 = 0;
+        let w2 = 0;
+        for (const sg of gfGames) {
+          if (sg.status !== "Completed") continue;
+          const isHome = sg.homeTeamId === team1Id;
+          const wonHome = sg.homeScore > sg.awayScore;
+          if (isHome ? wonHome : !wonHome) w1++; else w2++;
+        }
+        const championTeamId = w1 >= 4 ? team1Id : team2Id;
+        const runnerUpTeamId = w1 >= 4 ? team2Id : team1Id;
+        const seriesScoreStr = `${Math.max(w1, w2)}-${Math.min(w1, w2)}`;
+        const seasonYearVal = gfGames[0]?.seasonYear ?? new Date().getFullYear();
+
+        console.log(`[Playoff Engine] Grand Finals complete! Champion: ${championTeamId}, Series: ${seriesScoreStr}`);
+        await calculateFinalsMvpAction(seasonYearVal, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) =>
+          console.error("[Playoff Engine] Finals MVP calculation failed silently:", err)
+        );
       }
       return { success: true, advancedRound: true, simulatedCount };
     }

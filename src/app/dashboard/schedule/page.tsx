@@ -179,7 +179,7 @@ export default function SchedulePage() {
     setPendingDays(days);
     setSimulating(true);
     try {
-      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline);
+      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline, userTeamId);
       if (res.currentDay) {
         setLeagueDay(res.currentDay);
       }
@@ -199,7 +199,7 @@ export default function SchedulePage() {
     setIsMacroSimPlayoffs(true);
     setSimulating(true);
     try {
-      const res = await simulateUntilPlayoffsAction(bypass || hasConfirmedDeadline);
+      const res = await simulateUntilPlayoffsAction(bypass || hasConfirmedDeadline, userTeamId);
       if (res.currentDay) {
         setLeagueDay(res.currentDay);
       }

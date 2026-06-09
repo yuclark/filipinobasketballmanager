@@ -2,7 +2,8 @@
 
 import { db } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
-import { teams, players, games, playerGameStats } from "@/db/schema";
+import { teams, players, games, playerGameStats, transactions } from "@/db/schema";
+import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 
 // Box-Muller transform for Gaussian/Normal distribution
 function randomNormal(mean = 0, stdDev = 1): number {
@@ -27,6 +28,103 @@ function rotateBerger(arr: any[], round: number) {
     pairs.push([list[i], list[n - 1 - i]]);
   }
   return pairs;
+}
+
+export async function simulateCpuTradesAction(
+  gameDay: number,
+  seasonYear: number,
+  userTeamId?: string | null
+) {
+  try {
+    if (gameDay >= 50) return null;
+    if (Math.random() >= 0.05) return null;
+
+    console.log(`[CPU Trade Engine] Attempting trade on Day ${gameDay}, Season ${seasonYear}`);
+
+    const allTeams = await db.select().from(teams);
+    const cpuTeams = allTeams.filter((t) => t.id !== userTeamId);
+    if (cpuTeams.length < 2) return null;
+
+    // Pick two CPU teams
+    const idxA = Math.floor(Math.random() * cpuTeams.length);
+    let idxB = Math.floor(Math.random() * cpuTeams.length);
+    while (idxA === idxB) {
+      idxB = Math.floor(Math.random() * cpuTeams.length);
+    }
+
+    const teamA = cpuTeams[idxA];
+    const teamB = cpuTeams[idxB];
+
+    // Query active rosters
+    const rosterA = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, teamA.id), eq(players.status, "Active")));
+
+    const rosterB = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, teamB.id), eq(players.status, "Active")));
+
+    if (rosterA.length === 0 || rosterB.length === 0) return null;
+
+    // Find candidates: lower overall (bottom 8 players)
+    const candidatesA = [...rosterA].sort((a, b) => a.overall - b.overall).slice(0, 8);
+    const candidatesB = [...rosterB].sort((a, b) => a.overall - b.overall).slice(0, 8);
+
+    const salaryA = rosterA.reduce((sum, p) => sum + p.salary, 0);
+    const salaryB = rosterB.reduce((sum, p) => sum + p.salary, 0);
+
+    const validPairs: Array<{ playerA: typeof players.$inferSelect; playerB: typeof players.$inferSelect }> = [];
+
+    for (const pA of candidatesA) {
+      for (const pB of candidatesB) {
+        const ovrDiff = Math.abs(pA.overall - pB.overall);
+        const maxOvr = Math.max(pA.overall, pB.overall);
+        if (ovrDiff <= maxOvr * 0.15) {
+          const newSalA = salaryA - pA.salary + pB.salary;
+          const newSalB = salaryB - pB.salary + pA.salary;
+          if (newSalA <= 50000000 && newSalB <= 50000000) {
+            validPairs.push({ playerA: pA, playerB: pB });
+          }
+        }
+      }
+    }
+
+    if (validPairs.length === 0) {
+      console.log(`[CPU Trade Engine] No valid player swap found between ${teamA.city} and ${teamB.city}.`);
+      return null;
+    }
+
+    const { playerA, playerB } = validPairs[Math.floor(Math.random() * validPairs.length)];
+
+    await db.transaction(async (tx) => {
+      // Transactionally swap teamId
+      await tx.update(players).set({ teamId: teamB.id }).where(eq(players.id, playerA.id));
+      await tx.update(players).set({ teamId: teamA.id }).where(eq(players.id, playerB.id));
+
+      // Log transaction
+      const description = `TRADE: The ${teamA.city} traded ${playerA.firstName} ${playerA.lastName} to the ${teamB.city} in exchange for ${playerB.firstName} ${playerB.lastName}.`;
+      await tx.insert(transactions).values({
+        type: "Trade",
+        description,
+        seasonYear,
+        gameDay,
+      });
+
+      console.log(`[CPU Trade Engine] Trade executed: ${description}`);
+    });
+
+    return {
+      playerAId: playerA.id,
+      playerBId: playerB.id,
+      teamAId: teamA.id,
+      teamBId: teamB.id,
+    };
+  } catch (error) {
+    console.error("[CPU Trade Engine] Error simulating trade:", error);
+    return null;
+  }
 }
 
 export async function generateScheduleAction(seasonYear: number = 2026) {
@@ -452,7 +550,11 @@ export async function getStandingsDataAction() {
   }
 }
 
-export async function simulateBatchDaysAction(daysToSimulate: number, bypassDeadline: boolean = false) {
+export async function simulateBatchDaysAction(
+  daysToSimulate: number,
+  bypassDeadline: boolean = false,
+  userTeamId?: string | null
+) {
   try {
     const allTeams = await db.select().from(teams);
     const allPlayers = await db
@@ -471,7 +573,7 @@ export async function simulateBatchDaysAction(daysToSimulate: number, bypassDead
     }
 
     const nextGame = await db
-      .select({ day: games.gameNumber })
+      .select({ day: games.gameNumber, seasonYear: games.seasonYear })
       .from(games)
       .where(and(eq(games.status, "Scheduled"), eq(games.stage, "Regular")))
       .orderBy(games.gameNumber)
@@ -482,6 +584,7 @@ export async function simulateBatchDaysAction(daysToSimulate: number, bypassDead
     }
 
     const startDay = nextGame[0].day;
+    const seasonYear = nextGame[0].seasonYear;
     const endDay = startDay + daysToSimulate - 1;
 
     let daysSimulated = 0;
@@ -541,6 +644,29 @@ export async function simulateBatchDaysAction(daysToSimulate: number, bypassDead
           statsToInsert.push(...res.playerStatsToInsert);
         }
         daysSimulated++;
+
+        // Simulate CPU-CPU Trades
+        const tradeRes = await simulateCpuTradesAction(day, seasonYear, userTeamId);
+        if (tradeRes) {
+          const { playerAId, playerBId, teamAId, teamBId } = tradeRes;
+          const rosterA = rostersByTeam.get(teamAId) || [];
+          const rosterB = rostersByTeam.get(teamBId) || [];
+
+          const idxA = rosterA.findIndex((p) => p.id === playerAId);
+          const idxB = rosterB.findIndex((p) => p.id === playerBId);
+
+          if (idxA !== -1 && idxB !== -1) {
+            const playerA = rosterA[idxA];
+            const playerB = rosterB[idxB];
+
+            // Swap in memory to ensure remaining simulated days use correct roster
+            playerA.teamId = teamBId;
+            playerB.teamId = teamAId;
+
+            rosterA[idxA] = playerB;
+            rosterB[idxB] = playerA;
+          }
+        }
       }
 
       if (gamesToUpdate.length > 0) {
@@ -585,6 +711,14 @@ export async function simulateBatchDaysAction(daysToSimulate: number, bypassDead
 
     const finalDay = nextGameAfter[0]?.day ?? 82;
 
+    // If no more scheduled regular season games, auto-calculate season awards
+    if (nextGameAfter.length === 0) {
+      console.log(`[League Engine] Regular season complete. Triggering Season ${seasonYear} awards calculation...`);
+      await calculateRegularSeasonAwardsAction(seasonYear).catch((err) =>
+        console.error("[League Engine] Awards calculation failed silently:", err)
+      );
+    }
+
     return { status: "SUCCESS", daysSimulated, currentDay: finalDay };
   } catch (error: any) {
     console.error("Batch simulation failed:", error);
@@ -592,7 +726,10 @@ export async function simulateBatchDaysAction(daysToSimulate: number, bypassDead
   }
 }
 
-export async function simulateUntilPlayoffsAction(bypassDeadline: boolean = false) {
+export async function simulateUntilPlayoffsAction(
+  bypassDeadline: boolean = false,
+  userTeamId?: string | null
+) {
   try {
     const nextGame = await db
       .select({ day: games.gameNumber })
@@ -607,7 +744,7 @@ export async function simulateUntilPlayoffsAction(bypassDeadline: boolean = fals
 
     const startDay = nextGame[0].day;
     const daysToSimulate = 82 - startDay + 1;
-    return await simulateBatchDaysAction(daysToSimulate, bypassDeadline);
+    return await simulateBatchDaysAction(daysToSimulate, bypassDeadline, userTeamId);
   } catch (error: any) {
     console.error("Simulate until playoffs failed:", error);
     return { status: "ERROR", error: error.message || "Failed to simulate until playoffs.", currentDay: 1 };

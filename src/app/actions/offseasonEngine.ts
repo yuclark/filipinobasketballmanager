@@ -108,6 +108,7 @@ export async function generateRookiePoolAction(seasonYear: number) {
         stamina,
         contractYearsRemaining: 3,
         status: "DraftPool",
+        isRookie: true, // eligible for Rookie of the Year
       });
     }
 
@@ -304,6 +305,7 @@ export async function processPlayerEvolutionAction() {
               contractYearsRemaining: p.contractYearsRemaining,
               status: p.status,
               teamId: p.teamId,
+              isRookie: false, // clear rookie status after first season
             })
             .where(eq(players.id, p.id))
         );

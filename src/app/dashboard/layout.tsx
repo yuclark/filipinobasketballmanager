@@ -20,6 +20,10 @@ import {
   ArrowLeftRight,
   FileText,
   RefreshCw,
+  Globe,
+  BookOpen,
+  BarChart2,
+  GraduationCap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -135,9 +139,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               { name: "Standings", path: "/dashboard/standings", icon: BarChart3 },
               { name: "Playoffs", path: "/dashboard/playoffs", icon: Trophy },
               { name: "League News", path: "/dashboard/transactions", icon: FileText },
+              { name: "League Leaders", path: "/dashboard/leaders", icon: BarChart2 },
+              { name: "League Teams", path: "/dashboard/teams", icon: Globe },
               { name: "Free Agency", path: "/dashboard/free-agency", icon: Briefcase },
               { name: "Trades Office", path: "/dashboard/trades", icon: ArrowLeftRight },
+              { name: "Draft Prospects", path: "/dashboard/prospects", icon: GraduationCap },
               { name: "Offseason Hub", path: "/dashboard/offseason", icon: RefreshCw },
+              { name: "League History", path: "/dashboard/history", icon: BookOpen },
             ].map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.path;
@@ -197,8 +205,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Link href="/dashboard/standings" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Standings</Link>
             <Link href="/dashboard/playoffs" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Playoffs</Link>
             <Link href="/dashboard/transactions" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">News</Link>
+            <Link href="/dashboard/leaders" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Leaders</Link>
+            <Link href="/dashboard/teams" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Teams</Link>
             <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">FA</Link>
             <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
+            <Link href="/dashboard/prospects" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Prospects</Link>
+            <Link href="/dashboard/history" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">History</Link>
           </div>
         </header>
 

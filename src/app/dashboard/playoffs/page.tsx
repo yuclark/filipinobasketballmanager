@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import {
   checkRegularSeasonCompleteAction,
@@ -53,6 +54,7 @@ interface BracketNode {
 }
 
 export default function PlayoffsPage() {
+  const router = useRouter();
   const { userTeamId } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
@@ -442,6 +444,18 @@ export default function PlayoffsPage() {
                 <span>🔥 Fast-Forward to Grand Finals</span>
               </button>
             )}
+          </div>
+        )}
+
+        {championTeam && (
+          <div className="w-full md:w-auto">
+            <button
+              onClick={() => router.push("/dashboard/offseason")}
+              className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 text-white rounded-xl font-extrabold text-sm shadow-[0_0_20px_rgba(249,115,22,0.5)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer border border-orange-400"
+            >
+              <span>🎉 Advance to Offseason Hub</span>
+              <ChevronRight className="w-4 h-4 text-white" />
+            </button>
           </div>
         )}
       </div>
