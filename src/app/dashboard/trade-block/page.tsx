@@ -1,0 +1,552 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useGameStore } from "@/store/useGameStore";
+import { getTeamRoster } from "@/app/actions";
+import {
+  togglePlayerTradeBlockAction,
+  getTradeOffersAction,
+  executeUserTradeAction,
+} from "@/app/actions/tradeEngine";
+import {
+  Users,
+  Search,
+  Loader2,
+  Sparkles,
+  ArrowUpDown,
+  RefreshCw,
+  Coins,
+  ArrowLeftRight,
+  X,
+  ShieldAlert,
+} from "lucide-react";
+
+interface Player {
+  id: string;
+  teamId: string | null;
+  firstName: string;
+  lastName: string;
+  age: number;
+  hometown: string;
+  isFilAm: boolean;
+  overall: number;
+  salary: number;
+  position: string;
+  isOnTradeBlock: boolean;
+}
+
+type SortKey = "name" | "age" | "overall" | "salary" | "position";
+
+export default function TradeBlockPage() {
+  const router = useRouter();
+  const { userTeamId } = useGameStore();
+
+  const [mounted, setMounted] = useState(false);
+  const [playersList, setPlayersList] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Search/Sorting
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("overall");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  // Modal & Trade Finder State
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [offers, setOffers] = useState<any[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const loadRoster = async () => {
+    if (!userTeamId) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const rosterData = await getTeamRoster(userTeamId);
+      if (!rosterData) {
+        setError("Team roster details not found.");
+      } else {
+        setPlayersList(rosterData.players as Player[]);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load franchise roster.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mounted && userTeamId) {
+      loadRoster();
+    }
+  }, [mounted, userTeamId]);
+
+  if (!mounted || loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12 text-zinc-500">
+        <p className="mb-4">{error}</p>
+        <button
+          onClick={loadRoster}
+          className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-sm font-semibold cursor-pointer"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // Toggle Trade Block Status
+  const handleToggleBlock = async (playerId: string, currentVal: boolean) => {
+    setActionLoading(true);
+    try {
+      const newVal = !currentVal;
+      const res = await togglePlayerTradeBlockAction(playerId, newVal);
+      if (res.success) {
+        setPlayersList((prev) =>
+          prev.map((p) => (p.id === playerId ? { ...p, isOnTradeBlock: newVal } : p))
+        );
+      } else {
+        alert(res.error || "Failed to update player trade block status.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred while updating the trade block status.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Find Trade Offers
+  const handleFindOffers = async (player: Player) => {
+    setSelectedPlayer(player);
+    setIsModalOpen(true);
+    setScanning(true);
+    setOffers([]);
+    try {
+      const res = await getTradeOffersAction(player.id);
+      setOffers(res);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  // Accept Trade
+  const handleAcceptTrade = async (cpuPlayerId: string, cpuPlayerName: string) => {
+    if (!selectedPlayer) return;
+    const confirmTrade = confirm(
+      `Confirm Trade proposal:\nTrade away: ${selectedPlayer.firstName} ${selectedPlayer.lastName}\nReceive: ${cpuPlayerName}\n\nAre you sure you want to execute this trade?`
+    );
+    if (!confirmTrade) return;
+
+    setActionLoading(true);
+    try {
+      const res = await executeUserTradeAction(selectedPlayer.id, cpuPlayerId);
+      if (res.success) {
+        alert(" Blockbuster Trade executed successfully!");
+        setIsModalOpen(false);
+        // Reload layout budget calculations by reloading window
+        window.location.reload();
+      } else {
+        alert(res.error || "Failed to execute trade.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred during trade execution.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const formatPHP = (amount: number) => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const getOverallBadgeClass = (overall: number) => {
+    if (overall >= 90) return "bg-orange-500/10 text-orange-400 border border-orange-500/30";
+    if (overall >= 80) return "bg-purple-500/10 text-purple-400 border border-purple-500/30";
+    if (overall >= 70) return "bg-blue-500/10 text-blue-400 border border-blue-500/30";
+    return "bg-zinc-500/10 text-zinc-400 border border-zinc-500/30";
+  };
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortKey(key);
+      setSortAsc(false);
+    }
+  };
+
+  // Sort & Filter
+  const filteredPlayers = playersList
+    .filter((player) => {
+      const fullName = `${player.firstName} ${player.lastName}`.toLowerCase();
+      const pos = player.position.toLowerCase();
+      const query = searchQuery.toLowerCase();
+      return fullName.includes(query) || pos.includes(query);
+    })
+    .sort((a, b) => {
+      let valA: any = "";
+      let valB: any = "";
+
+      if (sortKey === "name") {
+        valA = `${a.firstName} ${a.lastName}`.toLowerCase();
+        valB = `${b.firstName} ${b.lastName}`.toLowerCase();
+      } else if (sortKey === "age") {
+        valA = a.age;
+        valB = b.age;
+      } else if (sortKey === "overall") {
+        valA = a.overall;
+        valB = b.overall;
+      } else if (sortKey === "salary") {
+        valA = a.salary;
+        valB = b.salary;
+      } else if (sortKey === "position") {
+        valA = a.position;
+        valB = b.position;
+      }
+
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+
+  return (
+    <div className="space-y-6 relative">
+      {actionLoading && (
+        <div className="fixed inset-0 bg-zinc-950/40 flex items-center justify-center z-50 backdrop-blur-xs">
+          <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+        </div>
+      )}
+
+      {/* Trade Block Roster Panel */}
+      <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-1">Franchise Trade Block</h3>
+            <p className="text-zinc-500 text-sm">
+              List players on the trade block to receive trade proposals from other teams in the league.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-64">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
+                <Search className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                placeholder="Search roster..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-800 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none transition-all"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Players List Table */}
+        <div className="overflow-x-auto rounded-xl border border-zinc-900">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-400 font-bold text-xs uppercase tracking-wider select-none">
+                <th
+                  onClick={() => handleSort("name")}
+                  className="py-4.5 px-6 cursor-pointer hover:bg-zinc-900 transition-colors w-1/4"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Player</span>
+                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("position")}
+                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Pos</span>
+                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("age")}
+                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Age</span>
+                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("salary")}
+                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Salary</span>
+                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort("overall")}
+                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>OVR</span>
+                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
+                  </div>
+                </th>
+                <th className="py-4.5 px-6 text-center">Status & Offers</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-900 bg-zinc-950/20">
+              {filteredPlayers.length > 0 ? (
+                filteredPlayers.map((player) => (
+                  <tr key={player.id} className="hover:bg-zinc-900/30 transition-all group">
+                    {/* Name */}
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg group-hover:border-zinc-700 transition-colors">
+                          <Users className="w-4.5 h-4.5 text-zinc-400 group-hover:text-orange-500 transition-colors" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-zinc-100 group-hover:text-white block transition-colors">
+                            {player.firstName} {player.lastName}
+                          </span>
+                          {player.isFilAm && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              Fil-Am
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Position */}
+                    <td className="py-4 px-4 text-center font-bold text-zinc-300">
+                      <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md text-xs">
+                        {player.position}
+                      </span>
+                    </td>
+
+                    {/* Age */}
+                    <td className="py-4 px-4 text-center font-semibold text-zinc-300">
+                      {player.age}
+                    </td>
+
+                    {/* Salary */}
+                    <td className="py-4 px-4 text-sm font-bold text-amber-500">
+                      {formatPHP(player.salary)}
+                    </td>
+
+                    {/* Overall Badge */}
+                    <td className="py-4 px-4 text-center">
+                      <span
+                        className={`inline-flex items-center justify-center font-extrabold text-sm w-9 h-9 rounded-xl shadow-sm ${getOverallBadgeClass(
+                          player.overall
+                        )}`}
+                      >
+                        {player.overall}
+                      </span>
+                    </td>
+
+                    {/* Trade Block Toggle & Finder Trigger */}
+                    <td className="py-4 px-6">
+                      <div className="flex items-center justify-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleToggleBlock(player.id, player.isOnTradeBlock)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              player.isOnTradeBlock ? "bg-orange-500" : "bg-zinc-800"
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                player.isOnTradeBlock ? "translate-x-5" : "translate-x-0"
+                              }`}
+                            />
+                          </button>
+                          <span className={`text-xs font-bold ${player.isOnTradeBlock ? "text-orange-400 animate-pulse" : "text-zinc-500"}`}>
+                            {player.isOnTradeBlock ? "On Block" : "Private"}
+                          </span>
+                        </div>
+
+                        {player.isOnTradeBlock && (
+                          <button
+                            onClick={() => handleFindOffers(player)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer shadow-[0_0_12px_rgba(249,115,22,0.15)] hover:shadow-[0_0_16px_rgba(249,115,22,0.35)] active:scale-[0.97]"
+                          >
+                            <span>🔍 Find Offers</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-zinc-500">
+                    No players found on your roster.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Incoming Offers Modal Component */}
+      {isModalOpen && selectedPlayer && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-3xl max-w-3xl w-full relative shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-zinc-900 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <ArrowLeftRight className="w-5 h-5 text-orange-500" />
+                  Trade Offers for {selectedPlayer.firstName} {selectedPlayer.lastName}
+                </h3>
+                <p className="text-zinc-500 text-xs mt-1">
+                  Position: {selectedPlayer.position} | Overall: {selectedPlayer.overall} | Salary: {formatPHP(selectedPlayer.salary)}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-xl cursor-pointer transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 md:p-8 overflow-y-auto flex-1">
+              {scanning ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
+                  <p className="text-zinc-400 text-sm font-semibold animate-pulse">
+                    Scanning league rosters for rational trade partners...
+                  </p>
+                </div>
+              ) : offers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-3 text-center">
+                  <div className="p-3.5 bg-red-500/10 text-red-400 rounded-full border border-red-500/20">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-white font-bold text-lg">No Counter-Offers Found</h4>
+                  <p className="text-zinc-500 text-sm max-w-md">
+                    No franchises are offering a balanced position swap matching our cap space and rating motivation criteria right now. Check back later or trade block another position group.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <p className="text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-2">
+                    Found {offers.length} viable mid-season swap options:
+                  </p>
+                  
+                  <div className="space-y-4">
+                    {offers.map((offer) => {
+                      const cpuPlayer = offer.cpuPlayer;
+                      const salaryDiff = cpuPlayer.salary - selectedPlayer.salary;
+                      const isCpuPayingMore = salaryDiff > 0;
+
+                      return (
+                        <div
+                          key={cpuPlayer.id}
+                          className="bg-zinc-900/20 border border-zinc-900 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 hover:border-zinc-800 transition-all duration-200"
+                        >
+                          <div className="flex-1 space-y-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-orange-400">
+                              {offer.cpuTeamCity} {offer.cpuTeamName}
+                            </h4>
+                            <p className="text-zinc-300 text-sm leading-relaxed">
+                              Receive{" "}
+                              <span className="font-bold text-emerald-400">
+                                {cpuPlayer.firstName} {cpuPlayer.lastName}
+                              </span>{" "}
+                              ({cpuPlayer.position}, <span className="font-semibold text-zinc-100">{cpuPlayer.overall} OVR</span>,{" "}
+                              <span className="font-bold text-amber-500">{formatPHP(cpuPlayer.salary)}</span>) in exchange for your player.
+                            </p>
+
+                            {/* Comparison block */}
+                            <div className="grid grid-cols-3 gap-2 py-2.5 text-center text-xs bg-zinc-950/80 rounded-xl border border-zinc-900/80">
+                              <div>
+                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">OVR</span>
+                                <span className="font-extrabold text-zinc-200">
+                                  {selectedPlayer.overall} ➔ {cpuPlayer.overall}{" "}
+                                  <span className={cpuPlayer.overall >= selectedPlayer.overall ? "text-emerald-400" : "text-red-400"}>
+                                    ({cpuPlayer.overall - selectedPlayer.overall >= 0 ? "+" : ""}{cpuPlayer.overall - selectedPlayer.overall})
+                                  </span>
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">Salary Change</span>
+                                <span className={`font-extrabold ${isCpuPayingMore ? "text-red-400" : "text-emerald-400"}`}>
+                                  {isCpuPayingMore ? "+" : ""}{formatPHP(salaryDiff)}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">Age</span>
+                                <span className="font-extrabold text-zinc-200">
+                                  {selectedPlayer.age} ➔ {cpuPlayer.age}{" "}
+                                  <span className={cpuPlayer.age <= selectedPlayer.age ? "text-emerald-400" : "text-zinc-500"}>
+                                    ({cpuPlayer.age - selectedPlayer.age >= 0 ? "+" : ""}{cpuPlayer.age - selectedPlayer.age})
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 flex items-center">
+                            <button
+                              onClick={() => handleAcceptTrade(cpuPlayer.id, `${cpuPlayer.firstName} ${cpuPlayer.lastName}`)}
+                              className="w-full md:w-auto flex items-center justify-center gap-1.5 px-5 py-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer shadow-sm active:scale-[0.98]"
+                            >
+                              <span>🤝 Accept Trade</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-zinc-950/60 border-t border-zinc-900/60 text-right">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 hover:text-zinc-200 rounded-xl text-xs font-bold text-zinc-400 transition-all cursor-pointer"
+              >
+                Close Window
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

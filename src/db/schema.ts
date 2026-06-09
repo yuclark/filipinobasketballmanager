@@ -33,6 +33,7 @@ export const players = pgTable("players", {
   isRookie: boolean("is_rookie").default(false).notNull(),
   injuryDaysRemaining: integer("injury_days_remaining").default(0).notNull(),
   injuryType: varchar("injury_type", { length: 100 }),
+  isOnTradeBlock: boolean("is_on_trade_block").default(false).notNull(),
 });
 
 export const games = pgTable("games", {

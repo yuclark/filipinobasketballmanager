@@ -551,12 +551,18 @@ export async function simulatePlayoffDayAction() {
         const championTeamId = w1 >= 4 ? team1Id : team2Id;
         const runnerUpTeamId = w1 >= 4 ? team2Id : team1Id;
         const seriesScoreStr = `${Math.max(w1, w2)}-${Math.min(w1, w2)}`;
-        const seasonYearVal = gfGames[0]?.seasonYear ?? new Date().getFullYear();
+        // Force direct database query against the games table to fetch the absolute ground-truth current season year
+        const lastGame = await db
+          .select({ year: games.seasonYear })
+          .from(games)
+          .orderBy(desc(games.seasonYear))
+          .limit(1);
+        const currentSeasonYear = lastGame[0]?.year ?? 2026;
 
-        console.log(`[Playoff Engine] Grand Finals complete! Champion: ${championTeamId}, Series: ${seriesScoreStr}`);
+        console.log(`[Playoff Engine] Grand Finals complete! Champion: ${championTeamId}, Series: ${seriesScoreStr}, Season: ${currentSeasonYear}`);
         
         // Run Finals MVP calculation sequentially directly on flat db
-        await calculateFinalsMvpAction(seasonYearVal, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) => {
+        await calculateFinalsMvpAction(currentSeasonYear, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) => {
           console.error("[Playoff Engine] Finals MVP calculation failed:", err);
         });
       }
