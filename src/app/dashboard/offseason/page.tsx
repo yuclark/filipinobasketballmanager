@@ -538,7 +538,7 @@ export default function OffseasonWizardPage() {
           setWizardSuccess("Draft completed successfully.");
         }
       } else {
-        setWizardError(res.error || "Simulation failed.");
+        setWizardError(res.error || res.message || "Simulation failed.");
       }
     } catch (e: any) {
       console.error(e);
@@ -664,7 +664,7 @@ export default function OffseasonWizardPage() {
 
         setWizardSuccess("Draft completed successfully.");
       } else {
-        setWizardError(res.error || "Simulation failed.");
+        setWizardError(res.error || res.message || "Simulation failed.");
       }
     } catch (e: any) {
       console.error(e);
