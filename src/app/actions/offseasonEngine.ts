@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull } from "drizzle-orm";
-import { players, teams, games, transactions } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks } from "@/db/schema";
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
@@ -579,5 +579,146 @@ export async function getDraftProspectsAction() {
   } catch (error: any) {
     console.error("Failed to fetch draft prospects:", error);
     return { success: false, prospects: [], error: error.message || "Failed to fetch prospects." };
+  }
+}
+
+export async function getUserDraftPicksAction(teamId: string) {
+  try {
+    const picks = await db
+      .select({
+        id: draftPicks.id,
+        ownerTeamId: draftPicks.ownerTeamId,
+        originalTeamId: draftPicks.originalTeamId,
+        season: draftPicks.season,
+        round: draftPicks.round,
+        pickNumber: draftPicks.pickNumber,
+        isUsed: draftPicks.isUsed,
+        originalTeamName: teams.name,
+        originalTeamCity: teams.city,
+      })
+      .from(draftPicks)
+      .leftJoin(teams, eq(draftPicks.originalTeamId, teams.id))
+      .where(and(eq(draftPicks.ownerTeamId, teamId), eq(draftPicks.isUsed, false)))
+      .orderBy(draftPicks.season, draftPicks.round);
+    return { success: true, picks };
+  } catch (error: any) {
+    console.error("Failed to fetch user draft picks:", error);
+    return { success: false, picks: [], error: error.message || "Failed to fetch draft picks." };
+  }
+}
+
+export async function runOffseasonFreeAgencyAction(userTeamId: string) {
+  try {
+    const allTeams = await db.select().from(teams);
+    const cpuTeams = allTeams.filter((t) => t.id !== userTeamId);
+    
+    // Fetch all active players
+    const allPlayers = await db
+      .select()
+      .from(players)
+      .where(eq(players.status, "Active"));
+
+    // Calculate rosters and payrolls
+    const rosters: Record<string, typeof allPlayers> = {};
+    for (const team of allTeams) {
+      rosters[team.id] = [];
+    }
+    const freeAgents: typeof allPlayers = [];
+    for (const player of allPlayers) {
+      if (player.teamId) {
+        if (!rosters[player.teamId]) rosters[player.teamId] = [];
+        rosters[player.teamId].push(player);
+      } else {
+        freeAgents.push(player);
+      }
+    }
+
+    // Sort free agents by overall descending
+    freeAgents.sort((a, b) => b.overall - a.overall);
+
+    const logs: string[] = [];
+    const SALARY_CAP = 50000000;
+
+    // CPU teams sign players if they have less than 12 players
+    for (const team of cpuTeams) {
+      const roster = rosters[team.id] || [];
+      let currentPayroll = roster.reduce((sum, p) => sum + p.salary, 0);
+      let rosterSize = roster.length;
+
+      if (rosterSize < 12) {
+        const slotsNeeded = 12 - rosterSize;
+
+        for (let i = 0; i < slotsNeeded; i++) {
+          const capRemaining = SALARY_CAP - currentPayroll;
+          // Find the best FA we can afford, or sign at min salary if cap space is less than 500k
+          let selectedFaIndex = -1;
+          for (let j = 0; j < freeAgents.length; j++) {
+            const fa = freeAgents[j];
+            if (fa.salary <= capRemaining || capRemaining < 500000) {
+              selectedFaIndex = j;
+              break;
+            }
+          }
+
+          if (selectedFaIndex !== -1) {
+            const fa = freeAgents[selectedFaIndex];
+            // Remove from free agents list
+            freeAgents.splice(selectedFaIndex, 1);
+
+            // Determine contract details
+            const contractYears = Math.floor(Math.random() * 2) + 2; // 2-3 years
+            const signingSalary = capRemaining >= fa.salary ? fa.salary : Math.max(500000, capRemaining);
+
+            await db
+              .update(players)
+              .set({
+                teamId: team.id,
+                contractYearsRemaining: contractYears,
+                salary: signingSalary,
+              })
+              .where(eq(players.id, fa.id));
+
+            // Log it
+            const msg = `✍️ [${team.city} ${team.name}] signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) for ₱${signingSalary.toLocaleString("en-PH")}/yr.`;
+            logs.push(msg);
+
+            const lastGame = await db
+              .select({ year: games.seasonYear })
+              .from(games)
+              .orderBy(desc(games.seasonYear))
+              .limit(1);
+            const currentYear = lastGame[0]?.year ?? 2026;
+
+            await db.insert(transactions).values({
+              type: "Signing",
+              description: msg,
+              seasonYear: currentYear,
+              gameDay: 82,
+            });
+
+            currentPayroll += signingSalary;
+            rosterSize++;
+          }
+        }
+      }
+    }
+
+    // Run the safety net sweep to enforce all rules (waive excess, minimum signings if any left)
+    await enforceLeagueRosterLimitsAction();
+
+    // Re-query free agents remaining
+    const remainingFAs = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.status, "Active"), isNull(players.teamId)));
+
+    return {
+      success: true,
+      cpuSignings: logs,
+      freeAgentsRemaining: remainingFAs.length,
+    };
+  } catch (error: any) {
+    console.error("runOffseasonFreeAgencyAction failed:", error);
+    return { success: false, error: error.message || "Failed to run offseason free agency." };
   }
 }

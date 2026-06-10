@@ -125,6 +125,9 @@ async function main() {
     await db.delete(schema.seasonChampions);
     console.log(" - Truncated season_champions");
 
+    await db.delete(schema.draftPicks);
+    console.log(" - Truncated draft_picks");
+
     console.log("Truncating core players and teams tables...");
 
     await db.delete(schema.players);
@@ -146,6 +149,32 @@ async function main() {
       .returning();
 
     console.log(`Successfully seeded ${insertedTeams.length} teams.`);
+
+    // 2.5 SEED 2026 DRAFT PICKS FOR ALL TEAMS
+    console.log("Generating 2026 draft picks...");
+    const draftPicksToInsert: Array<typeof schema.draftPicks.$inferInsert> = [];
+    for (const team of insertedTeams) {
+      // Round 1
+      draftPicksToInsert.push({
+        ownerTeamId: team.id,
+        originalTeamId: team.id,
+        season: 2026,
+        round: 1,
+        pickNumber: null,
+        isUsed: false,
+      });
+      // Round 2
+      draftPicksToInsert.push({
+        ownerTeamId: team.id,
+        originalTeamId: team.id,
+        season: 2026,
+        round: 2,
+        pickNumber: null,
+        isUsed: false,
+      });
+    }
+    await db.insert(schema.draftPicks).values(draftPicksToInsert);
+    console.log(`Successfully seeded ${draftPicksToInsert.length} draft picks.`);
 
     // 3. SEED EXACTLY 15 PLAYERS PER TEAM (450 TOTAL)
     const playersToInsert: Array<typeof schema.players.$inferInsert> = [];

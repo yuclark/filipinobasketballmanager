@@ -327,7 +327,7 @@ export default function SchedulePage() {
         }
 
         if (res.status === "ERROR") {
-          alert("Simulation failed. Please check team states and try again.");
+          setToastMessage("Simulation failed. Please check team states and try again.");
           break;
         }
 

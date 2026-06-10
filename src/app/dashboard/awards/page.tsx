@@ -38,6 +38,7 @@ export default function AwardsCeremonyPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [individualAwards, setIndividualAwards] = useState<AwardItem[]>([]);
   const [allLeagueTeamsData, setAllLeagueTeamsData] = useState<AllLeagueItem[]>([]);
@@ -74,16 +75,17 @@ export default function AwardsCeremonyPage() {
 
   const handleInitializePlayoffs = async () => {
     setActionLoading(true);
+    setActionError(null);
     try {
       const res = await initializePlayoffsAction();
       if (res.success) {
         router.push("/dashboard/playoffs");
       } else {
-        alert("Failed to initialize playoffs. Please try again.");
+        setActionError(res.error || "Failed to initialize playoffs. Please try again.");
       }
     } catch (err: any) {
       console.error(err);
-      alert("An error occurred while initializing playoffs. Please try again.");
+      setActionError(err.message || "An error occurred while initializing playoffs. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -401,6 +403,14 @@ export default function AwardsCeremonyPage() {
           </div>
         </div>
       </div>
+
+      {/* Action Error Banner */}
+      {actionError && (
+        <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400 font-semibold flex justify-between items-center">
+          <span>⚠️ {actionError}</span>
+          <button onClick={() => setActionError(null)} className="text-xs underline hover:text-red-300">Dismiss</button>
+        </div>
+      )}
 
       {/* ─── BOTTOM CONTROL BANNER ─── */}
       <div className="bg-gradient-to-r from-orange-500/5 to-amber-500/5 border border-orange-500/20 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl overflow-hidden relative">

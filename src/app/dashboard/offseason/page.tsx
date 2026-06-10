@@ -10,6 +10,8 @@ import {
   processPlayerEvolutionAction,
   executeDraftPickAction,
   getDraftProspectsAction,
+  getUserDraftPicksAction,
+  runOffseasonFreeAgencyAction,
 } from "@/app/actions/offseasonEngine";
 import {
   getExpiringPlayersAction,
@@ -139,6 +141,15 @@ export default function OffseasonWizardPage() {
   // Phase 5: Launch State
   const [nextSeasonYear, setNextSeasonYear] = useState<number>(2027);
 
+  // Draft Picks State
+  const [userDraftPicks, setUserDraftPicks] = useState<any[]>([]);
+
+  // Phase 5: Free Agency State
+  const [freeAgencySimulated, setFreeAgencySimulated] = useState<boolean>(false);
+  const [freeAgencyLogs, setFreeAgencyLogs] = useState<string[]>([]);
+  const [freeAgencyRunning, setFreeAgencyRunning] = useState<boolean>(false);
+  const [freeAgentsCount, setFreeAgentsCount] = useState<number>(0);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -159,6 +170,8 @@ export default function OffseasonWizardPage() {
       lotteryRun: updates.lotteryRun ?? lotteryRun,
       currentPickIndex: updates.currentPickIndex ?? currentPickIndex,
       pickHistory: updates.pickHistory ?? pickHistory,
+      freeAgencySimulated: updates.freeAgencySimulated !== undefined ? updates.freeAgencySimulated : freeAgencySimulated,
+      freeAgencyLogs: updates.freeAgencyLogs !== undefined ? updates.freeAgencyLogs : freeAgencyLogs,
     };
     localStorage.setItem("filipino-basketball-manager-offseason-wizard", JSON.stringify(state));
   };
@@ -208,6 +221,8 @@ export default function OffseasonWizardPage() {
           if (loadedState.lotteryRun) setLotteryRun(loadedState.lotteryRun);
           if (loadedState.currentPickIndex !== undefined) setCurrentPickIndex(loadedState.currentPickIndex);
           if (loadedState.pickHistory) setPickHistory(loadedState.pickHistory);
+          if (loadedState.freeAgencySimulated !== undefined) setFreeAgencySimulated(loadedState.freeAgencySimulated);
+          if (loadedState.freeAgencyLogs) setFreeAgencyLogs(loadedState.freeAgencyLogs);
         } catch (e) {
           console.error("Failed to parse saved wizard state:", e);
         }
@@ -243,6 +258,12 @@ export default function OffseasonWizardPage() {
           if (prospectsRes.prospects.length > 0) {
             setSelectedProspectId(prospectsRes.prospects[0].id);
           }
+        }
+
+        // Fetch user draft picks
+        const picksRes = await getUserDraftPicksAction(userTeamId);
+        if (picksRes.success && picksRes.picks) {
+          setUserDraftPicks(picksRes.picks);
         }
       }
 
@@ -557,7 +578,39 @@ export default function OffseasonWizardPage() {
     saveWizardState({ currentPhase: 5 });
   };
 
-  // Phase 5 Actions: Pre-Season Launch
+  const proceedToPhase6 = () => {
+    setCurrentPhase(6);
+    saveWizardState({ currentPhase: 6 });
+  };
+
+  // Phase 5 Actions: Free Agency Simulation
+  const handleSimulateFreeAgency = async () => {
+    if (!userTeamId) return;
+    setFreeAgencyRunning(true);
+    setWizardError(null);
+    try {
+      const res = await runOffseasonFreeAgencyAction(userTeamId);
+      if (res.success && res.cpuSignings) {
+        setFreeAgencyLogs(res.cpuSignings);
+        setFreeAgentsCount(res.freeAgentsRemaining ?? 0);
+        setFreeAgencySimulated(true);
+        saveWizardState({
+          freeAgencySimulated: true,
+          freeAgencyLogs: res.cpuSignings,
+        });
+        setWizardSuccess("CPU free agency simulation complete!");
+      } else {
+        setWizardError(res.error || "Failed to simulate CPU free agency.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError(e.message || "Failed to run offseason free agency.");
+    } finally {
+      setFreeAgencyRunning(false);
+    }
+  };
+
+  // Phase 6 Actions: Pre-Season Launch
   const handleLaunchSeason = async () => {
     try {
       setLaunching(true);
@@ -614,7 +667,8 @@ export default function OffseasonWizardPage() {
     { id: 2, name: "Evolution", desc: "Roster Progression" },
     { id: 3, name: "Draft Lottery", desc: "Pick Drawing" },
     { id: 4, name: "Rookie Draft", desc: "Interactive Draft" },
-    { id: 5, name: "Pre-Season", desc: "Season Initialization" },
+    { id: 5, name: "Free Agency", desc: "CPU Signings" },
+    { id: 6, name: "Pre-Season", desc: "Season Initialization" },
   ];
 
   const userTeam = draftOrder.find((t) => t.id === userTeamId);
@@ -659,7 +713,7 @@ export default function OffseasonWizardPage() {
         </div>
 
         {/* Stepper Steps UI */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           {phases.map((p) => {
             const isActive = currentPhase === p.id;
             const isCompleted = currentPhase > p.id;
@@ -1189,16 +1243,40 @@ export default function OffseasonWizardPage() {
                   <CheckCircle className="w-10 h-10 text-green-400 mx-auto" />
                   <h6 className="font-extrabold text-white text-sm">Rookie Draft Complete</h6>
                   <p className="text-zinc-400 text-xs leading-relaxed">
-                    All 30 draft positions have successfully selected prospects. Proceed to the final launch stage to set up the next season schedule.
+                    All 30 draft positions have successfully selected prospects. Proceed to the free agency phase.
                   </p>
                   <button
                     onClick={proceedToPhase5}
                     className="w-full py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-bold text-xs border border-zinc-800 transition-all cursor-pointer"
                   >
-                    Proceed to Pre-Season
+                    Proceed to Free Agency
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* Your Draft Picks Card */}
+            <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-3 shadow-lg">
+              <h5 className="font-bold text-white text-sm border-b border-zinc-900 pb-2">Your Draft Picks</h5>
+              <div className="space-y-2">
+                {userDraftPicks.map((pick) => (
+                  <div key={pick.id} className="flex justify-between items-center py-2 border-b border-zinc-900 last:border-0 text-xs">
+                    <span className="text-zinc-400 font-bold">Season {pick.season} — Round {pick.round}</span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
+                      pick.round === 1 
+                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                        : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                    }`}>
+                      Round {pick.round} Pick
+                    </span>
+                  </div>
+                ))}
+                {userDraftPicks.length === 0 && (
+                  <div className="text-center py-3 text-zinc-600 text-xs italic">
+                    No draft picks registered for your franchise.
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Pick History Log */}
@@ -1240,8 +1318,124 @@ export default function OffseasonWizardPage() {
         </div>
       )}
 
-      {/* PHASE 5: Season Setup */}
+      {/* PHASE 5: Free Agency */}
       {currentPhase === 5 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-4 shadow-lg">
+              <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+                <div className="flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-orange-400" />
+                  <h4 className="font-bold text-white text-base">Offseason Free Agency Market</h4>
+                </div>
+              </div>
+
+              <p className="text-zinc-400 text-sm leading-relaxed">
+                Before initiating the regular season, player rosters must comply with the 12-18 player limit. 
+                You can browse and sign available free agents directly from the Free Agency hub.
+              </p>
+
+              <div className="pt-2 flex justify-start">
+                <a
+                  href="/dashboard/free-agency"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 rounded-xl font-bold text-xs flex items-center gap-2 transition-all hover:scale-[1.02]"
+                >
+                  <span>Browse Free Agency Hub ↗</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Simulation log */}
+            {freeAgencySimulated && (
+              <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-3 shadow-lg">
+                <h5 className="font-bold text-white text-sm border-b border-zinc-900 pb-2">CPU Signings Log</h5>
+                <div className="bg-zinc-950/80 rounded-2xl border border-zinc-900 p-4 h-[250px] overflow-y-auto space-y-2">
+                  {freeAgencyLogs.map((log, idx) => (
+                    <div key={idx} className="text-xs text-zinc-300 font-semibold py-1 border-b border-zinc-900 last:border-0">
+                      {log}
+                    </div>
+                  ))}
+                  {freeAgencyLogs.length === 0 && (
+                    <div className="text-center py-8 text-zinc-500 italic text-xs">
+                      All CPU teams had compliant rosters. No signings were needed.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Simulation Console */}
+          <div className="space-y-6">
+            <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-5 shadow-lg">
+              <h5 className="font-bold text-white text-sm border-b border-zinc-900 pb-2">Simulation Panel</h5>
+
+              {!freeAgencySimulated ? (
+                <div className="space-y-3">
+                  <p className="text-zinc-500 text-xs leading-relaxed font-semibold">
+                    Simulate offseason signings for CPU-managed teams. The AI will evaluate their rosters, calculate remaining cap space, and recruit available free agents.
+                  </p>
+                  <button
+                    onClick={handleSimulateFreeAgency}
+                    disabled={freeAgencyRunning}
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-xs shadow-md transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer"
+                  >
+                    {freeAgencyRunning ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Flame className="w-4 h-4" />
+                    )}
+                    <span>Simulate CPU Free Agency</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-green-500/5 border border-green-500/25 p-5 rounded-2xl text-center space-y-3">
+                  <CheckCircle className="w-10 h-10 text-green-400 mx-auto" />
+                  <h6 className="font-extrabold text-white text-sm">Free Agency Finalized</h6>
+                  <p className="text-zinc-400 text-xs leading-relaxed">
+                    CPU teams have completed their roster updates. Remaining free agents: <span className="font-extrabold text-white">{freeAgentsCount}</span>.
+                  </p>
+                  <button
+                    onClick={proceedToPhase6}
+                    className="w-full py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-bold text-xs border border-zinc-800 transition-all cursor-pointer"
+                  >
+                    Proceed to Pre-Season
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Always-Visible Draft Picks Card */}
+            <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-3 shadow-lg">
+              <h5 className="font-bold text-white text-sm border-b border-zinc-900 pb-2">Your Draft Picks</h5>
+              <div className="space-y-2">
+                {userDraftPicks.map((pick) => (
+                  <div key={pick.id} className="flex justify-between items-center py-2 border-b border-zinc-900 last:border-0 text-xs">
+                    <span className="text-zinc-400 font-bold">Season {pick.season} — Round {pick.round}</span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
+                      pick.round === 1 
+                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                        : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"
+                    }`}>
+                      Round {pick.round} Pick
+                    </span>
+                  </div>
+                ))}
+                {userDraftPicks.length === 0 && (
+                  <div className="text-center py-3 text-zinc-600 text-xs italic">
+                    No draft picks registered for your franchise.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PHASE 6: Season Setup */}
+      {currentPhase === 6 && (
         <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-10 text-center max-w-2xl mx-auto shadow-2xl relative overflow-hidden space-y-8">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-orange-500/5 blur-[80px] rounded-full pointer-events-none" />
           <Sparkles className="w-16 h-16 text-orange-500 mx-auto animate-pulse" />
