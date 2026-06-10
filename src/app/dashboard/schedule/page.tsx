@@ -393,8 +393,18 @@ export default function SchedulePage() {
       const opponentScore = game.opponentScore !== undefined ? game.opponentScore : (isHome ? game.awayScore : game.homeScore);
       const userWon = game.userWon !== undefined ? game.userWon : (isHome ? (game.homeScore > game.awayScore) : (game.awayScore > game.homeScore));
 
+      const homeTeamName = game.homeTeam ? `${game.homeTeam.city} ${game.homeTeam.name}` : (isHome ? userTeamName : opponentName);
+      const awayTeamName = game.awayTeam ? `${game.awayTeam.city} ${game.awayTeam.name}` : (isHome ? opponentName : userTeamName);
+      const homeScore = isHome ? userScore : opponentScore;
+      const awayScore = isHome ? opponentScore : userScore;
+
       setSelectedGame({
         ...game,
+        day: game.gameNumber || game.day,
+        homeTeamName,
+        awayTeamName,
+        homeScore,
+        awayScore,
         userTeamName,
         opponentName,
         userScore,
@@ -409,6 +419,7 @@ export default function SchedulePage() {
       setLoadingBoxScore(false);
     }
   };
+
 
 
   const hasSchedule = gamesList.length > 0;
@@ -820,69 +831,77 @@ export default function SchedulePage() {
 
       {/* 3. Box Score Modal */}
       {selectedGame && (
-        <div className="fixed inset-0 bg-zinc-950/80 flex items-center justify-center z-40 p-4 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setSelectedGame(null)}
           />
 
-          {/* Modal panel */}
-          <div className="relative z-10 w-full max-w-4xl max-h-[85vh] overflow-y-auto bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl">
+          {/* Modal — flex column so header is fixed and body scrolls independently */}
+          <div className="relative z-10 w-full max-w-5xl flex flex-col bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl"
+            style={{ maxHeight: '88vh' }}>
 
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] sticky top-0 bg-[var(--color-surface)] z-10">
-              <div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[13px] text-[var(--color-text-muted)]">{selectedGame.date}</span>
-                  <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded ${
-                    selectedGame.userWon
-                      ? 'bg-[var(--color-success-dim)] text-[var(--color-success)]'
-                      : 'bg-[var(--color-error-dim)] text-[var(--color-error)]'
-                  }`}>
-                    {selectedGame.userWon ? 'WIN' : 'LOSS'}
-                  </span>
+            {/* HEADER — NOT inside the scroll container */}
+            <div className="flex-shrink-0 px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] rounded-t-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-[var(--color-text-faint)] mb-1">
+                    {selectedGame.date} · Regular Season · Day {selectedGame.day}
+                  </p>
+                  {/* Score display */}
+                  <div className="flex items-center gap-4 mt-1">
+                    <div className="text-center">
+                      <p className="text-[12px] text-[var(--color-text-muted)] mb-0.5">{selectedGame.homeTeamName}</p>
+                      <p className="text-4xl font-display font-bold tracking-tight text-[var(--color-text)]">
+                        {selectedGame.homeScore}
+                      </p>
+                    </div>
+                    <div className="text-center px-3">
+                      <p className="text-[13px] font-bold text-[var(--color-text-faint)]">—</p>
+                      <p className="text-[10px] font-semibold tracking-widest uppercase text-[var(--color-text-faint)] mt-0.5">Final</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[12px] text-[var(--color-text-muted)] mb-0.5">{selectedGame.awayTeamName}</p>
+                      <p className="text-4xl font-display font-bold tracking-tight text-[var(--color-text)]">
+                        {selectedGame.awayScore}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <h2 className="font-display text-xl font-bold tracking-tight mt-1 text-white">
-                  {selectedGame.userTeamName} <span className="text-[var(--color-primary)]">{selectedGame.userScore}</span>
-                  <span className="text-[var(--color-text-faint)] mx-2">—</span>
-                  <span className="text-[var(--color-primary)]">{selectedGame.opponentScore}</span> {selectedGame.opponentName}
-                </h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedGame(null)}
+                  className="flex-shrink-0 p-2 rounded-lg hover:bg-[var(--color-surface-3)] text-[var(--color-text-faint)] hover:text-[var(--color-text)] transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedGame(null)}
-                className="p-2 rounded-lg hover:bg-[var(--color-surface-3)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
-            {loadingBoxScore ? (
-              <div className="flex justify-center items-center py-20">
-                <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
-              </div>
-            ) : (
-              <>
-                {/* Box Score — User Team */}
-                <div className="px-6 py-4">
-                  <p className="text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--color-text-faint)] mb-3">
-                    {selectedGame.userTeamName}
-                  </p>
-                  <BoxScoreTable players={selectedGame.userBoxScore} />
+            {/* SCROLLABLE BODY — only this part scrolls */}
+            <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 space-y-6">
+              {loadingBoxScore ? (
+                <div className="flex justify-center items-center py-20">
+                  <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
                 </div>
-
-                <div className="border-t border-[var(--color-border)]" />
-
-                {/* Box Score — Opponent Team */}
-                <div className="px-6 py-4">
-                  <p className="text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--color-text-faint)] mb-3">
-                    {selectedGame.opponentName}
-                  </p>
-                  <BoxScoreTable players={selectedGame.opponentBoxScore} />
-                </div>
-              </>
-            )}
+              ) : (
+                <>
+                  {/* Home Team Box Score */}
+                  <BoxScoreTable
+                    teamName={selectedGame.homeTeamName}
+                    players={selectedGame.userBoxScore}
+                    isWinner={selectedGame.homeScore > selectedGame.awayScore}
+                  />
+                  {/* Away Team Box Score */}
+                  <BoxScoreTable
+                    teamName={selectedGame.awayTeamName}
+                    players={selectedGame.opponentBoxScore}
+                    isWinner={selectedGame.awayScore > selectedGame.homeScore}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -937,49 +956,147 @@ export default function SchedulePage() {
   );
 }
 
-function BoxScoreTable({ players }: { players: any[] }) {
-  if (!players || players.length === 0) {
-    return <p className="text-[13px] text-[var(--color-text-faint)]">No box score data available.</p>;
-  }
-
+function BoxScoreTable({ teamName, players, isWinner }: {
+  teamName: string;
+  players: any[];
+  isWinner: boolean;
+}) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-[var(--color-border)]">
-            {['Player', 'POS', 'MIN', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'FGM/A', '3PM/A', 'FTM/A'].map(col => (
-              <th key={col} className="text-left px-3 py-2 text-[10px] font-semibold tracking-[0.1em] uppercase text-[var(--color-text-faint)] whitespace-nowrap">
-                {col}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {players.map((player, i) => (
-            <tr key={i} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)] transition-colors">
-              <td className="px-3 py-2">
-                <span className="text-[13px] font-semibold text-white">{player.name}</span>
-                {player.isFilAm && (
-                  <span className="ml-1.5 text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
-                    FIL-AM
-                  </span>
-                )}
-              </td>
-              <td className="px-3 py-2 text-[12px] text-[var(--color-text-muted)]">{player.position}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.minutes ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] font-bold text-[var(--color-text)]">{player.points ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.rebounds ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.assists ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.steals ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.blocks ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.turnovers ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.fgm ?? 0}/{player.fga ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.threepm ?? 0}/{player.threepa ?? 0}</td>
-              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.ftm ?? 0}/{player.fta ?? 0}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      {/* Team header row */}
+      <div className="flex items-center gap-2 mb-2">
+        <p className="text-[11px] font-bold tracking-[0.12em] uppercase text-[var(--color-text-muted)]">
+          {teamName}
+        </p>
+        {isWinner && (
+          <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-[var(--color-success-dim)] text-[var(--color-success)] border border-[var(--color-success)]/20">
+            Winner
+          </span>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+                {[
+                  { label: 'Player', wide: true },
+                  { label: 'POS' }, { label: 'MIN' },
+                  { label: 'PTS', highlight: true },
+                  { label: 'REB' }, { label: 'AST' },
+                  { label: 'STL' }, { label: 'BLK' }, { label: 'TO' },
+                  { label: 'FGM/A' }, { label: '3PM/A' }, { label: 'FTM/A' },
+                ].map(col => (
+                  <th
+                    key={col.label}
+                    className={`
+                      px-3 py-2 text-[10px] font-semibold tracking-[0.1em] uppercase whitespace-nowrap
+                      ${col.highlight ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-faint)]'}
+                      ${col.wide ? 'min-w-[140px]' : 'text-right min-w-[48px]'}
+                    `}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {players && players.length > 0 ? players.map((p, i) => {
+                const isTopScorer = p.points === Math.max(...players.map(x => x.points ?? 0));
+                return (
+                  <tr
+                    key={i}
+                    className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)] transition-colors duration-75"
+                  >
+                    {/* Player name */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[13px] font-semibold ${isTopScorer ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>
+                          {p.name}
+                        </span>
+                        {p.isFilAm && (
+                          <span className="text-[9px] font-bold tracking-wider uppercase px-1 py-0.5 rounded bg-[var(--color-gold-dim)] text-[var(--color-gold)]">
+                            FIL-AM
+                          </span>
+                        )}
+                        {isTopScorer && (
+                          <span className="text-[9px] font-bold tracking-wider uppercase px-1 py-0.5 rounded bg-[var(--color-primary-dim)] text-[var(--color-primary)]">
+                            TOP
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    {/* POS */}
+                    <td className="px-3 py-2.5 text-right text-[11px] text-[var(--color-text-faint)]">{p.position ?? '—'}</td>
+                    {/* MIN */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.minutes ?? 0}</td>
+                    {/* PTS — highlighted */}
+                    <td className="px-3 py-2.5 text-right">
+                      <span className={`text-[13px] font-bold ${(p.points ?? 0) >= 20 ? 'text-[var(--color-primary)]' : 'text-[var(--color-text)]'}`}>
+                        {p.points ?? 0}
+                      </span>
+                    </td>
+                    {/* REB */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.rebounds ?? 0}</td>
+                    {/* AST */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.assists ?? 0}</td>
+                    {/* STL */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.steals ?? 0}</td>
+                    {/* BLK */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.blocks ?? 0}</td>
+                    {/* TO */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.turnovers ?? 0}</td>
+                    {/* FGM/A */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.fgm ?? 0}/{p.fga ?? 0}</td>
+                    {/* 3PM/A */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.threepm ?? 0}/{p.threepa ?? 0}</td>
+                    {/* FTM/A */}
+                    <td className="px-3 py-2.5 text-right text-[12px] text-[var(--color-text-muted)]">{p.ftm ?? 0}/{p.fta ?? 0}</td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td colSpan={12} className="px-4 py-6 text-center text-[13px] text-[var(--color-text-faint)]">
+                    No box score data available.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {/* Team totals footer */}
+            {players && players.length > 0 && (
+              <tfoot>
+                <tr className="bg-[var(--color-surface-2)] border-t border-[var(--color-border)]">
+                  <td className="px-3 py-2 text-[11px] font-semibold text-[var(--color-text-faint)]">TOTALS</td>
+                  <td></td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-muted)]">
+                    {players.reduce((s, p) => s + (p.minutes ?? 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[12px] font-bold text-[var(--color-primary)]">
+                    {players.reduce((s, p) => s + (p.points ?? 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-muted)]">
+                    {players.reduce((s, p) => s + (p.rebounds ?? 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-muted)]">
+                    {players.reduce((s, p) => s + (p.assists ?? 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-muted)]">
+                    {players.reduce((s, p) => s + (p.steals ?? 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-muted)]">
+                    {players.reduce((s, p) => s + (p.blocks ?? 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-muted)]">
+                    {players.reduce((s, p) => s + (p.turnovers ?? 0), 0)}
+                  </td>
+                  <td colSpan={3}></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
