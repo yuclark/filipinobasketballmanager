@@ -131,4 +131,5 @@ export const draftPicks = pgTable('draft_picks', {
   round: integer('round').notNull(), // 1 or 2
   pickNumber: integer('pick_number'),  // 1–60, null until lottery run
   isUsed: boolean('is_used').default(false).notNull(),
+  isAvailable: boolean('is_available').default(false).notNull(),
 });

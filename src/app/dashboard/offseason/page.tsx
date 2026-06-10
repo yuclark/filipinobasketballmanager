@@ -13,6 +13,8 @@ import {
   getUserDraftPicksAction,
   runOffseasonFreeAgencyAction,
   getDraftSessionPicksAction,
+  simulateCpuPicksAction,
+  autoCompleteDraftAction,
 } from "@/app/actions/offseasonEngine";
 import {
   getExpiringPlayersAction,
@@ -148,6 +150,8 @@ export default function OffseasonWizardPage() {
   const [evolutionResults, setEvolutionResults] = useState<any>(null);
   const [showRegressions, setShowRegressions] = useState(false);
   const [sessionPicks, setSessionPicks] = useState<any[]>([]);
+  const [evolutionTab, setEvolutionTab] = useState<"my-team" | "league-wide">("my-team");
+  const [myTeamFilter, setMyTeamFilter] = useState<"all" | "improved" | "declined">("all");
 
   // Phase 5: Free Agency State
   const [freeAgencySimulated, setFreeAgencySimulated] = useState<boolean>(false);
@@ -495,82 +499,178 @@ export default function OffseasonWizardPage() {
   };
 
   // Phase 4 Actions: Rookie Draft Room
-  const runDraftSimulation = async (
-    startIndex: number,
-    currentProspects: Prospect[],
-    history: DraftPick[],
-    autoDraftUser: boolean = false,
-    autoDraftEntireRemaining: boolean = false
-  ) => {
-    if (draftingActive) return;
+  const handleStartCpuPicks = async () => {
+    if (draftingActive || !userTeamId) return;
     setDraftingActive(true);
-
-    let idx = startIndex;
-    let localProspects = [...currentProspects];
-    let localHistory = [...history];
-
-    const draftedIds = new Set(localHistory.map((h) => h.player.id));
-
-    while (idx < 60) {
-      const currentPick = sessionPicks[idx];
-      if (!currentPick) break;
-
-      const isUser = currentPick.ownerTeamId === userTeamId;
-
-      if (isUser && !autoDraftUser && !autoDraftEntireRemaining) {
-        // Pause and let user draft manually
-        setDraftingActive(false);
-        setProspects(localProspects);
-        setPickHistory(localHistory);
-        setCurrentPickIndex(idx);
-        saveWizardState({ currentPickIndex: idx, pickHistory: localHistory });
-        return;
-      }
-
-      // Find best available prospect
-      const available = localProspects.filter((p) => !draftedIds.has(p.id));
-      if (available.length === 0) break;
-
-      const bestPlayer = available.reduce((best, cur) => (cur.overall > best.overall ? cur : best), available[0]);
-
-      // Execute pick
-      const res = await executeDraftPickAction(currentPick.ownerTeamId!, bestPlayer.id, currentPick.pickNumber!, nextSeasonYear);
-      if (res.success) {
-        draftedIds.add(bestPlayer.id);
-        const pickDetails: DraftPick = {
-          team: { id: currentPick.ownerTeamId!, name: currentPick.ownerName!, city: currentPick.ownerCity! } as any,
-          player: bestPlayer,
-          pickNumber: idx + 1,
-        };
-        localHistory.push(pickDetails);
-        localProspects = localProspects.filter((p) => p.id !== bestPlayer.id);
-
-        setPickHistory([...localHistory]);
-        setProspects([...localProspects]);
-
-        idx++;
-        setCurrentPickIndex(idx);
-        saveWizardState({ currentPickIndex: idx, pickHistory: localHistory });
-
-        // If we only wanted to auto-draft a single user pick, stop here so the user sees the pick and CPU continues if needed
-        if (isUser && autoDraftUser && !autoDraftEntireRemaining) {
-          setDraftingActive(false);
-          // Now let CPU continue for remaining picks until user is up again
-          runDraftSimulation(idx, localProspects, localHistory, false, false);
-          return;
+    setWizardError(null);
+    setWizardSuccess(null);
+    try {
+      const res = (await simulateCpuPicksAction(userTeamId, nextSeasonYear)) as any;
+      if (res.success && res.selections) {
+        const newHistory = res.selections.map((sel: any) => ({
+          team: sel.team,
+          player: sel.player,
+          pickNumber: sel.pickNumber,
+        }));
+        const updatedHistory = [...pickHistory, ...newHistory];
+        setPickHistory(updatedHistory);
+        
+        const prospectsRes = await getDraftProspectsAction();
+        if (prospectsRes.success && prospectsRes.prospects) {
+          setProspects(prospectsRes.prospects as Prospect[]);
+          if (prospectsRes.prospects.length > 0) {
+            setSelectedProspectId(prospectsRes.prospects[0].id);
+          }
+        }
+        
+        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+        if (sessionRes.success && sessionRes.picks) {
+          setSessionPicks(sessionRes.picks);
         }
 
-        // Delay for visual feedback
-        await new Promise((r) => setTimeout(r, 600));
-      } else {
-        console.error("Draft pick failed:", res.error);
-        break;
-      }
-    }
+        const usedPicks = sessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
+        setCurrentPickIndex(usedPicks.length);
+        saveWizardState({ currentPickIndex: usedPicks.length, pickHistory: updatedHistory });
 
-    setDraftingActive(false);
-    if (idx >= 60) {
-      saveWizardState({ currentPickIndex: 60, pickHistory: localHistory });
+        if (res.status === "USER_ON_CLOCK") {
+          setWizardSuccess("Simulation paused — your team is now on the clock.");
+        } else if (res.status === "COMPLETED") {
+          setWizardSuccess("Draft completed successfully.");
+        }
+      } else {
+        setWizardError(res.error || "Simulation failed.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError(e.message || "Failed to run CPU draft simulation.");
+    } finally {
+      setDraftingActive(false);
+    }
+  };
+
+  const handleCpuDraftForUser = async () => {
+    if (draftingActive || !userTeamId) return;
+    const currentPick = sessionPicks[currentPickIndex];
+    if (!currentPick || currentPick.ownerTeamId !== userTeamId) return;
+
+    if (prospects.length === 0) return;
+    const bestPlayer = prospects.reduce((best, cur) => (cur.overall > best.overall ? cur : best), prospects[0]);
+
+    setDraftingActive(true);
+    setWizardError(null);
+    setWizardSuccess(null);
+    try {
+      const res = await executeDraftPickAction(userTeamId, bestPlayer.id, currentPick.pickNumber!, nextSeasonYear);
+      if (res.success) {
+        const pickDetails: DraftPick = {
+          team: { id: userTeamId, name: currentPick.ownerName!, city: currentPick.ownerCity! } as any,
+          player: bestPlayer,
+          pickNumber: currentPickIndex + 1,
+        };
+        const updatedHistory = [...pickHistory, pickDetails];
+        setPickHistory(updatedHistory);
+
+        const remainingProspects = prospects.filter((p) => p.id !== bestPlayer.id);
+        setProspects(remainingProspects);
+        if (remainingProspects.length > 0) {
+          setSelectedProspectId(remainingProspects[0].id);
+        }
+
+        const nextIdx = currentPickIndex + 1;
+        setCurrentPickIndex(nextIdx);
+        saveWizardState({ currentPickIndex: nextIdx, pickHistory: updatedHistory });
+
+        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+        if (sessionRes.success && sessionRes.picks) {
+          setSessionPicks(sessionRes.picks);
+        }
+
+        setDraftingActive(false);
+
+        setDraftingActive(true);
+        const cpuRes = (await simulateCpuPicksAction(userTeamId, nextSeasonYear)) as any;
+        if (cpuRes.success && cpuRes.selections) {
+          const newCpuHistory = cpuRes.selections.map((sel: any) => ({
+            team: sel.team,
+            player: sel.player,
+            pickNumber: sel.pickNumber,
+          }));
+          const finalHistory = [...updatedHistory, ...newCpuHistory];
+          setPickHistory(finalHistory);
+
+          const prospectsRes = await getDraftProspectsAction();
+          if (prospectsRes.success && prospectsRes.prospects) {
+            setProspects(prospectsRes.prospects as Prospect[]);
+            if (prospectsRes.prospects.length > 0) {
+              setSelectedProspectId(prospectsRes.prospects[0].id);
+            }
+          }
+
+          const finalSessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+          if (finalSessionRes.success && finalSessionRes.picks) {
+            setSessionPicks(finalSessionRes.picks);
+          }
+
+          const finalUsedPicks = finalSessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
+          setCurrentPickIndex(finalUsedPicks.length);
+          saveWizardState({ currentPickIndex: finalUsedPicks.length, pickHistory: finalHistory });
+
+          if (cpuRes.status === "USER_ON_CLOCK") {
+            setWizardSuccess("Simulation paused — your team is now on the clock.");
+          } else if (cpuRes.status === "COMPLETED") {
+            setWizardSuccess("Draft completed successfully.");
+          }
+        }
+      } else {
+        setWizardError(res.error || "Failed to execute auto-draft pick.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError(e.message || "Failed to let CPU draft.");
+    } finally {
+      setDraftingActive(false);
+    }
+  };
+
+  const handleAutoDraftEntireRemaining = async () => {
+    if (draftingActive || !userTeamId) return;
+    setDraftingActive(true);
+    setWizardError(null);
+    setWizardSuccess(null);
+    try {
+      const res = (await autoCompleteDraftAction(userTeamId, nextSeasonYear, true)) as any;
+      if (res.success && res.selections) {
+        const newHistory = res.selections.map((sel: any) => ({
+          team: sel.team,
+          player: sel.player,
+          pickNumber: sel.pickNumber,
+        }));
+        const updatedHistory = [...pickHistory, ...newHistory];
+        setPickHistory(updatedHistory);
+
+        const prospectsRes = await getDraftProspectsAction();
+        if (prospectsRes.success && prospectsRes.prospects) {
+          setProspects(prospectsRes.prospects as Prospect[]);
+        }
+
+        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+        if (sessionRes.success && sessionRes.picks) {
+          setSessionPicks(sessionRes.picks);
+        }
+
+        const usedPicks = sessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
+        setCurrentPickIndex(usedPicks.length);
+        saveWizardState({ currentPickIndex: usedPicks.length, pickHistory: updatedHistory });
+
+        setWizardSuccess("Draft completed successfully.");
+      } else {
+        setWizardError(res.error || "Simulation failed.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError(e.message || "Failed to auto-draft entire remaining draft.");
+    } finally {
+      setDraftingActive(false);
     }
   };
 
@@ -578,12 +678,14 @@ export default function OffseasonWizardPage() {
     if (!selectedProspectId || draftingActive) return;
 
     const currentPick = sessionPicks[currentPickIndex];
-    if (!currentPick || currentPick.ownerTeamId !== userTeamId) return; // Not user's turn
+    if (!currentPick || currentPick.ownerTeamId !== userTeamId) return;
 
     const selectedPlayer = prospects.find((p) => p.id === selectedProspectId);
     if (!selectedPlayer) return;
 
     setDraftingActive(true);
+    setWizardError(null);
+    setWizardSuccess(null);
     try {
       const res = await executeDraftPickAction(userTeamId!, selectedProspectId, currentPick.pickNumber!, nextSeasonYear);
       if (res.success) {
@@ -594,47 +696,68 @@ export default function OffseasonWizardPage() {
         };
 
         const updatedHistory = [...pickHistory, pickDetails];
-        const updatedProspects = prospects.filter((p) => p.id !== selectedProspectId);
-
         setPickHistory(updatedHistory);
-        setProspects(updatedProspects);
+
+        const remaining = prospects.filter((p) => p.id !== selectedProspectId);
+        setProspects(remaining);
+        if (remaining.length > 0) {
+          setSelectedProspectId(remaining[0].id);
+        }
         
         const nextIdx = currentPickIndex + 1;
         setCurrentPickIndex(nextIdx);
         saveWizardState({ currentPickIndex: nextIdx, pickHistory: updatedHistory });
 
-        // Select the next best prospect automatically
-        const remaining = updatedProspects;
-        if (remaining.length > 0) {
-          const nextBest = remaining.reduce((best, cur) => (cur.overall > best.overall ? cur : best), remaining[0]);
-          setSelectedProspectId(nextBest.id);
+        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+        if (sessionRes.success && sessionRes.picks) {
+          setSessionPicks(sessionRes.picks);
         }
 
         setDraftingActive(false);
 
-        // Immediately trigger CPU picks following user turn
-        await runDraftSimulation(nextIdx, remaining, updatedHistory, false, false);
+        setDraftingActive(true);
+        const cpuRes = (await simulateCpuPicksAction(userTeamId!, nextSeasonYear)) as any;
+        if (cpuRes.success && cpuRes.selections) {
+          const newCpuHistory = cpuRes.selections.map((sel: any) => ({
+            team: sel.team,
+            player: sel.player,
+            pickNumber: sel.pickNumber,
+          }));
+          const finalHistory = [...updatedHistory, ...newCpuHistory];
+          setPickHistory(finalHistory);
+
+          const prospectsRes = await getDraftProspectsAction();
+          if (prospectsRes.success && prospectsRes.prospects) {
+            setProspects(prospectsRes.prospects as Prospect[]);
+            if (prospectsRes.prospects.length > 0) {
+              setSelectedProspectId(prospectsRes.prospects[0].id);
+            }
+          }
+
+          const finalSessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+          if (finalSessionRes.success && finalSessionRes.picks) {
+            setSessionPicks(finalSessionRes.picks);
+          }
+
+          const finalUsedPicks = finalSessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
+          setCurrentPickIndex(finalUsedPicks.length);
+          saveWizardState({ currentPickIndex: finalUsedPicks.length, pickHistory: finalHistory });
+
+          if (cpuRes.status === "USER_ON_CLOCK") {
+            setWizardSuccess("Simulation paused — your team is now on the clock.");
+          } else if (cpuRes.status === "COMPLETED") {
+            setWizardSuccess("Draft completed successfully.");
+          }
+        }
       } else {
         setWizardError("Failed to draft selected player. Please check your selection and try again.");
-        setDraftingActive(false);
       }
     } catch (e) {
       console.error(e);
       setWizardError("Draft execution failed.");
+    } finally {
       setDraftingActive(false);
     }
-  };
-
-  const handleStartCpuPicks = async () => {
-    await runDraftSimulation(currentPickIndex, prospects, pickHistory, false, false);
-  };
-
-  const handleCpuDraftForUser = async () => {
-    await runDraftSimulation(currentPickIndex, prospects, pickHistory, true, false);
-  };
-
-  const handleAutoDraftEntireRemaining = async () => {
-    await runDraftSimulation(currentPickIndex, prospects, pickHistory, false, true);
   };
 
   const proceedToPhase5 = () => {
@@ -982,94 +1105,310 @@ export default function OffseasonWizardPage() {
 
           {evolutionLogs.length > 0 && (
             <div className="space-y-6">
-              {/* Stats Overview Grid */}
-              {evolutionResults && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
-                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Players Improved</span>
-                    <span className="text-2xl font-extrabold text-green-400 mt-2">+{evolutionResults.improvedCount}</span>
-                  </div>
-                  <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
-                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Players Regressed</span>
-                    <span className="text-2xl font-extrabold text-red-400 mt-2">-{evolutionResults.regressedCount}</span>
-                  </div>
-                  <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
-                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Biggest Leap</span>
-                    {evolutionResults.biggestLeap ? (
-                      <div className="mt-2">
-                        <span className="text-sm font-extrabold text-white block truncate">
-                          {evolutionResults.biggestLeap.playerName}
-                        </span>
-                        <span className="text-[10px] font-bold text-orange-400 block mt-0.5 truncate">
-                          {evolutionResults.biggestLeap.teamName} • +{evolutionResults.biggestLeap.deltaOverall} OVR
-                        </span>
+              {/* Evolution Tab Switcher */}
+              <div className="flex border-b border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setEvolutionTab("my-team")}
+                  className={`px-5 py-3 font-bold text-xs tracking-wider uppercase transition-all border-b-2 cursor-pointer ${
+                    evolutionTab === "my-team"
+                      ? "border-orange-500 text-orange-400 bg-orange-500/5"
+                      : "border-transparent text-zinc-500 hover:text-zinc-305 hover:bg-zinc-900/10"
+                  }`}
+                >
+                  My Team Evolution
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEvolutionTab("league-wide")}
+                  className={`px-5 py-3 font-bold text-xs tracking-wider uppercase transition-all border-b-2 cursor-pointer ${
+                    evolutionTab === "league-wide"
+                      ? "border-orange-500 text-orange-400 bg-orange-500/5"
+                      : "border-transparent text-zinc-500 hover:text-zinc-305 hover:bg-zinc-900/10"
+                  }`}
+                >
+                  League Wide
+                </button>
+              </div>
+
+              {evolutionTab === "my-team" ? (
+                /* My Team Layout */
+                (() => {
+                  const userEvolutionPlayers = evolutionResults?.players 
+                    ? evolutionResults.players.filter((p: any) => p.teamIdBefore === userTeamId)
+                    : [];
+
+                  // 1. Biggest Improver
+                  const myImproved = userEvolutionPlayers.filter((p: any) => p.deltaOverall > 0);
+                  const myBiggestImprover = myImproved.length > 0
+                    ? myImproved.reduce((max: any, p: any) => p.deltaOverall > max.deltaOverall ? p : max, myImproved[0])
+                    : null;
+
+                  // 2. Biggest Decliner
+                  const myDeclined = userEvolutionPlayers.filter((p: any) => p.deltaOverall < 0);
+                  const myBiggestDecliner = myDeclined.length > 0
+                    ? myDeclined.reduce((min: any, p: any) => p.deltaOverall < min.deltaOverall ? p : min, myDeclined[0])
+                    : null;
+
+                  // 3. Average Team OVR Change
+                  const activeUserPlayers = userEvolutionPlayers.filter((p: any) => p.status !== "retired");
+                  const avgOvrChange = activeUserPlayers.length > 0
+                    ? activeUserPlayers.reduce((sum: number, p: any) => sum + p.deltaOverall, 0) / activeUserPlayers.length
+                    : 0;
+
+                  // 4. Retirements and Departures
+                  const myRetirementsCount = userEvolutionPlayers.filter((p: any) => p.status === "retired").length;
+                  const myDeparturesCount = userEvolutionPlayers.filter((p: any) => p.status !== "retired" && p.teamIdAfter !== userTeamId).length;
+                  const totalDepartures = myRetirementsCount + myDeparturesCount;
+
+                  const getPlayerEvolutionStatus = (p: any) => {
+                    if (p.status === "retired") return "Retired";
+                    if (p.teamIdAfter === null) return "Free Agent";
+                    return "Active";
+                  };
+
+                  const filteredMyTeamPlayers = [...userEvolutionPlayers]
+                    .filter((p: any) => {
+                      if (myTeamFilter === "improved") return p.deltaOverall > 0;
+                      if (myTeamFilter === "declined") return p.deltaOverall < 0;
+                      return true;
+                    })
+                    .sort((a: any, b: any) => b.deltaOverall - a.deltaOverall);
+
+                  return (
+                    <div className="space-y-6">
+                      {/* My Team Summary Widgets */}
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                        {/* Avg OVR Change */}
+                        <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Avg Team OVR Change</span>
+                          <span className={`text-2xl font-extrabold mt-2 ${avgOvrChange > 0 ? "text-green-400" : avgOvrChange < 0 ? "text-red-400" : "text-zinc-400"}`}>
+                            {avgOvrChange > 0 ? "+" : ""}{avgOvrChange.toFixed(2)}
+                          </span>
+                        </div>
+
+                        {/* Biggest Improver */}
+                        <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Biggest Improver</span>
+                          {myBiggestImprover ? (
+                            <div className="mt-2">
+                              <span className="text-sm font-extrabold text-white block truncate">
+                                {myBiggestImprover.playerName}
+                              </span>
+                              <span className="text-[10px] font-bold text-green-400 block mt-0.5">
+                                +{myBiggestImprover.deltaOverall} OVR
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm font-extrabold text-zinc-600 mt-2">—</span>
+                          )}
+                        </div>
+
+                        {/* Biggest Decliner */}
+                        <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Biggest Decliner</span>
+                          {myBiggestDecliner ? (
+                            <div className="mt-2">
+                              <span className="text-sm font-extrabold text-white block truncate">
+                                {myBiggestDecliner.playerName}
+                              </span>
+                              <span className="text-[10px] font-bold text-red-400 block mt-0.5">
+                                {myBiggestDecliner.deltaOverall} OVR
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm font-extrabold text-zinc-650 mt-2">—</span>
+                          )}
+                        </div>
+
+                        {/* Retirements & Departures */}
+                        <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Retirements & Departures</span>
+                          <div className="mt-2">
+                            <span className="text-2xl font-extrabold text-amber-500 block">
+                              {totalDepartures}
+                            </span>
+                            <span className="text-[9px] font-semibold text-zinc-500 block mt-0.5">
+                              {myRetirementsCount} Retired • {myDeparturesCount} Free Agent
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    ) : (
-                      <span className="text-sm font-extrabold text-zinc-600 mt-2">—</span>
-                    )}
-                  </div>
-                </div>
-              )}
 
-              {/* Top 10 Tables */}
-              {evolutionResults && evolutionResults.players && (
-                <div className="bg-zinc-950/40 border border-zinc-900 rounded-2xl p-5 space-y-4">
-                  <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
-                    <h5 className="text-sm font-bold text-white">
-                      {showRegressions ? "Top 10 Offseason Regressions" : "Top 10 Most Improved Players"}
-                    </h5>
-                    <button
-                      type="button"
-                      onClick={() => setShowRegressions(!showRegressions)}
-                      className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-850 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                    >
-                      Show {showRegressions ? "Most Improved" : "Regressions"}
-                    </button>
-                  </div>
+                      {/* Roster Table */}
+                      <div className="bg-zinc-950/40 border border-zinc-900 rounded-2xl p-5 space-y-4">
+                        <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+                          <h5 className="text-sm font-bold text-white">My Team Evolution Details</h5>
+                          <div className="flex gap-1.5 bg-zinc-950 p-1 border border-zinc-900 rounded-xl">
+                            {(["all", "improved", "declined"] as const).map((filterVal) => (
+                              <button
+                                key={filterVal}
+                                type="button"
+                                onClick={() => setMyTeamFilter(filterVal)}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                                  myTeamFilter === filterVal
+                                    ? "bg-zinc-900 text-white"
+                                    : "text-zinc-500 hover:text-zinc-305"
+                                }`}
+                              >
+                                {filterVal === "all" ? "All Changes" : filterVal === "improved" ? "Most Improved" : "Most Declined"}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b border-zinc-900 text-zinc-500 font-bold uppercase tracking-wider">
-                          <th className="py-2 px-3">Rank</th>
-                          <th className="py-2 px-3">Player</th>
-                          <th className="py-2 px-3">Team</th>
-                          <th className="py-2 px-3 text-center">Age</th>
-                          <th className="py-2 px-3 text-center">Before</th>
-                          <th className="py-2 px-3 text-center">After</th>
-                          <th className="py-2 px-3 text-center">Delta</th>
-                          <th className="py-2 px-3">Key Changes</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-900 font-semibold text-zinc-300">
-                        {(showRegressions
-                          ? [...evolutionResults.players].filter((p: any) => p.deltaOverall < 0).reverse().slice(0, 10)
-                          : [...evolutionResults.players].filter((p: any) => p.deltaOverall > 0).slice(0, 10)
-                        ).map((p: any, idx: number) => {
-                          const changes = Object.entries(p.changedAttributes || {})
-                            .map(([attr, delta]) => `${Number(delta) > 0 ? "+" : ""}${delta} ${attr}`)
-                            .join(", ");
-                          return (
-                            <tr key={p.playerId} className="hover:bg-zinc-900/10">
-                              <td className="py-2 px-3 text-zinc-500">#{idx + 1}</td>
-                              <td className="py-2 px-3 text-white font-extrabold">{p.playerName}</td>
-                              <td className="py-2 px-3 text-zinc-400">{p.teamName}</td>
-                              <td className="py-2 px-3 text-center text-zinc-400">{p.age}</td>
-                              <td className="py-2 px-3 text-center text-zinc-500">{p.oldOverall}</td>
-                              <td className="py-2 px-3 text-center text-zinc-200">{p.newOverall}</td>
-                              <td className={`py-2 px-3 text-center font-extrabold ${p.deltaOverall > 0 ? "text-green-400" : "text-red-400"}`}>
-                                {p.deltaOverall > 0 ? `+${p.deltaOverall}` : p.deltaOverall}
-                              </td>
-                              <td className="py-2 px-3 text-[11px] text-zinc-400 max-w-[200px] truncate" title={changes}>
-                                {changes || "No attributes changed"}
-                              </td>
+                        <div className="overflow-x-auto">
+                          {filteredMyTeamPlayers.length > 0 ? (
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="border-b border-zinc-900 text-zinc-500 font-bold uppercase tracking-wider">
+                                  <th className="py-2 px-3">Player</th>
+                                  <th className="py-2 px-3 text-center">Age</th>
+                                  <th className="py-2 px-3 text-center">Before</th>
+                                  <th className="py-2 px-3 text-center">After</th>
+                                  <th className="py-2 px-3 text-center">Delta</th>
+                                  <th className="py-2 px-3">Top Changes</th>
+                                  <th className="py-2 px-3 text-right">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-900 font-semibold text-zinc-300">
+                                {filteredMyTeamPlayers.map((p: any) => {
+                                  const changes = Object.entries(p.changedAttributes || {})
+                                    .map(([attr, delta]) => `${Number(delta) > 0 ? "+" : ""}${delta} ${attr}`)
+                                    .join(", ");
+                                  const statusLabel = getPlayerEvolutionStatus(p);
+
+                                  return (
+                                    <tr key={p.playerId} className="hover:bg-zinc-900/10">
+                                      <td className="py-2 px-3 text-white font-extrabold">{p.playerName}</td>
+                                      <td className="py-2 px-3 text-center text-zinc-400">{p.age}</td>
+                                      <td className="py-2 px-3 text-center text-zinc-500">{p.oldOverall}</td>
+                                      <td className="py-2 px-3 text-center text-zinc-200">{p.newOverall}</td>
+                                      <td className={`py-2 px-3 text-center font-extrabold ${p.deltaOverall > 0 ? "text-green-400" : p.deltaOverall < 0 ? "text-red-400" : "text-zinc-500"}`}>
+                                        {p.deltaOverall > 0 ? `+${p.deltaOverall}` : p.deltaOverall}
+                                      </td>
+                                      <td className="py-2 px-3 text-[11px] text-zinc-400 max-w-[250px] truncate" title={changes}>
+                                        {changes || "No attributes changed"}
+                                      </td>
+                                      <td className="py-2 px-3 text-right">
+                                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                          statusLabel === "Active" 
+                                            ? "bg-green-500/10 text-green-400" 
+                                            : statusLabel === "Retired" 
+                                            ? "bg-red-500/10 text-red-400" 
+                                            : "bg-amber-500/10 text-amber-400"
+                                        }`}>
+                                          {statusLabel}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <div className="text-center py-8 text-zinc-500 font-medium">
+                              No roster changes match this filter.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                /* League Wide Layout */
+                <>
+                  {/* Stats Overview Grid */}
+                  {evolutionResults && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Players Improved</span>
+                        <span className="text-2xl font-extrabold text-green-400 mt-2">+{evolutionResults.improvedCount}</span>
+                      </div>
+                      <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Players Regressed</span>
+                        <span className="text-2xl font-extrabold text-red-400 mt-2">-{evolutionResults.regressedCount}</span>
+                      </div>
+                      <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Biggest Leap</span>
+                        {evolutionResults.biggestLeap ? (
+                          <div className="mt-2">
+                            <span className="text-sm font-extrabold text-white block truncate">
+                              {evolutionResults.biggestLeap.playerName}
+                            </span>
+                            <span className="text-[10px] font-bold text-orange-400 block mt-0.5 truncate">
+                              {evolutionResults.biggestLeap.teamName} • +{evolutionResults.biggestLeap.deltaOverall} OVR
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-sm font-extrabold text-zinc-600 mt-2">—</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Top 10 Tables */}
+                  {evolutionResults && evolutionResults.players && (
+                    <div className="bg-zinc-950/40 border border-zinc-900 rounded-2xl p-5 space-y-4">
+                      <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+                        <h5 className="text-sm font-bold text-white">
+                          {showRegressions ? "Top 10 Offseason Regressions" : "Top 10 Most Improved Players"}
+                        </h5>
+                        <button
+                          type="button"
+                          onClick={() => setShowRegressions(!showRegressions)}
+                          className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-850 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                        >
+                          Show {showRegressions ? "Most Improved" : "Regressions"}
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-zinc-900 text-zinc-500 font-bold uppercase tracking-wider">
+                              <th className="py-2 px-3">Rank</th>
+                              <th className="py-2 px-3">Player</th>
+                              <th className="py-2 px-3">Team</th>
+                              <th className="py-2 px-3 text-center">Age</th>
+                              <th className="py-2 px-3 text-center">Before</th>
+                              <th className="py-2 px-3 text-center">After</th>
+                              <th className="py-2 px-3 text-center">Delta</th>
+                              <th className="py-2 px-3">Key Changes</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-900 font-semibold text-zinc-300">
+                            {(showRegressions
+                              ? [...evolutionResults.players].filter((p: any) => p.deltaOverall < 0).reverse().slice(0, 10)
+                              : [...evolutionResults.players].filter((p: any) => p.deltaOverall > 0).slice(0, 10)
+                            ).map((p: any, idx: number) => {
+                              const changes = Object.entries(p.changedAttributes || {})
+                                .map(([attr, delta]) => `${Number(delta) > 0 ? "+" : ""}${delta} ${attr}`)
+                                .join(", ");
+                              return (
+                                <tr key={p.playerId} className="hover:bg-zinc-900/10">
+                                  <td className="py-2 px-3 text-zinc-500">#{idx + 1}</td>
+                                  <td className="py-2 px-3 text-white font-extrabold">{p.playerName}</td>
+                                  <td className="py-2 px-3 text-zinc-400">{p.teamName}</td>
+                                  <td className="py-2 px-3 text-center text-zinc-400">{p.age}</td>
+                                  <td className="py-2 px-3 text-center text-zinc-500">{p.oldOverall}</td>
+                                  <td className="py-2 px-3 text-center text-zinc-200">{p.newOverall}</td>
+                                  <td className={`py-2 px-3 text-center font-extrabold ${p.deltaOverall > 0 ? "text-green-400" : "text-red-400"}`}>
+                                    {p.deltaOverall > 0 ? `+${p.deltaOverall}` : p.deltaOverall}
+                                  </td>
+                                  <td className="py-2 px-3 text-[11px] text-zinc-400 max-w-[200px] truncate" title={changes}>
+                                    {changes || "No attributes changed"}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Scrollable logs summary */}

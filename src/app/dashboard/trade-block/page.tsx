@@ -6,9 +6,11 @@ import { useGameStore } from "@/store/useGameStore";
 import { getTeamRoster } from "@/app/actions";
 import {
   togglePlayerTradeBlockAction,
+  togglePickTradeBlockAction,
   getTradeOffersAction,
   executeUserTradeAction,
 } from "@/app/actions/tradeEngine";
+import { getUserDraftPicksAction } from "@/app/actions/offseasonEngine";
 import {
   Users,
   Search,
@@ -55,6 +57,9 @@ export default function TradeBlockPage() {
 
   // Modal & Trade Finder State
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<any | null>(null);
+  const [selectedAssetType, setSelectedAssetType] = useState<"PLAYER" | "PICK">("PLAYER");
+  const [draftPicksList, setDraftPicksList] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [offers, setOffers] = useState<any[]>([]);
@@ -76,6 +81,11 @@ export default function TradeBlockPage() {
         setError("Team roster details not found.");
       } else {
         setPlayersList(rosterData.players as Player[]);
+      }
+
+      const picksRes = await getUserDraftPicksAction(userTeamId);
+      if (picksRes.success && picksRes.picks) {
+        setDraftPicksList(picksRes.picks);
       }
     } catch (err) {
       console.error(err);
@@ -135,14 +145,42 @@ export default function TradeBlockPage() {
     }
   };
 
+  // Toggle Draft Pick Block Status
+  const handleTogglePickBlock = async (pickId: string, currentVal: boolean) => {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const newVal = !currentVal;
+      const res = await togglePickTradeBlockAction(pickId, newVal);
+      if (res.success) {
+        setDraftPicksList((prev) =>
+          prev.map((p) => (p.id === pickId ? { ...p, isAvailable: newVal } : p))
+        );
+      } else {
+        setActionError("Failed to update pick trade block status. Please try again.");
+      }
+    } catch (err) {
+      console.error(err);
+      setActionError("An error occurred while updating the trade block status.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Find Trade Offers
-  const handleFindOffers = async (player: Player) => {
-    setSelectedPlayer(player);
+  const handleFindOffers = async (asset: any, type: "PLAYER" | "PICK") => {
+    setSelectedAsset(asset);
+    setSelectedAssetType(type);
+    if (type === "PLAYER") {
+      setSelectedPlayer(asset);
+    } else {
+      setSelectedPlayer(null);
+    }
     setIsModalOpen(true);
     setScanning(true);
     setOffers([]);
     try {
-      const res = await getTradeOffersAction(player.id);
+      const res = await getTradeOffersAction(asset.id, type);
       setOffers(res);
     } catch (err) {
       console.error(err);
@@ -152,20 +190,30 @@ export default function TradeBlockPage() {
   };
 
   // Accept Trade
-  const handleAcceptTrade = async (cpuPlayerId: string, cpuPlayerName: string) => {
-    if (!selectedPlayer) return;
+  const handleAcceptTrade = async (offer: any) => {
+    if (!selectedAsset) return;
 
-    if (confirmingTradeId !== cpuPlayerId) {
-      setConfirmingTradeId(cpuPlayerId);
+    const key = offer.cpuTeamId;
+    if (confirmingTradeId !== key) {
+      setConfirmingTradeId(key);
       return;
     }
     setConfirmingTradeId(null);
     setActionError(null);
     setActionLoading(true);
     try {
-      const res = await executeUserTradeAction(selectedPlayer.id, cpuPlayerId);
+      const cpuPlayerIds = offer.cpuPlayers.map((p: any) => p.id);
+      const cpuPickIds = offer.cpuPicks.map((p: any) => p.id);
+
+      const res = await executeUserTradeAction(
+        selectedAsset.id,
+        selectedAssetType,
+        offer.cpuTeamId,
+        cpuPlayerIds,
+        cpuPickIds
+      );
       if (res.success) {
-        setTradeSuccess(`Trade executed! ${selectedPlayer.firstName} ${selectedPlayer.lastName} → ${cpuPlayerName}`);
+        setTradeSuccess(`Trade executed successfully!`);
         setIsModalOpen(false);
         await loadRoster();
         router.refresh();
@@ -401,7 +449,7 @@ export default function TradeBlockPage() {
 
                         {player.isOnTradeBlock && (
                           <button
-                            onClick={() => handleFindOffers(player)}
+                            onClick={() => handleFindOffers(player, "PLAYER")}
                             className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer shadow-[0_0_12px_rgba(249,115,22,0.15)] hover:shadow-[0_0_16px_rgba(249,115,22,0.35)] active:scale-[0.97]"
                           >
                             <span>🔍 Find Offers</span>
@@ -423,8 +471,89 @@ export default function TradeBlockPage() {
         </div>
       </div>
 
+      {/* Draft Picks On The Block Section */}
+      <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h4 className="text-base font-bold text-white">Draft Picks On The Block</h4>
+            <p className="text-zinc-500 text-xs">
+              List franchise draft picks on the trade block to receive counter-offers from CPU teams.
+            </p>
+          </div>
+          <span className="text-xs font-bold text-zinc-400 bg-zinc-950 px-3 py-1 rounded-full border border-zinc-900">
+            {draftPicksList.filter((p) => p.isAvailable).length} Available
+          </span>
+        </div>
+
+        {draftPicksList.length === 0 ? (
+          <div className="bg-zinc-950/20 border border-zinc-900 rounded-2xl p-6 text-center text-zinc-500 text-xs italic">
+            No draft picks available to trade.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {draftPicksList.map((pick) => (
+              <div
+                key={pick.id}
+                className="bg-zinc-950/40 border border-zinc-900 hover:border-zinc-800 transition-all rounded-2xl p-4.5 flex flex-col justify-between gap-3 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 blur-2xl rounded-full pointer-events-none group-hover:bg-orange-500/10 transition-all" />
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                      Season {pick.season}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-extrabold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                      Round {pick.round}
+                    </span>
+                  </div>
+                  <h5 className="text-sm font-bold text-zinc-200">
+                    Round {pick.round} Draft Pick
+                  </h5>
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    Original: {pick.originalTeamCity} {pick.originalTeamName}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2.5 mt-2 pt-3 border-t border-zinc-900/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-medium text-zinc-400">Trade Value</span>
+                    <span className="text-xs font-bold text-amber-500">{pick.round === 1 ? 78 : 65} pts</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1 border-t border-zinc-900/30 pt-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleTogglePickBlock(pick.id, pick.isAvailable)}
+                        className={`relative inline-flex h-5.5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          pick.isAvailable ? "bg-orange-500" : "bg-zinc-800"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                            pick.isAvailable ? "translate-x-4.5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                      <span className={`text-[10px] font-bold ${pick.isAvailable ? "text-orange-400 animate-pulse" : "text-zinc-500"}`}>
+                        {pick.isAvailable ? "On Block" : "Private"}
+                      </span>
+                    </div>
+                    {pick.isAvailable && (
+                      <button
+                        onClick={() => handleFindOffers(pick, "PICK")}
+                        className="px-2.5 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-sm"
+                      >
+                        Find Offers
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Incoming Offers Modal Component */}
-      {isModalOpen && selectedPlayer && (
+      {isModalOpen && selectedAsset && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-zinc-950 border border-zinc-800 rounded-3xl max-w-3xl w-full relative shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             
@@ -433,10 +562,17 @@ export default function TradeBlockPage() {
               <div>
                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
                   <ArrowLeftRight className="w-5 h-5 text-orange-500" />
-                  Trade Offers for {selectedPlayer.firstName} {selectedPlayer.lastName}
+                  Trade Offers for {selectedAssetType === "PLAYER" 
+                    ? `${selectedAsset.firstName} ${selectedAsset.lastName}`
+                    : `Season ${selectedAsset.season} Round ${selectedAsset.round} Pick`
+                  }
                 </h3>
                 <p className="text-zinc-500 text-xs mt-1">
-                  Position: {selectedPlayer.position} | Overall: {selectedPlayer.overall} | Salary: {formatPHP(selectedPlayer.salary)}
+                  {selectedAssetType === "PLAYER" ? (
+                    `Position: ${selectedAsset.position} | Overall: ${selectedAsset.overall} | Salary: ${formatPHP(selectedAsset.salary)}`
+                  ) : (
+                    `Original: ${selectedAsset.originalTeamCity} ${selectedAsset.originalTeamName} | Value: ${selectedAsset.round === 1 ? 78 : 65} pts`
+                  )}
                 </p>
               </div>
               <button
@@ -463,7 +599,7 @@ export default function TradeBlockPage() {
                   </div>
                   <h4 className="text-white font-bold text-lg">No Counter-Offers Found</h4>
                   <p className="text-zinc-500 text-sm max-w-md">
-                    No franchises are offering a balanced position swap matching our cap space and rating motivation criteria right now. Check back later or trade block another position group.
+                    No franchises are offering a balanced counter package matching our asset valuation criteria right now. Check back later.
                   </p>
                 </div>
               ) : (
@@ -474,36 +610,52 @@ export default function TradeBlockPage() {
                   
                   <div className="space-y-4">
                     {offers.map((offer) => {
-                      const cpuPlayer = offer.cpuPlayer;
-                      const salaryDiff = cpuPlayer.salary - selectedPlayer.salary;
+                      const userAssetVal = selectedAssetType === "PLAYER" 
+                        ? selectedAsset.overall 
+                        : (selectedAsset.round === 1 ? 78 : 65);
+
+                      const cpuPlayersVal = offer.cpuPlayers.reduce((sum: number, p: any) => sum + p.overall, 0);
+                      const cpuPicksVal = offer.cpuPicks.reduce((sum: number, p: any) => sum + (p.round === 1 ? 78 : 65), 0);
+                      const cpuTotalVal = cpuPlayersVal + cpuPicksVal;
+
+                      const salaryDiff = offer.cpuPlayers.reduce((sum: number, p: any) => sum + p.salary, 0) - (selectedAssetType === "PLAYER" ? selectedAsset.salary : 0);
                       const isCpuPayingMore = salaryDiff > 0;
 
                       return (
                         <div
-                          key={cpuPlayer.id}
+                          key={offer.cpuTeamId}
                           className="bg-zinc-900/20 border border-zinc-900 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-5 hover:border-zinc-800 transition-all duration-200"
                         >
                           <div className="flex-1 space-y-2">
                             <h4 className="text-xs font-bold uppercase tracking-wider text-orange-400">
                               {offer.cpuTeamCity} {offer.cpuTeamName}
                             </h4>
-                            <p className="text-zinc-300 text-sm leading-relaxed">
-                              Receive{" "}
-                              <span className="font-bold text-emerald-400">
-                                {cpuPlayer.firstName} {cpuPlayer.lastName}
-                              </span>{" "}
-                              ({cpuPlayer.position}, <span className="font-semibold text-zinc-100">{cpuPlayer.overall} OVR</span>,{" "}
-                              <span className="font-bold text-amber-500">{formatPHP(cpuPlayer.salary)}</span>) in exchange for your player.
-                            </p>
+                            <div className="text-zinc-300 text-xs space-y-1.5">
+                              <p className="font-semibold text-zinc-400 text-[10px] uppercase">Receive Assets:</p>
+                              <div className="space-y-1">
+                                {offer.cpuPlayers.map((p: any) => (
+                                  <div key={p.id} className="flex justify-between items-center bg-zinc-950/40 p-2 rounded-xl border border-zinc-900">
+                                    <span className="font-bold text-zinc-100">{p.firstName} {p.lastName} <span className="text-zinc-500">({p.position})</span></span>
+                                    <span className="text-amber-500 font-bold">{formatPHP(p.salary)} • {p.overall} OVR</span>
+                                  </div>
+                                ))}
+                                {offer.cpuPicks.map((p: any) => (
+                                  <div key={p.id} className="flex justify-between items-center bg-zinc-950/40 p-2 rounded-xl border border-zinc-900">
+                                    <span className="font-bold text-zinc-100">Season {p.season} Round {p.round} pick</span>
+                                    <span className="text-orange-400 font-bold">{p.round === 1 ? 78 : 65} pts</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
 
                             {/* Comparison block */}
                             <div className="grid grid-cols-3 gap-2 py-2.5 text-center text-xs bg-zinc-950/80 rounded-xl border border-zinc-900/80">
                               <div>
-                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">OVR</span>
+                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">Value</span>
                                 <span className="font-extrabold text-zinc-200">
-                                  {selectedPlayer.overall} ➔ {cpuPlayer.overall}{" "}
-                                  <span className={cpuPlayer.overall >= selectedPlayer.overall ? "text-emerald-400" : "text-red-400"}>
-                                    ({cpuPlayer.overall - selectedPlayer.overall >= 0 ? "+" : ""}{cpuPlayer.overall - selectedPlayer.overall})
+                                  {userAssetVal} ➔ {cpuTotalVal}{" "}
+                                  <span className={cpuTotalVal >= userAssetVal ? "text-emerald-400" : "text-red-400"}>
+                                    ({cpuTotalVal - userAssetVal >= 0 ? "+" : ""}{cpuTotalVal - userAssetVal})
                                   </span>
                                 </span>
                               </div>
@@ -514,12 +666,9 @@ export default function TradeBlockPage() {
                                 </span>
                               </div>
                               <div>
-                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">Age</span>
+                                <span className="text-zinc-500 block uppercase font-bold text-[9px] tracking-wider mb-0.5">Roster Count</span>
                                 <span className="font-extrabold text-zinc-200">
-                                  {selectedPlayer.age} ➔ {cpuPlayer.age}{" "}
-                                  <span className={cpuPlayer.age <= selectedPlayer.age ? "text-emerald-400" : "text-zinc-500"}>
-                                    ({cpuPlayer.age - selectedPlayer.age >= 0 ? "+" : ""}{cpuPlayer.age - selectedPlayer.age})
-                                  </span>
+                                  {selectedAssetType === "PLAYER" ? "-1" : "0"} ➔ +{offer.cpuPlayers.length}
                                 </span>
                               </div>
                             </div>
@@ -527,7 +676,7 @@ export default function TradeBlockPage() {
 
                           <div className="shrink-0 flex items-center">
                             <button
-                              onClick={() => handleAcceptTrade(cpuPlayer.id, `${cpuPlayer.firstName} ${cpuPlayer.lastName}`)}
+                              onClick={() => handleAcceptTrade(offer)}
                               className="w-full md:w-auto flex items-center justify-center gap-1.5 px-5 py-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer shadow-sm active:scale-[0.98]"
                             >
                               <span>🤝 Accept Trade</span>

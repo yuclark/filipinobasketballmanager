@@ -192,6 +192,27 @@ export async function processPlayerEvolutionAction() {
             seasonYear: currentYear,
             gameDay: 82,
           });
+
+          evolutionResultsList.push({
+            playerId: player.id,
+            playerName: `${player.firstName} ${player.lastName}`,
+            fullName: `${player.firstName} ${player.lastName}`,
+            teamId: player.teamId,
+            teamName: team ? `${team.city} ${team.name}` : "Free Agent",
+            age: player.age,
+            oldOverall: player.overall,
+            newOverall: player.overall,
+            deltaOverall: 0,
+            oldOvr: player.overall,
+            newOvr: player.overall,
+            deltaOvr: 0,
+            teamIdBefore: player.teamId,
+            teamIdAfter: null,
+            keyAttributeDeltas: {},
+            changedAttributes: {},
+            status: "retired",
+          });
+
           continue; // Player retired, skip progression/contract updates
         }
       }
@@ -306,20 +327,6 @@ export async function processPlayerEvolutionAction() {
         }
       }
 
-      evolutionResultsList.push({
-        playerId: player.id,
-        playerName: `${player.firstName} ${player.lastName}`,
-        teamId: player.teamId,
-        teamName: team ? `${team.city} ${team.name}` : "Free Agent",
-        age: player.age,
-        oldOverall: player.overall,
-        newOverall: nextOverall,
-        deltaOverall,
-        changedAttributes,
-        biggestImprovedAttribute: biggestImprovedAttr,
-        biggestDeclinedAttribute: biggestDeclinedAttr,
-      });
-
       // C. Age increment and Contract Decrement
       const nextAge = player.age + 1;
       let nextContractYears = player.contractYearsRemaining - 1;
@@ -338,6 +345,32 @@ export async function processPlayerEvolutionAction() {
           gameDay: 82,
         });
       }
+
+      let statusTag: "improved" | "declined" | "unchanged" = "unchanged";
+      if (deltaOverall > 0) statusTag = "improved";
+      else if (deltaOverall < 0) statusTag = "declined";
+
+      evolutionResultsList.push({
+        playerId: player.id,
+        playerName: `${player.firstName} ${player.lastName}`,
+        fullName: `${player.firstName} ${player.lastName}`,
+        teamId: player.teamId,
+        teamName: team ? `${team.city} ${team.name}` : "Free Agent",
+        age: player.age,
+        oldOverall: player.overall,
+        newOverall: nextOverall,
+        deltaOverall,
+        oldOvr: player.overall,
+        newOvr: nextOverall,
+        deltaOvr: deltaOverall,
+        teamIdBefore: player.teamId,
+        teamIdAfter: nextTeamId,
+        keyAttributeDeltas: changedAttributes,
+        changedAttributes,
+        biggestImprovedAttribute: biggestImprovedAttr,
+        biggestDeclinedAttribute: biggestDeclinedAttr,
+        status: statusTag,
+      });
 
       updatedPlayers.push({
         ...player,
@@ -858,5 +891,250 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
   } catch (error: any) {
     console.error("runOffseasonFreeAgencyAction failed:", error);
     return { success: false, error: error.message || "Failed to run offseason free agency." };
+  }
+}
+
+export async function simulateCpuPicksAction(userTeamId: string, season: number) {
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Fetch all picks for the season ordered by pickNumber
+      const picks = await tx
+        .select({
+          id: draftPicks.id,
+          ownerTeamId: draftPicks.ownerTeamId,
+          originalTeamId: draftPicks.originalTeamId,
+          season: draftPicks.season,
+          round: draftPicks.round,
+          pickNumber: draftPicks.pickNumber,
+          isUsed: draftPicks.isUsed,
+        })
+        .from(draftPicks)
+        .where(eq(draftPicks.season, season))
+        .orderBy(draftPicks.pickNumber);
+
+      const unusedPicks = picks.filter((p) => !p.isUsed);
+      if (unusedPicks.length === 0) {
+        return { success: true, status: "COMPLETED" as const, selections: [], message: "Draft already complete." };
+      }
+
+      // 2. Load all prospects currently in draft pool
+      const pool = await tx
+        .select()
+        .from(players)
+        .where(eq(players.status, "DraftPool"))
+        .orderBy(desc(players.overall));
+
+      if (pool.length === 0) {
+        return { success: false, error: "No prospects remaining in the draft pool." };
+      }
+
+      // Get the last game for transaction logging year
+      const lastGame = await tx
+        .select({ year: games.seasonYear })
+        .from(games)
+        .orderBy(desc(games.seasonYear))
+        .limit(1);
+      const currentYear = lastGame[0]?.year ?? 2026;
+
+      const selections: Array<{
+        team: { id: string; name: string; city: string };
+        player: { id: string; firstName: string; lastName: string; position: string; overall: number };
+        pickNumber: number;
+      }> = [];
+
+      let nextProspectIdx = 0;
+
+      for (const pick of unusedPicks) {
+        // If the owner is the user, STOP and let user pick
+        if (pick.ownerTeamId === userTeamId) {
+          return { success: true, status: "USER_ON_CLOCK" as const, selections, message: "User team is on the clock." };
+        }
+
+        // Otherwise, draft the best available prospect
+        if (nextProspectIdx >= pool.length) {
+          break; // no more prospects
+        }
+        const prospect = pool[nextProspectIdx];
+        nextProspectIdx++;
+
+        // Update player status
+        await tx
+          .update(players)
+          .set({
+            teamId: pick.ownerTeamId,
+            status: "Active",
+            contractYearsRemaining: 3,
+          })
+          .where(eq(players.id, prospect.id));
+
+        // Mark pick as used
+        await tx
+          .update(draftPicks)
+          .set({ isUsed: true })
+          .where(eq(draftPicks.id, pick.id));
+
+        // Get team name for transaction log
+        const [team] = await tx
+          .select()
+          .from(teams)
+          .where(eq(teams.id, pick.ownerTeamId!))
+          .limit(1);
+
+        const description = `DRAFT — With Pick ${pick.pickNumber ?? 0}, ${team ? `${team.city} ${team.name}` : "Unknown Team"} selected ${prospect.firstName} ${prospect.lastName} (${prospect.position}, OVR ${prospect.overall}).`;
+        await tx.insert(transactions).values({
+          type: "Draft",
+          description,
+          seasonYear: currentYear,
+          gameDay: 82,
+        });
+
+        selections.push({
+          team: team ? { id: team.id, name: team.name, city: team.city } : { id: pick.ownerTeamId!, name: "Unknown", city: "Unknown" },
+          player: {
+            id: prospect.id,
+            firstName: prospect.firstName,
+            lastName: prospect.lastName,
+            position: prospect.position,
+            overall: prospect.overall,
+          },
+          pickNumber: pick.pickNumber ?? 0,
+        });
+      }
+
+      // Recheck if all picks are now completed
+      const updatedPicks = await tx
+        .select()
+        .from(draftPicks)
+        .where(and(eq(draftPicks.season, season), eq(draftPicks.isUsed, false)));
+
+      if (updatedPicks.length === 0) {
+        return { success: true, status: "COMPLETED" as const, selections, message: "Draft completed successfully." };
+      }
+
+      // If we stopped because user is on the clock next
+      const firstUnused = updatedPicks.sort((a, b) => (a.pickNumber ?? 0) - (b.pickNumber ?? 0))[0];
+      if (firstUnused && firstUnused.ownerTeamId === userTeamId) {
+        return { success: true, status: "USER_ON_CLOCK" as const, selections, message: "User team is on the clock." };
+      }
+
+      return { success: true, status: "NO_OP" as const, selections };
+    });
+  } catch (error: any) {
+    console.error("simulateCpuPicksAction failed:", error);
+    return { success: false, error: error.message || "Failed to simulate CPU picks." };
+  }
+}
+
+export async function autoCompleteDraftAction(userTeamId: string, season: number, autoDraftUser: boolean) {
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Fetch all picks for the season ordered by pickNumber
+      const picks = await tx
+        .select({
+          id: draftPicks.id,
+          ownerTeamId: draftPicks.ownerTeamId,
+          originalTeamId: draftPicks.originalTeamId,
+          season: draftPicks.season,
+          round: draftPicks.round,
+          pickNumber: draftPicks.pickNumber,
+          isUsed: draftPicks.isUsed,
+        })
+        .from(draftPicks)
+        .where(eq(draftPicks.season, season))
+        .orderBy(draftPicks.pickNumber);
+
+      const unusedPicks = picks.filter((p) => !p.isUsed);
+      if (unusedPicks.length === 0) {
+        return { success: true, status: "COMPLETED" as const, selections: [], message: "Draft already complete." };
+      }
+
+      // 2. Load all prospects currently in draft pool
+      const pool = await tx
+        .select()
+        .from(players)
+        .where(eq(players.status, "DraftPool"))
+        .orderBy(desc(players.overall));
+
+      if (pool.length === 0) {
+        return { success: false, error: "No prospects remaining in the draft pool." };
+      }
+
+      // Get the last game for transaction logging year
+      const lastGame = await tx
+        .select({ year: games.seasonYear })
+        .from(games)
+        .orderBy(desc(games.seasonYear))
+        .limit(1);
+      const currentYear = lastGame[0]?.year ?? 2026;
+
+      const selections: Array<{
+        team: { id: string; name: string; city: string };
+        player: { id: string; firstName: string; lastName: string; position: string; overall: number };
+        pickNumber: number;
+      }> = [];
+
+      let nextProspectIdx = 0;
+
+      for (const pick of unusedPicks) {
+        // If owner is user and we are NOT auto-drafting user, stop
+        if (pick.ownerTeamId === userTeamId && !autoDraftUser) {
+          return { success: true, status: "USER_ON_CLOCK" as const, selections, message: "Stopped at user pick." };
+        }
+
+        if (nextProspectIdx >= pool.length) {
+          break; // no more prospects
+        }
+        const prospect = pool[nextProspectIdx];
+        nextProspectIdx++;
+
+        // Update player status
+        await tx
+          .update(players)
+          .set({
+            teamId: pick.ownerTeamId,
+            status: "Active",
+            contractYearsRemaining: 3,
+          })
+          .where(eq(players.id, prospect.id));
+
+        // Mark pick as used
+        await tx
+          .update(draftPicks)
+          .set({ isUsed: true })
+          .where(eq(draftPicks.id, pick.id));
+
+        // Get team name for transaction log
+        const [team] = await tx
+          .select()
+          .from(teams)
+          .where(eq(teams.id, pick.ownerTeamId!))
+          .limit(1);
+
+        const description = `DRAFT — With Pick ${pick.pickNumber ?? 0}, ${team ? `${team.city} ${team.name}` : "Unknown Team"} selected ${prospect.firstName} ${prospect.lastName} (${prospect.position}, OVR ${prospect.overall}).`;
+        await tx.insert(transactions).values({
+          type: "Draft",
+          description,
+          seasonYear: currentYear,
+          gameDay: 82,
+        });
+
+        selections.push({
+          team: team ? { id: team.id, name: team.name, city: team.city } : { id: pick.ownerTeamId!, name: "Unknown", city: "Unknown" },
+          player: {
+            id: prospect.id,
+            firstName: prospect.firstName,
+            lastName: prospect.lastName,
+            position: prospect.position,
+            overall: prospect.overall,
+          },
+          pickNumber: pick.pickNumber ?? 0,
+        });
+      }
+
+      return { success: true, status: "COMPLETED" as const, selections, message: "Draft completed successfully." };
+    });
+  } catch (error: any) {
+    console.error("autoCompleteDraftAction failed:", error);
+    return { success: false, error: error.message || "Failed to auto-complete draft." };
   }
 }
