@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getFreeAgents, getTeamSalarySpace, signFreeAgentAction } from "@/app/actions/transactions";
+import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import {
   Briefcase,
   Search,
@@ -202,8 +203,8 @@ export default function FreeAgencyPage() {
             </div>
             <div>
               <span className="text-zinc-500 font-bold uppercase tracking-wider text-[10px] block">Roster Spots</span>
-              <span className={`text-2xl font-extrabold ${capInfo.rosterCount >= 15 ? "text-red-400" : "text-white"}`}>
-                {capInfo.rosterCount} / 15 players
+              <span className={`text-2xl font-extrabold ${capInfo.rosterCount >= MAX_ROSTER_SIZE ? "text-red-400" : "text-white"}`}>
+                {capInfo.rosterCount} / {MAX_ROSTER_SIZE} players
               </span>
             </div>
           </div>
@@ -342,7 +343,7 @@ export default function FreeAgencyPage() {
             <tbody className="divide-y divide-zinc-900 bg-zinc-950/20">
               {filteredFreeAgents.length > 0 ? (
                 filteredFreeAgents.map((player) => {
-                  const isRosterFull = (capInfo?.rosterCount || 0) >= 15;
+                  const isRosterFull = (capInfo?.rosterCount || 0) >= MAX_ROSTER_SIZE;
                   const canAfford = capInfo ? capInfo.space >= player.salary : false;
                   const canSign = !isRosterFull && canAfford;
 
@@ -402,7 +403,7 @@ export default function FreeAgencyPage() {
                           <div className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 border border-zinc-850 rounded-lg text-[10px] text-zinc-500 font-semibold max-w-[140px] text-left">
                             <ShieldAlert className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
                             <span>
-                              {isRosterFull ? "Roster Full (15)" : "Exceeds Salary Cap"}
+                              {isRosterFull ? `Roster Full (${MAX_ROSTER_SIZE})` : "Exceeds Salary Cap"}
                             </span>
                           </div>
                         )}

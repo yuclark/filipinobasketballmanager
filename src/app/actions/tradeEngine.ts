@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { eq, and, desc } from "drizzle-orm";
 import { players, teams, transactions, games } from "@/db/schema";
+import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 // Position Group helper
 function getPositionGroup(pos: string): "G" | "F" | "C" {
@@ -94,9 +95,9 @@ export async function getTradeOffersAction(userPlayerId: string) {
       const cpuRoster = rostersByTeam.get(cpuTeam.id) || [];
       const cpuTeamSalary = cpuRoster.reduce((sum, p) => sum + p.salary, 0);
 
-      // Condition C: Both teams must stay within 12-18 player active limits post-swap
-      if (userRoster.length < 12 || userRoster.length > 18) continue;
-      if (cpuRoster.length < 12 || cpuRoster.length > 18) continue;
+      // Condition C: Both teams must stay within MIN_ROSTER_SIZE-MAX_ROSTER_SIZE player active limits post-swap
+      if (userRoster.length < MIN_ROSTER_SIZE || userRoster.length > MAX_ROSTER_SIZE) continue;
+      if (cpuRoster.length < MIN_ROSTER_SIZE || cpuRoster.length > MAX_ROSTER_SIZE) continue;
 
       for (const cpuPlayer of cpuRoster) {
         // Condition A: Position Group Match

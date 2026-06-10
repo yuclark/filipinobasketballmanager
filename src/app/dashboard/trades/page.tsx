@@ -8,6 +8,7 @@ import {
   getTeamSalarySpace,
   executeTradeAction,
 } from "@/app/actions/transactions";
+import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import {
   ArrowLeftRight,
   TrendingUp,
@@ -199,8 +200,8 @@ export default function TradesPage() {
   // Validation Flags
   const isUserCapSpaceOk = userNewPayroll <= 50000000;
   const isCpuCapSpaceOk = cpuNewPayroll <= 50000000;
-  const isUserRosterCountOk = userNewCount <= 15;
-  const isCpuRosterCountOk = cpuNewCount <= 15;
+  const isUserRosterCountOk = userNewCount <= MAX_ROSTER_SIZE;
+  const isCpuRosterCountOk = cpuNewCount <= MAX_ROSTER_SIZE;
 
   let tradeStatus: "pending" | "approved" | "rejected" = "pending";
   let rejectionReason = "";
@@ -212,10 +213,10 @@ export default function TradesPage() {
     rejectionReason = `Opponent rejected: Value deficit too large (Difference is ${ovrDiffPercent}%, must be within 15%).`;
   } else if (!isUserRosterCountOk) {
     tradeStatus = "rejected";
-    rejectionReason = "Trade blocked: Your team exceeds the 15-player roster limit.";
+    rejectionReason = `Trade blocked: Your team exceeds the ${MAX_ROSTER_SIZE}-player roster limit.`;
   } else if (!isCpuRosterCountOk) {
     tradeStatus = "rejected";
-    rejectionReason = "Trade blocked: Opponent exceeds the 15-player roster limit.";
+    rejectionReason = `Trade blocked: Opponent exceeds the ${MAX_ROSTER_SIZE}-player roster limit.`;
   } else if (!isUserCapSpaceOk) {
     tradeStatus = "rejected";
     rejectionReason = "Trade blocked: Your team exceeds the ₱50,000,000 salary cap.";
@@ -316,7 +317,7 @@ export default function TradesPage() {
               <div className="text-right">
                 <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block"> Payroll </span>
                 <span className="text-sm font-extrabold text-amber-500">{formatPHP(userCapInfo.totalSalaries)}</span>
-                <span className="text-[10px] font-medium text-zinc-400 block mt-0.5">{userCapInfo.rosterCount} / 15 players</span>
+                <span className="text-[10px] font-medium text-zinc-400 block mt-0.5">{userCapInfo.rosterCount} / {MAX_ROSTER_SIZE} players</span>
               </div>
             )}
           </div>
@@ -388,7 +389,7 @@ export default function TradesPage() {
               <div className="text-right">
                 <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block"> Payroll </span>
                 <span className="text-sm font-extrabold text-amber-500">{formatPHP(cpuCapInfo.totalSalaries)}</span>
-                <span className="text-[10px] font-medium text-zinc-400 block mt-0.5">{cpuCapInfo.rosterCount} / 15 players</span>
+                <span className="text-[10px] font-medium text-zinc-400 block mt-0.5">{cpuCapInfo.rosterCount} / {MAX_ROSTER_SIZE} players</span>
               </div>
             )}
           </div>
@@ -472,7 +473,7 @@ export default function TradesPage() {
                 {formatPHP(userNewPayroll)}
               </span>
               <span className="text-[10px] font-medium text-zinc-400 block">
-                Post-trade size: {userNewCount} / 15 players
+                Post-trade size: {userNewCount} / {MAX_ROSTER_SIZE} players
               </span>
             </div>
 
@@ -483,7 +484,7 @@ export default function TradesPage() {
                 {formatPHP(cpuNewPayroll)}
               </span>
               <span className="text-[10px] font-medium text-zinc-400 block">
-                Post-trade size: {cpuNewCount} / 15 players
+                Post-trade size: {cpuNewCount} / {MAX_ROSTER_SIZE} players
               </span>
             </div>
           </div>

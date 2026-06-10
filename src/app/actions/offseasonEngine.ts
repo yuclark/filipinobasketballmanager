@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull } from "drizzle-orm";
 import { players, teams, games, transactions } from "@/db/schema";
+import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
@@ -407,7 +408,7 @@ export async function replenishLeagueRostersAction() {
       }
     }
 
-    const depletedTeams = allTeams.filter((t) => (rosterCounts.get(t.id) ?? 0) < 12);
+    const depletedTeams = allTeams.filter((t) => (rosterCounts.get(t.id) ?? 0) < MIN_ROSTER_SIZE);
 
     if (depletedTeams.length === 0) {
       console.log("[Roster Replenishment] All teams have at least 12 players. Safety net bypassed.");
@@ -435,7 +436,7 @@ export async function replenishLeagueRostersAction() {
 
       for (const team of depletedTeams) {
         const currentCount = rosterCounts.get(team.id) ?? 0;
-        const playersNeeded = 12 - currentCount;
+        const playersNeeded = MIN_ROSTER_SIZE - currentCount;
 
         console.log(`[Roster Replenishment] ${team.city} ${team.name} needs ${playersNeeded} players (current roster: ${currentCount}).`);
 

@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { eq, and, inArray, sql, isNotNull } from "drizzle-orm";
 import { teams, players, games, playerGameStats, transactions } from "@/db/schema";
+import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import { enforceLeagueRosterLimitsAction, runCpuDailyAiEngineAction } from "@/app/actions/cpuAiEngine";
 
@@ -74,7 +75,7 @@ export async function simulateCpuTradesAction(
 
     for (const teamA of shuffledTeams) {
       const rosterA = rosterByTeam.get(teamA.id) || [];
-      if (rosterA.length < 12 || rosterA.length > 18) continue;
+      if (rosterA.length < MIN_ROSTER_SIZE || rosterA.length > MAX_ROSTER_SIZE) continue;
 
       const shuffledRosterA = [...rosterA].sort(() => Math.random() - 0.5);
 
@@ -86,7 +87,7 @@ export async function simulateCpuTradesAction(
 
         for (const teamB of otherTeams) {
           const rosterB = rosterByTeam.get(teamB.id) || [];
-          if (rosterB.length < 12 || rosterB.length > 18) continue;
+          if (rosterB.length < MIN_ROSTER_SIZE || rosterB.length > MAX_ROSTER_SIZE) continue;
 
           const shuffledRosterB = [...rosterB].sort(() => Math.random() - 0.5);
 

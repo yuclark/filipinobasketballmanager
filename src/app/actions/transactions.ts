@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { eq, inArray, isNull, desc, and } from "drizzle-orm";
 import { teams, players, transactions, games } from "@/db/schema";
+import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
 
@@ -132,8 +133,8 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
       .from(players)
       .where(eq(players.teamId, teamId));
 
-    if (currentTeamPlayers.length >= 18) {
-      return { success: false, error: "Roster size limit reached. A team can have a maximum of 18 players." };
+    if (currentTeamPlayers.length >= MAX_ROSTER_SIZE) {
+      return { success: false, error: "Cannot sign — team is already at the maximum roster size of 18 players." };
     }
 
     const totalSalaries = currentTeamPlayers.reduce((sum, p) => sum + p.salary, 0);
@@ -199,8 +200,8 @@ export async function releasePlayerAction(playerId: string) {
       .from(players)
       .where(and(eq(players.teamId, player.teamId), eq(players.status, "Active")));
 
-    if (currentTeamPlayers.length <= 12) {
-      return { success: false, error: "Roster size cannot fall below the league minimum of 12 players." };
+    if (currentTeamPlayers.length <= MIN_ROSTER_SIZE) {
+      return { success: false, error: `Roster size cannot fall below the league minimum of ${MIN_ROSTER_SIZE} players.` };
     }
 
     const [team] = await db
@@ -309,17 +310,17 @@ export async function executeTradeAction(
     const newRosterCountA = fullRosterA.length - rosterA.length + rosterB.length;
     const newRosterCountB = fullRosterB.length - rosterB.length + rosterA.length;
 
-    if (newRosterCountA > 18) {
-      return { success: false, error: `Trade rejected: ${teamA.city} ${teamA.name} cannot have more than 18 players (would have ${newRosterCountA} after trade).` };
+    if (newRosterCountA > MAX_ROSTER_SIZE) {
+      return { success: false, error: "Trade rejected — a team would exceed the 18-player roster maximum." };
     }
-    if (newRosterCountA < 12) {
-      return { success: false, error: `Trade rejected: ${teamA.city} ${teamA.name} cannot have fewer than 12 players (would have ${newRosterCountA} after trade).` };
+    if (newRosterCountA < MIN_ROSTER_SIZE) {
+      return { success: false, error: `Trade rejected: ${teamA.city} ${teamA.name} cannot have fewer than ${MIN_ROSTER_SIZE} players (would have ${newRosterCountA} after trade).` };
     }
-    if (newRosterCountB > 18) {
-      return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have more than 18 players (would have ${newRosterCountB} after trade).` };
+    if (newRosterCountB > MAX_ROSTER_SIZE) {
+      return { success: false, error: "Trade rejected — a team would exceed the 18-player roster maximum." };
     }
-    if (newRosterCountB < 12) {
-      return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have fewer than 12 players (would have ${newRosterCountB} after trade).` };
+    if (newRosterCountB < MIN_ROSTER_SIZE) {
+      return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have fewer than ${MIN_ROSTER_SIZE} players (would have ${newRosterCountB} after trade).` };
     }
 
     if (newSalariesA > SALARY_CAP) {

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getTeamRoster } from "@/app/actions";
+import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import { releasePlayerAction } from "@/app/actions/transactions";
 import { getTeamSeasonStatsAction } from "@/app/actions/statsEngine";
 import {
@@ -232,7 +233,7 @@ export default function RosterPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h3 className="text-xl font-bold text-white mb-1">Roster Sheet</h3>
-          <p className="text-zinc-500 text-sm">Active squad of 15 players. Manage positions, salaries, and releases.</p>
+          <p className="text-zinc-500 text-sm">Active squad of {MAX_ROSTER_SIZE} players. Manage positions, salaries, and releases.</p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">

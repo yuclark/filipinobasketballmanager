@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, inArray, isNotNull } from "drizzle-orm";
 import { players, teams, games, transactions } from "@/db/schema";
+import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
 
@@ -73,8 +74,8 @@ export async function enforceLeagueRosterLimitsAction() {
 
       let rosterCount = teamRoster.length;
 
-      if (rosterCount < 12) {
-        const deficit = 12 - rosterCount;
+      if (rosterCount < MIN_ROSTER_SIZE) {
+        const deficit = MIN_ROSTER_SIZE - rosterCount;
         console.log(`[Roster Balancing Agent] Team ${team.city} ${team.name} has deficit of ${deficit} players.`);
 
         for (let i = 0; i < deficit; i++) {
@@ -178,8 +179,8 @@ export async function enforceLeagueRosterLimitsAction() {
             teamRoster.push(chosenPlayer);
           }
         }
-      } else if (rosterCount > 18) {
-        const excess = rosterCount - 18;
+      } else if (rosterCount > MAX_ROSTER_SIZE) {
+        const excess = rosterCount - MAX_ROSTER_SIZE;
         console.log(`[Roster Balancing Agent] Team ${team.city} ${team.name} has excess of ${excess} players.`);
 
         // Sort roster by overall ascending (lowest overall rating first)
@@ -196,7 +197,7 @@ export async function enforceLeagueRosterLimitsAction() {
 
           await db.insert(transactions).values({
             type: "System",
-            description: `SYSTEM: Programmatically waived player ${p.firstName} ${p.lastName} (OVR ${p.overall}) from the ${team.city} ${team.name} to comply with roster maximum limits of 18 players.`,
+            description: `SYSTEM: Programmatically waived player ${p.firstName} ${p.lastName} (OVR ${p.overall}) from the ${team.city} ${team.name} to comply with roster maximum limits of ${MAX_ROSTER_SIZE} players.`,
             seasonYear: currentYear,
             gameDay: currentDay,
           });
@@ -244,7 +245,7 @@ export async function runCpuDailyAiEngineAction(
       );
 
       const rosterCount = roster.length;
-      if (rosterCount >= 18) continue; // Cannot sign if at limit
+      if (rosterCount >= MAX_ROSTER_SIZE) continue; // Cannot sign if at limit
 
       // Check position group counts
       const counts = { G: 0, F: 0, C: 0 };
@@ -336,13 +337,12 @@ export async function runCpuDailyAiEngineAction(
       for (let i = 0; i < tradeMatchingTeams.length && !tradeExecuted; i++) {
         const teamA = tradeMatchingTeams[i];
         if (teamA.surpluses.length === 0 || teamA.deficits.length === 0) continue;
-        if (teamA.roster.length < 12 || teamA.roster.length > 18) continue;
+        if (teamA.roster.length < MIN_ROSTER_SIZE || teamA.roster.length > MAX_ROSTER_SIZE) continue;
 
         for (let j = 0; j < tradeMatchingTeams.length && !tradeExecuted; j++) {
           if (i === j) continue;
           const teamB = tradeMatchingTeams[j];
-          if (teamB.surpluses.length === 0 || teamB.deficits.length === 0) continue;
-          if (teamB.roster.length < 12 || teamB.roster.length > 18) continue;
+          if (teamB.roster.length < MIN_ROSTER_SIZE || teamB.roster.length > MAX_ROSTER_SIZE) continue;
 
           // Inverse configurations
           const matchX = teamA.surpluses.find((x) => teamB.deficits.includes(x));
@@ -422,8 +422,8 @@ export async function runCpuDailyAiEngineAction(
           const tB = pair.teamB;
 
           // Safeguard active roster bounds (bounds remain identical after 1-for-1 swap)
-          if (tA.roster.length < 12 || tA.roster.length > 18) continue;
-          if (tB.roster.length < 12 || tB.roster.length > 18) continue;
+          if (tA.roster.length < MIN_ROSTER_SIZE || tA.roster.length > MAX_ROSTER_SIZE) continue;
+          if (tB.roster.length < MIN_ROSTER_SIZE || tB.roster.length > MAX_ROSTER_SIZE) continue;
 
           for (const playerA of tA.roster) {
             for (const playerB of tB.roster) {
