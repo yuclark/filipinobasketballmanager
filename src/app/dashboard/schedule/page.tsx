@@ -195,18 +195,47 @@ export default function SchedulePage() {
     setIsMacroSimPlayoffs(false);
     setPendingDays(days);
     setSimulating(true);
+    stopSimulationRef.current = false;
+    let daysSimulated = 0;
     try {
-      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline, userTeamId);
-      if (res.currentDay) {
-        setLeagueDay(res.currentDay);
-      }
-      if (res.status === "REGULAR_SEASON_COMPLETE") {
-        router.push("/dashboard/awards");
-        return;
-      }
-      if (res.status === "DEADLINE_REACHED") {
-        setTradeDeadlinePassed(true);
-        setShowDeadlineModal(true);
+      while (daysSimulated < days) {
+        if (stopSimulationRef.current) {
+          setToastMessage("Simulation paused by manager.");
+          break;
+        }
+
+        const res = await simulateBatchDaysAction(1, bypass || hasConfirmedDeadline, userTeamId);
+        
+        if (res.currentDay) {
+          setLeagueDay(res.currentDay);
+        }
+
+        if (res.status === "REGULAR_SEASON_COMPLETE") {
+          router.push("/dashboard/awards");
+          return;
+        }
+
+        if (res.status === "DEADLINE_REACHED") {
+          setTradeDeadlinePassed(true);
+          setShowDeadlineModal(true);
+          setPendingDays(days - daysSimulated - 1);
+          break;
+        }
+
+        if (res.status === "ERROR") {
+          alert("Simulation failed. Please check team states and try again.");
+          break;
+        }
+
+        daysSimulated++;
+
+        // Refresh games list in client
+        const currentDay = res.currentDay ?? currentLeagueDay;
+        const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
+        setGamesList(data);
+
+        // Small yield to allow React to re-render and detect state changes
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     } catch (err) {
       console.error(err);
@@ -262,6 +291,9 @@ export default function SchedulePage() {
         } else {
           break;
         }
+
+        // Small yield to allow React to re-render and detect state changes
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     } catch (err) {
       console.error(err);
@@ -352,10 +384,12 @@ export default function SchedulePage() {
                   <span>Simulating Calendar (Day {currentLeagueDay} / 82)...</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     stopSimulationRef.current = true;
                   }}
-                  className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-sm shadow-[0_4px_12px_rgba(220,38,38,0.2)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer transition-all"
+                  disabled={!isSimulating}
+                  className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm shadow-[0_4px_12px_rgba(220,38,38,0.2)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer transition-all"
                 >
                   <span>🛑 Stop Simulating</span>
                 </button>

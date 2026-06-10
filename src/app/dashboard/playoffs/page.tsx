@@ -186,7 +186,8 @@ export default function PlayoffsPage() {
   };
 
   // Handle Playoff Day Simulation
-  const handleSimulatePlayoffDay = async () => {
+  const handleSimulatePlayoffDay = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
     setIsMacroSimGrandFinals(false);
     try {
       setSimulating(true);
@@ -198,6 +199,7 @@ export default function PlayoffsPage() {
           alert("All series in the current round are completed! Progression to the next round seeded.");
         }
         await loadPlayoffData();
+        router.refresh();
       } else {
         alert("Failed to simulate playoff day. Please try again.");
       }
@@ -209,7 +211,8 @@ export default function PlayoffsPage() {
     }
   };
 
-  const handleSimulateUntilGrandFinals = async () => {
+  const handleSimulateUntilGrandFinals = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
     setIsMacroSimGrandFinals(true);
     try {
       setSimulating(true);
@@ -217,6 +220,7 @@ export default function PlayoffsPage() {
       if (res.success) {
         alert("Playoffs advanced to the Grand Finals! Matchups generated.");
         await loadPlayoffData();
+        router.refresh();
       } else {
         alert("Failed to fast-forward playoffs. Please try again.");
       }
@@ -426,6 +430,7 @@ export default function PlayoffsPage() {
         {isPlayoffsActive && !championTeam && (
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
             <button
+              type="button"
               onClick={handleSimulatePlayoffDay}
               disabled={simulating}
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 rounded-xl font-semibold cursor-pointer text-xs transition-all active:scale-[0.98]"
@@ -436,6 +441,7 @@ export default function PlayoffsPage() {
 
             {!hasProgressedPastQuarterfinals && (
               <button
+                type="button"
                 onClick={handleSimulateUntilGrandFinals}
                 disabled={simulating}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-xs shadow-[0_4px_12px_rgba(249,115,22,0.25)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer ring-1 ring-orange-500/20"
@@ -450,6 +456,7 @@ export default function PlayoffsPage() {
         {championTeam && (
           <div className="w-full md:w-auto">
             <button
+              type="button"
               onClick={() => router.push("/dashboard/offseason")}
               className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 text-white rounded-xl font-extrabold text-sm shadow-[0_0_20px_rgba(249,115,22,0.5)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer border border-orange-400"
             >
@@ -782,6 +789,7 @@ export default function PlayoffsPage() {
                   <div>
                     <h4 className="text-xl font-bold text-white flex items-center gap-2">
                       <button 
+                        type="button"
                         onClick={() => {
                           setActiveBoxScoreGame(null);
                           setBoxScoreStats([]);
@@ -810,6 +818,7 @@ export default function PlayoffsPage() {
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => {
                   setSelectedSeries(null);
                   setSeriesGames([]);
@@ -989,6 +998,7 @@ export default function PlayoffsPage() {
                             <div>
                               {isCompleted ? (
                                 <button
+                                  type="button"
                                   onClick={() => handleViewGameBoxScore(game)}
                                   className="px-4 py-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-750 text-orange-500 hover:text-orange-400 rounded-xl font-extrabold text-xs transition-colors cursor-pointer animate-pulse-slow"
                                 >
