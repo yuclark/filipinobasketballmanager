@@ -154,7 +154,7 @@ export default function AwardsCeremonyPage() {
           Season Awards Ceremony
         </span>
         <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight">
-          PBA Regular Season Awards
+          FBM Regular Season Awards
         </h1>
         <p className="text-zinc-400 text-base leading-relaxed">
           Honoring the most outstanding individuals, rookies, defenders, and squad selections of Luzon and VisMin.

@@ -113,20 +113,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex font-sans relative overflow-hidden">
+    <div className="flex bg-zinc-950 text-zinc-100 min-h-screen font-sans relative overflow-hidden">
       {/* Background gradients */}
       <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-orange-500/5 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-cyan-500/5 blur-[100px] rounded-full pointer-events-none" />
 
       {/* Sidebar Navigation */}
-      <aside className="w-64 border-r border-zinc-900 bg-zinc-950/80 backdrop-blur-md p-6 hidden md:flex flex-col justify-between relative z-10">
+      <aside className="fixed top-0 left-0 h-screen w-60 overflow-y-auto z-40 bg-[var(--color-surface)] border-r border-[var(--color-border)] p-6 hidden md:flex flex-col justify-between">
         <div>
           {/* Logo / Title */}
           <div className="flex items-center gap-1.5 mb-8 px-2">
             <Trophy className="w-5 h-5 text-orange-500 mr-2 animate-pulse" />
             <div>
-              <span className="font-extrabold text-[10px] tracking-widest text-zinc-500 block uppercase">Filipino Basketball</span>
-              <span className="font-bold text-zinc-100 tracking-tight text-base block">PBA MANAGER</span>
+              <span className="text-[10px] font-semibold tracking-[0.2em] uppercase text-muted block">FILIPINO</span>
+              <span className="text-[13px] font-bold text-zinc-100 block">BASKETBALL MGR</span>
             </div>
           </div>
 
@@ -201,7 +201,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main Panel */}
-      <main className="flex-1 flex flex-col min-h-screen relative z-10 overflow-y-auto">
+      <main className="ml-0 md:ml-60 flex-1 flex flex-col min-h-screen relative z-10 overflow-y-auto">
         {/* Top Header */}
         <header className="border-b border-zinc-900 bg-zinc-950/50 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4 md:hidden">

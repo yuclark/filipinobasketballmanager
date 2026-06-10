@@ -285,7 +285,7 @@ export default function TradesPage() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-white tracking-tight">Trade Operations Office</h3>
-            <p className="text-zinc-500 text-sm">Select an opposing PBA franchise to start contract negotiations.</p>
+            <p className="text-zinc-500 text-sm">Select an opposing FBM franchise to start contract negotiations.</p>
           </div>
         </div>
 

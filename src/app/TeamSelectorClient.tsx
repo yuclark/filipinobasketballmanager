@@ -60,7 +60,7 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
           FILIPINO <span className="bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent">BASKETBALL</span> MANAGER
         </h1>
         <p className="text-zinc-400 text-lg md:text-xl max-w-2xl mx-auto">
-          Take control of a professional franchise. Manage your roster, draft Fil-Am talent, sign superstars, and lead your team to PBA glory.
+          Take control of a professional franchise. Manage your roster, draft Fil-Am talent, sign superstars, and lead your team to FBM glory.
         </p>
       </div>
 

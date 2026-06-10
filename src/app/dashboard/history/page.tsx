@@ -86,7 +86,7 @@ export default function HistoryPage() {
           <div>
             <h3 className="text-2xl font-bold text-white tracking-tight">League History Hub</h3>
             <p className="text-zinc-500 text-sm font-semibold tracking-wide">
-              Historical archive of PBA Philippine Champions, Individual Trophy Winners, and All-League honorees
+              Historical archive of FBM Philippine Champions, Individual Trophy Winners, and All-League honorees
             </p>
           </div>
         </div>
@@ -125,7 +125,7 @@ export default function HistoryPage() {
                 <div className="bg-zinc-950/40 border border-zinc-900 rounded-2xl p-5 flex flex-col justify-between">
                   <div>
                     <span className="text-[10px] font-extrabold uppercase tracking-widest text-orange-500 block mb-2">
-                      🏆 PBA Philippine Champion
+                      🏆 FBM Philippine Champion
                     </span>
                     {season.champion ? (
                       <div className="space-y-4">

@@ -193,7 +193,7 @@ export default function PlayoffsPage() {
       const res = await simulatePlayoffDayAction();
       if (res.success) {
         if (res.complete) {
-          alert("Playoff Grand Finals concluded! We have crowned a PBA Champion!");
+          alert("Playoff Grand Finals concluded! We have crowned a FBM Champion!");
         } else if (res.advancedRound) {
           alert("All series in the current round are completed! Progression to the next round seeded.");
         }
@@ -569,7 +569,7 @@ export default function PlayoffsPage() {
           <Award className="w-16 h-16 text-orange-500 mx-auto mb-6 animate-pulse" />
           <h3 className="text-3xl font-extrabold text-white tracking-tight mb-3">Regular Season Concluded</h3>
           <p className="text-zinc-400 text-base max-w-md mx-auto mb-8">
-            Standings are officially locked. Seed the playoff brackets and prepare your franchise for the road to the PBA Championship!
+            Standings are officially locked. Seed the playoff brackets and prepare your franchise for the road to the FBM Championship!
           </p>
 
           {/* Seeds check box */}
@@ -737,7 +737,7 @@ export default function PlayoffsPage() {
 
                 <div className="text-center">
                   <span className="inline-flex px-3 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/25 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
-                    PBA League Finals
+                    FBM League Finals
                   </span>
                   <h4 className="text-xl font-extrabold text-white">Grand Finals Showdown</h4>
                   <p className="text-zinc-500 text-xs mt-1">Luzon Champion vs VisMin Champion (Best of 7)</p>
@@ -752,7 +752,7 @@ export default function PlayoffsPage() {
                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-orange-500/10 blur-[90px] rounded-full pointer-events-none" />
                   <Trophy className="w-20 h-20 text-amber-400 mx-auto mb-6 drop-shadow-[0_4px_12px_rgba(251,191,36,0.3)] animate-pulse" />
                   <span className="text-amber-400 text-xs font-bold uppercase tracking-widest block mb-2">
-                    🏆 PBA Season Champion 🏆
+                    🏆 FBM Season Champion 🏆
                   </span>
                   <h3 className="text-3xl font-extrabold text-white tracking-tight drop-shadow-md">
                     {championTeam.city}{" "}

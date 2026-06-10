@@ -129,7 +129,7 @@ export default function ProspectsPage() {
 
           <h3 className="text-xl font-bold text-white mb-2">Draft actively in progress</h3>
           <p className="text-zinc-400 text-sm font-medium leading-relaxed mb-8">
-            The PBA Rookie Draft is currently underway. Please head to the Offseason Hub to inspect the board and make selections.
+            The FBM Rookie Draft is currently underway. Please head to the Offseason Hub to inspect the board and make selections.
           </p>
 
           <Link

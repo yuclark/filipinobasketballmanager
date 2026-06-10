@@ -28,7 +28,7 @@ export default async function TeamsDirectoryPage() {
             <Globe className="w-7 h-7" />
           </div>
           <div>
-            <h3 className="text-2xl font-bold text-white tracking-tight">PBA League Explorer</h3>
+            <h3 className="text-2xl font-bold text-white tracking-tight">FBM League Explorer</h3>
             <p className="text-zinc-500 text-sm font-semibold tracking-wide">
               Inspect any of the 30 active Luzon and VisMin conference teams, their rosters, attributes, and stats.
             </p>

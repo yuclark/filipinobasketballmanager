@@ -444,7 +444,7 @@ export default function SchedulePage() {
           <Trophy className="w-16 h-16 text-zinc-700 mx-auto mb-6" />
           <h3 className="text-3xl font-extrabold text-white tracking-tight mb-3">Season Scaffolding Pending</h3>
           <p className="text-zinc-400 text-base max-w-md mx-auto mb-8">
-            The PBA season calendar is blank. Generate the full 82-game schedule to start playing games, managing rosters, and simulating matchups.
+            The FBM season calendar is blank. Generate the full 82-game schedule to start playing games, managing rosters, and simulating matchups.
           </p>
           <button
             onClick={handleGenerateSchedule}
@@ -547,7 +547,7 @@ export default function SchedulePage() {
 
           {/* 2. Other Matches List */}
           <div className="space-y-4">
-            <h4 className="text-lg font-bold text-white px-2">Other Games Around the PBA</h4>
+            <h4 className="text-lg font-bold text-white px-2">Other Games Around the FBM</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {otherGames.map((game) => {
                 const isPlayed = game.status === "Completed";

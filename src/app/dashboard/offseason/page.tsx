@@ -593,7 +593,7 @@ export default function OffseasonWizardPage() {
         <Trophy className="w-16 h-16 text-zinc-700 mx-auto mb-6" />
         <h3 className="text-3xl font-extrabold text-white tracking-tight mb-4">Offseason Locked</h3>
         <p className="text-zinc-400 text-base max-w-md mx-auto leading-relaxed">
-          Complete the current Postseason Tournament to unlock the front-office renewal cycle. A PBA champion must be crowned before you can transition to the offseason.
+          Complete the current Postseason Tournament to unlock the front-office renewal cycle. A FBM champion must be crowned before you can transition to the offseason.
         </p>
         <div className="mt-8 flex justify-center">
           <button
@@ -899,7 +899,7 @@ export default function OffseasonWizardPage() {
               <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
                 <div className="flex items-center gap-2">
                   <Flame className="w-5 h-5 text-orange-500" />
-                  <h4 className="font-bold text-white text-base">PBA Rookie Draft Lottery</h4>
+                  <h4 className="font-bold text-white text-base">FBM Rookie Draft Lottery</h4>
                 </div>
                 <span className="text-xs font-bold text-zinc-400 bg-zinc-950 px-3 py-1 rounded-full border border-zinc-900">
                   14 Lottery Teams
