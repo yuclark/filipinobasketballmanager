@@ -1,6 +1,6 @@
 # 🏀 Filipino Basketball Manager
 
-A high-performance, text-based basketball simulation engine and franchise management hub. This project is built as a production-grade showcase of modern web engineering, featuring an in-memory batch simulation pipeline, context-aware CPU AI general managers, real-time asset optimization trading algorithms, and stateful multi-threaded client controls.
+A high-performance, text-based basketball simulation engine and franchise management hub. This project is built as a production-grade showcase of modern web engineering, featuring an in-memory batch simulation pipeline, context-aware CPU AI general managers, real-time asset optimization trading algorithms, and stateful multi-threaded client controls. Its for Filipinos!
 
 ---
 
