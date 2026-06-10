@@ -1,8 +1,9 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and } from "drizzle-orm";
-import { players, playerGameStats, games } from "@/db/schema";
+import { eq, and, desc, sql, or } from "drizzle-orm";
+import { players, playerGameStats, games, teams } from "@/db/schema";
+
 
 export async function getPlayerStatsAction(playerId: string) {
   try {
@@ -182,5 +183,100 @@ export async function getTeamSeasonStatsAction(teamId: string) {
   } catch (error: any) {
     console.error("Failed to fetch team season stats splits:", error);
     return { success: false, error: error.message || "Failed to calculate team splits." };
+  }
+}
+
+export async function getGameBoxScoreAction(gameId: string) {
+  try {
+    const stats = await db
+      .select({
+        name: sql<string>`${players.firstName} || ' ' || ${players.lastName}`,
+        position: players.position,
+        isFilAm: players.isFilAm,
+        teamId: players.teamId,
+        minutes: playerGameStats.minutes,
+        points: playerGameStats.points,
+        rebounds: playerGameStats.rebounds,
+        assists: playerGameStats.assists,
+        steals: playerGameStats.steals,
+        blocks: playerGameStats.blocks,
+        turnovers: playerGameStats.turnovers,
+        fgm: playerGameStats.fieldGoalsMade,
+        fga: playerGameStats.fieldGoalsAttempted,
+        threepm: playerGameStats.threePointMade,
+        threepa: playerGameStats.threePointAttempted,
+        ftm: playerGameStats.freeThrowsMade,
+        fta: playerGameStats.freeThrowsAttempted,
+      })
+      .from(playerGameStats)
+      .innerJoin(players, eq(playerGameStats.playerId, players.id))
+      .where(eq(playerGameStats.gameId, gameId))
+      .orderBy(desc(playerGameStats.points));
+
+    const game = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+    if (game.length === 0) {
+      return { userTeam: [], opponentTeam: [] };
+    }
+    const homeTeamId = game[0].homeTeamId;
+    const awayTeamId = game[0].awayTeamId;
+
+    return {
+      userTeam: stats.filter(s => s.teamId === homeTeamId),
+      opponentTeam: stats.filter(s => s.teamId === awayTeamId),
+    };
+  } catch (error) {
+    console.error("Failed to fetch game box score action:", error);
+    return { userTeam: [], opponentTeam: [] };
+  }
+}
+
+export async function getTeamScheduleAction(teamId: string) {
+  try {
+    if (!teamId) return [];
+
+    const list = await db
+      .select({
+        id: games.id,
+        gameNumber: games.gameNumber,
+        status: games.status,
+        homeTeamId: games.homeTeamId,
+        awayTeamId: games.awayTeamId,
+        homeScore: games.homeScore,
+        awayScore: games.awayScore,
+        seasonYear: games.seasonYear,
+      })
+      .from(games)
+      .where(or(eq(games.homeTeamId, teamId), eq(games.awayTeamId, teamId)))
+      .orderBy(games.gameNumber);
+
+    const allTeams = await db.select().from(teams);
+    const teamsMap = new Map(allTeams.map((t) => [t.id, t]));
+
+    return list.map((g) => {
+      const isHome = g.homeTeamId === teamId;
+      const oppId = isHome ? g.awayTeamId : g.homeTeamId;
+      const opp = teamsMap.get(oppId);
+      const user = teamsMap.get(teamId);
+
+      const userScore = isHome ? g.homeScore : g.awayScore;
+      const opponentScore = isHome ? g.awayScore : g.homeScore;
+      const userWon = userScore > opponentScore;
+
+      return {
+        id: g.id,
+        homeTeamId: g.homeTeamId,
+        awayTeamId: g.awayTeamId,
+        date: `Day ${g.gameNumber}`,
+        opponentName: opp ? `${opp.city} ${opp.name}` : "Unknown",
+        userScore,
+        opponentScore,
+        userWon,
+        status: g.status,
+        userTeamName: user ? `${user.city} ${user.name}` : "Your Team",
+      };
+    });
+  } catch (error) {
+    console.error("Failed to fetch team schedule:", error);
+    return [];
   }
 }

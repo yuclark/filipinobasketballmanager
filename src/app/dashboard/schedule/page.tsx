@@ -14,6 +14,8 @@ import {
   simulateWeekChunkAction,
 } from "@/app/actions/leagueEngine";
 import { initializePlayoffsAction } from "@/app/actions/playoffEngine";
+import { getGameBoxScoreAction, getTeamScheduleAction } from "@/app/actions/statsEngine";
+
 import {
   Calendar,
   Play,
@@ -101,9 +103,11 @@ export default function SchedulePage() {
   }, [toastMessage]);
 
   // Box score modal state
-  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [selectedGame, setSelectedGame] = useState<any>(null);
   const [boxScoreStats, setBoxScoreStats] = useState<BoxScoreStat[]>([]);
   const [loadingBoxScore, setLoadingBoxScore] = useState(false);
+  const [teamSchedule, setTeamSchedule] = useState<any[]>([]);
+
 
   useEffect(() => {
     setMounted(true);
@@ -115,12 +119,16 @@ export default function SchedulePage() {
       setLoading(true);
       const data = (await getLeagueDayGames(currentLeagueDay)) as unknown as Game[];
       setGamesList(data);
+
+      const schedule = await getTeamScheduleAction(userTeamId);
+      setTeamSchedule(schedule);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     if (mounted) {
@@ -237,7 +245,13 @@ export default function SchedulePage() {
         // Small yield to allow React to re-render and detect state changes
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
+
+      if (userTeamId) {
+        const schedule = await getTeamScheduleAction(userTeamId);
+        setTeamSchedule(schedule);
+      }
     } catch (err) {
+
       console.error(err);
       alert("Error executing batch simulation.");
     } finally {
@@ -295,6 +309,11 @@ export default function SchedulePage() {
         // Small yield to allow React to re-render and detect state changes
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
+
+      if (userTeamId) {
+        const schedule = await getTeamScheduleAction(userTeamId);
+        setTeamSchedule(schedule);
+      }
     } catch (err) {
       console.error(err);
       alert("Error executing simulation.");
@@ -321,21 +340,39 @@ export default function SchedulePage() {
     }
   };
 
-  // View Box Score Modal Trigger
-  const handleViewBoxScore = async (game: Game) => {
+  // View Box Score Trigger
+  const handleGameClick = async (game: any) => {
+    if (game.status !== 'Completed') return;
+
     setSelectedGame(game);
     setLoadingBoxScore(true);
     try {
-      const stats = (await getGameBoxScore(game.id)) as unknown as BoxScoreStat[];
-      // Sort players by points descending
-      const sorted = stats.sort((a, b) => b.points - a.points);
-      setBoxScoreStats(sorted);
+      const boxScore = await getGameBoxScoreAction(game.id);
+
+      const isHome = game.homeTeamId === userTeamId;
+      const userTeamName = game.userTeamName || (isHome ? (game.homeTeam?.name || "Home Team") : (game.awayTeam?.name || "Away Team"));
+      const opponentName = game.opponentName || (isHome ? (game.awayTeam?.name || "Away Team") : (game.homeTeam?.name || "Home Team"));
+      const userScore = game.userScore !== undefined ? game.userScore : (isHome ? game.homeScore : game.awayScore);
+      const opponentScore = game.opponentScore !== undefined ? game.opponentScore : (isHome ? game.awayScore : game.homeScore);
+      const userWon = game.userWon !== undefined ? game.userWon : (isHome ? (game.homeScore > game.awayScore) : (game.awayScore > game.homeScore));
+
+      setSelectedGame({
+        ...game,
+        userTeamName,
+        opponentName,
+        userScore,
+        opponentScore,
+        userWon,
+        userBoxScore: isHome ? boxScore.userTeam : boxScore.opponentTeam,
+        opponentBoxScore: isHome ? boxScore.opponentTeam : boxScore.userTeam,
+      });
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load box score:', err);
     } finally {
       setLoadingBoxScore(false);
     }
   };
+
 
   const hasSchedule = gamesList.length > 0;
   const userGame = gamesList.find(
@@ -536,7 +573,7 @@ export default function SchedulePage() {
                         </span>
                       </div>
                       <button
-                        onClick={() => handleViewBoxScore(userGame)}
+                        onClick={() => handleGameClick(userGame)}
                         className="px-4 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
                       >
                         View Box Score
@@ -623,7 +660,7 @@ export default function SchedulePage() {
                     {isPlayed && (
                       <div className="mt-4 pt-3 border-t border-zinc-900 flex justify-end">
                         <button
-                          onClick={() => handleViewBoxScore(game)}
+                          onClick={() => handleGameClick(game)}
                           className="text-[10px] font-bold text-zinc-400 hover:text-orange-500 transition-colors cursor-pointer"
                         >
                           View Stats
@@ -635,145 +672,149 @@ export default function SchedulePage() {
               })}
             </div>
           </div>
+
+          {/* 3. Team Season Schedule */}
+          <div className="space-y-4">
+            <h4 className="text-lg font-bold text-white px-2">Team Season Schedule & Results</h4>
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] text-[10px] font-bold tracking-wider uppercase text-[var(--color-text-faint)]">
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Opponent</th>
+                      <th className="px-4 py-3">Score / Status</th>
+                      <th className="px-4 py-3 text-right"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamSchedule.map((game) => {
+                      const isCompleted = game.status === 'Completed';
+                      return (
+                        <tr
+                          key={game.id}
+                          className={`
+                            border-b border-[var(--color-border)] last:border-0 transition-colors duration-100
+                            ${isCompleted
+                              ? 'hover:bg-[var(--color-surface-2)] cursor-pointer'
+                              : 'opacity-60'
+                            }
+                          `}
+                          onClick={() => isCompleted && handleGameClick(game)}
+                        >
+                          {/* Date cell */}
+                          <td className="px-4 py-3 text-[13px] text-[var(--color-text-muted)]">{game.date}</td>
+
+                          {/* Opponent cell */}
+                          <td className="px-4 py-3 text-[13px] font-semibold text-[var(--color-text)]">{game.opponentName}</td>
+
+                          {/* Score cell — show actual score for completed, "vs" for upcoming */}
+                          <td className="px-4 py-3">
+                            {isCompleted ? (
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[13px] font-bold font-display ${game.userWon ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}`}>
+                                  {game.userScore} – {game.opponentScore}
+                                </span>
+                                <span className={`text-[10px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded ${
+                                  game.userWon
+                                    ? 'bg-[var(--color-success-dim)] text-[var(--color-success)]'
+                                    : 'bg-[var(--color-error-dim)] text-[var(--color-error)]'
+                                }`}>
+                                  {game.userWon ? 'W' : 'L'}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[13px] text-[var(--color-text-faint)]">Upcoming</span>
+                            )}
+                          </td>
+
+                          {/* Arrow for completed games */}
+                          <td className="px-4 py-3 text-right">
+                            {isCompleted ? (
+                              <div className="flex items-center justify-end gap-1 text-[var(--color-primary)]">
+                                <span className="text-[11px] font-medium">Box Score</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-[var(--color-text-faint)]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 3. Box Score Modal */}
       {selectedGame && (
         <div className="fixed inset-0 bg-zinc-950/80 flex items-center justify-center z-40 p-4 backdrop-blur-xs">
-          <div className="bg-zinc-900 border border-zinc-850 rounded-3xl w-full max-w-4xl max-h-[85vh] overflow-y-auto flex flex-col shadow-2xl">
-            {/* Modal Header */}
-            <div className="p-6 border-b border-zinc-850 flex justify-between items-center sticky top-0 bg-zinc-900 z-10">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
+            onClick={() => setSelectedGame(null)}
+          />
+
+          {/* Modal panel */}
+          <div className="relative z-10 w-full max-w-4xl max-h-[85vh] overflow-y-auto bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl">
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] sticky top-0 bg-[var(--color-surface)] z-10">
               <div>
-                <h4 className="text-xl font-bold text-white">Box Score & Individual Player Stats</h4>
-                <p className="text-xs text-zinc-400 mt-1">
-                  {selectedGame.homeTeam.city} {selectedGame.homeTeam.name} ({selectedGame.homeScore}) vs{" "}
-                  {selectedGame.awayTeam.city} {selectedGame.awayTeam.name} ({selectedGame.awayScore})
-                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-[13px] text-[var(--color-text-muted)]">{selectedGame.date}</span>
+                  <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded ${
+                    selectedGame.userWon
+                      ? 'bg-[var(--color-success-dim)] text-[var(--color-success)]'
+                      : 'bg-[var(--color-error-dim)] text-[var(--color-error)]'
+                  }`}>
+                    {selectedGame.userWon ? 'WIN' : 'LOSS'}
+                  </span>
+                </div>
+                <h2 className="font-display text-xl font-bold tracking-tight mt-1 text-white">
+                  {selectedGame.userTeamName} <span className="text-[var(--color-primary)]">{selectedGame.userScore}</span>
+                  <span className="text-[var(--color-text-faint)] mx-2">—</span>
+                  <span className="text-[var(--color-primary)]">{selectedGame.opponentScore}</span> {selectedGame.opponentName}
+                </h2>
               </div>
               <button
-                onClick={() => {
-                  setSelectedGame(null);
-                  setBoxScoreStats([]);
-                }}
-                className="p-1.5 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-850 rounded-lg cursor-pointer transition-colors"
+                type="button"
+                onClick={() => setSelectedGame(null)}
+                className="p-2 rounded-lg hover:bg-[var(--color-surface-3)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6">
-              {loadingBoxScore ? (
-                <div className="flex justify-center items-center py-20">
-                  <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+            {loadingBoxScore ? (
+              <div className="flex justify-center items-center py-20">
+                <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Box Score — User Team */}
+                <div className="px-6 py-4">
+                  <p className="text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--color-text-faint)] mb-3">
+                    {selectedGame.userTeamName}
+                  </p>
+                  <BoxScoreTable players={selectedGame.userBoxScore} />
                 </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Home Team Box Score */}
-                  <div>
-                    <h5 className="font-bold text-sm text-orange-500 uppercase tracking-wider mb-3 px-2">
-                      {selectedGame.homeTeam.city} {selectedGame.homeTeam.name} Stats
-                    </h5>
-                    <div className="overflow-x-auto border border-zinc-850 rounded-xl">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-zinc-950 text-zinc-400 font-bold border-b border-zinc-850 uppercase tracking-wider text-[10px]">
-                            <th className="py-3 px-4">Player</th>
-                            <th className="py-3 px-2 text-center">Pos</th>
-                            <th className="py-3 px-2 text-center">PTS</th>
-                            <th className="py-3 px-2 text-center">REB</th>
-                            <th className="py-3 px-2 text-center">AST</th>
-                            <th className="py-3 px-2 text-center">STL</th>
-                            <th className="py-3 px-2 text-center">BLK</th>
-                            <th className="py-3 px-2 text-center">TO</th>
-                            <th className="py-3 px-4 text-center">FG (M-A)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-850">
 
-                          {/* Let's render the list properly */}
-                          {boxScoreStats
-                            .filter((s) => s.player && (s.player as any).teamId === selectedGame.homeTeamId)
-                            .map((stat) => (
-                              <tr key={stat.id} className="hover:bg-zinc-850/40">
-                                <td className="py-3 px-4 font-bold text-zinc-200">
-                                  {stat.player.firstName} {stat.player.lastName}
-                                  {stat.player.isFilAm && (
-                                    <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold bg-amber-500/10 text-amber-400">
-                                      Fil-Am
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-2 text-center text-zinc-400 font-bold">{stat.player.position}</td>
-                                <td className="py-3 px-2 text-center font-bold text-white">{stat.points}</td>
-                                <td className="py-3 px-2 text-center font-semibold text-zinc-300">{stat.rebounds}</td>
-                                <td className="py-3 px-2 text-center font-semibold text-zinc-300">{stat.assists}</td>
-                                <td className="py-3 px-2 text-center text-zinc-400">{stat.steals}</td>
-                                <td className="py-3 px-2 text-center text-zinc-400">{stat.blocks}</td>
-                                <td className="py-3 px-2 text-center text-red-400">{stat.turnovers}</td>
-                                <td className="py-3 px-4 text-center text-zinc-400 font-medium">
-                                  {stat.fieldGoalsMade} - {stat.fieldGoalsAttempted}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                <div className="border-t border-[var(--color-border)]" />
 
-                  {/* Away Team Box Score */}
-                  <div>
-                    <h5 className="font-bold text-sm text-orange-500 uppercase tracking-wider mb-3 px-2">
-                      {selectedGame.awayTeam.city} {selectedGame.awayTeam.name} Stats
-                    </h5>
-                    <div className="overflow-x-auto border border-zinc-850 rounded-xl">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-zinc-950 text-zinc-400 font-bold border-b border-zinc-850 uppercase tracking-wider text-[10px]">
-                            <th className="py-3 px-4">Player</th>
-                            <th className="py-3 px-2 text-center">Pos</th>
-                            <th className="py-3 px-2 text-center">PTS</th>
-                            <th className="py-3 px-2 text-center">REB</th>
-                            <th className="py-3 px-2 text-center">AST</th>
-                            <th className="py-3 px-2 text-center">STL</th>
-                            <th className="py-3 px-2 text-center">BLK</th>
-                            <th className="py-3 px-2 text-center">TO</th>
-                            <th className="py-3 px-4 text-center">FG (M-A)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-850">
-                          {boxScoreStats
-                            .filter((s) => s.player && (s.player as any).teamId === selectedGame.awayTeamId)
-                            .map((stat) => (
-                              <tr key={stat.id} className="hover:bg-zinc-850/40">
-                                <td className="py-3 px-4 font-bold text-zinc-200">
-                                  {stat.player.firstName} {stat.player.lastName}
-                                  {stat.player.isFilAm && (
-                                    <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold bg-amber-500/10 text-amber-400">
-                                      Fil-Am
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-2 text-center text-zinc-400 font-bold">{stat.player.position}</td>
-                                <td className="py-3 px-2 text-center font-bold text-white">{stat.points}</td>
-                                <td className="py-3 px-2 text-center font-semibold text-zinc-300">{stat.rebounds}</td>
-                                <td className="py-3 px-2 text-center font-semibold text-zinc-300">{stat.assists}</td>
-                                <td className="py-3 px-2 text-center text-zinc-400">{stat.steals}</td>
-                                <td className="py-3 px-2 text-center text-zinc-400">{stat.blocks}</td>
-                                <td className="py-3 px-2 text-center text-red-400">{stat.turnovers}</td>
-                                <td className="py-3 px-4 text-center text-zinc-400 font-medium">
-                                  {stat.fieldGoalsMade} - {stat.fieldGoalsAttempted}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                {/* Box Score — Opponent Team */}
+                <div className="px-6 py-4">
+                  <p className="text-[11px] font-semibold tracking-[0.1em] uppercase text-[var(--color-text-faint)] mb-3">
+                    {selectedGame.opponentName}
+                  </p>
+                  <BoxScoreTable players={selectedGame.opponentBoxScore} />
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -827,3 +868,51 @@ export default function SchedulePage() {
     </div>
   );
 }
+
+function BoxScoreTable({ players }: { players: any[] }) {
+  if (!players || players.length === 0) {
+    return <p className="text-[13px] text-[var(--color-text-faint)]">No box score data available.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-[var(--color-border)]">
+            {['Player', 'POS', 'MIN', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'FGM/A', '3PM/A', 'FTM/A'].map(col => (
+              <th key={col} className="text-left px-3 py-2 text-[10px] font-semibold tracking-[0.1em] uppercase text-[var(--color-text-faint)] whitespace-nowrap">
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {players.map((player, i) => (
+            <tr key={i} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)] transition-colors">
+              <td className="px-3 py-2">
+                <span className="text-[13px] font-semibold text-white">{player.name}</span>
+                {player.isFilAm && (
+                  <span className="ml-1.5 text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
+                    FIL-AM
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-[12px] text-[var(--color-text-muted)]">{player.position}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.minutes ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] font-bold text-[var(--color-text)]">{player.points ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.rebounds ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.assists ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.steals ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.blocks ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.turnovers ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.fgm ?? 0}/{player.fga ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.threepm ?? 0}/{player.threepa ?? 0}</td>
+              <td className="px-3 py-2 text-[13px] text-[var(--color-text-muted)]">{player.ftm ?? 0}/{player.fta ?? 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
