@@ -25,6 +25,8 @@ import {
   Loader2,
   Sparkles,
   ChevronRight,
+  ChevronLeft,
+
   MapPin,
   Trophy,
   X,
@@ -107,6 +109,10 @@ export default function SchedulePage() {
   const [boxScoreStats, setBoxScoreStats] = useState<BoxScoreStat[]>([]);
   const [loadingBoxScore, setLoadingBoxScore] = useState(false);
   const [teamSchedule, setTeamSchedule] = useState<any[]>([]);
+  const [viewingDay, setViewingDay] = useState(currentLeagueDay);
+  const [viewingDayGames, setViewingDayGames] = useState<Game[]>([]);
+  const [loadingViewingDay, setLoadingViewingDay] = useState(false);
+
 
 
   useEffect(() => {
@@ -122,6 +128,9 @@ export default function SchedulePage() {
 
       const schedule = await getTeamScheduleAction(userTeamId);
       setTeamSchedule(schedule);
+
+      const vData = (await getLeagueDayGames(viewingDay)) as unknown as Game[];
+      setViewingDayGames(vData);
     } catch (err) {
       console.error(err);
     } finally {
@@ -135,6 +144,30 @@ export default function SchedulePage() {
       loadDayGames();
     }
   }, [mounted, currentLeagueDay, userTeamId]);
+
+  useEffect(() => {
+    setViewingDay(currentLeagueDay);
+  }, [currentLeagueDay]);
+
+  const loadViewingDayGames = async () => {
+    if (!userTeamId) return;
+    try {
+      setLoadingViewingDay(true);
+      const data = (await getLeagueDayGames(viewingDay)) as unknown as Game[];
+      setViewingDayGames(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingViewingDay(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mounted) {
+      loadViewingDayGames();
+    }
+  }, [mounted, viewingDay, userTeamId]);
+
 
   if (!mounted) {
     return (
@@ -241,6 +274,8 @@ export default function SchedulePage() {
         const currentDay = res.currentDay ?? currentLeagueDay;
         const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
         setGamesList(data);
+        setViewingDay(currentDay);
+
 
         // Small yield to allow React to re-render and detect state changes
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -302,7 +337,9 @@ export default function SchedulePage() {
           setLeagueDay(currentDay);
           const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
           setGamesList(data);
+          setViewingDay(currentDay);
         } else {
+
           break;
         }
 
@@ -378,9 +415,10 @@ export default function SchedulePage() {
   const userGame = gamesList.find(
     (g) => g.homeTeamId === userTeamId || g.awayTeamId === userTeamId
   );
-  const otherGames = gamesList.filter(
+  const otherGames = viewingDayGames.filter(
     (g) => g.homeTeamId !== userTeamId && g.awayTeamId !== userTeamId
   );
+
 
   const isUserGamePlayed = userGame?.status === "Completed";
   const areAllGamesPlayed = gamesList.every((g) => g.status === "Completed");
@@ -618,20 +656,53 @@ export default function SchedulePage() {
 
           {/* 2. Other Matches List */}
           <div className="space-y-4">
-            <h4 className="text-lg font-bold text-white px-2">Other Games Around the FBM</h4>
+            <div className="flex items-center justify-between mb-4 px-2">
+              <h2 className="text-[13px] font-semibold text-[var(--color-text-muted)] uppercase tracking-widest">
+                Other Games Around the FBM
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setViewingDay(d => Math.max(1, d - 1))}
+                  disabled={viewingDay <= 1 || loadingViewingDay}
+                  className="p-1.5 rounded-md hover:bg-[var(--color-surface-3)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-[12px] font-medium text-[var(--color-text-muted)] min-w-[50px] text-center">
+                  Day {viewingDay}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setViewingDay(d => Math.min(82, d + 1))}
+                  disabled={viewingDay >= 82 || loadingViewingDay}
+                  className="p-1.5 rounded-md hover:bg-[var(--color-surface-3)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {otherGames.map((game) => {
                 const isPlayed = game.status === "Completed";
                 return (
                   <div
                     key={game.id}
-                    className="bg-zinc-900/40 border border-zinc-900 rounded-2xl p-5 hover:border-zinc-800 transition-colors flex flex-col justify-between"
+                    onClick={() => game.status === 'Completed' && handleGameClick(game)}
+                    className={`bg-zinc-900/40 border border-zinc-900 rounded-2xl p-5 hover:border-zinc-800 transition-colors flex flex-col justify-between ${
+                      game.status === 'Completed' ? 'cursor-pointer hover:border-[var(--color-border-strong)]' : ''
+                    }`}
                   >
                     <div className="flex items-center justify-between text-xs text-zinc-500 mb-3 font-semibold">
                       <span>Day {game.gameNumber}</span>
-                      <span className={isPlayed ? "text-orange-500 font-bold" : "text-zinc-600"}>
-                        {game.status}
-                      </span>
+                      {game.status === 'Completed' ? (
+                        <span className="text-[11px] font-bold text-[var(--color-text-muted)]">
+                          {game.homeScore} – {game.awayScore}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-[var(--color-text-faint)]">Scheduled</span>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -657,14 +728,10 @@ export default function SchedulePage() {
                       </div>
                     </div>
 
-                    {isPlayed && (
-                      <div className="mt-4 pt-3 border-t border-zinc-900 flex justify-end">
-                        <button
-                          onClick={() => handleGameClick(game)}
-                          className="text-[10px] font-bold text-zinc-400 hover:text-orange-500 transition-colors cursor-pointer"
-                        >
-                          View Stats
-                        </button>
+                    {game.status === 'Completed' && (
+                      <div className="flex items-center gap-1 mt-2 text-[var(--color-primary)]">
+                        <span className="text-[10px] font-medium">Box Score</span>
+                        <ChevronRight className="w-3 h-3" />
                       </div>
                     )}
                   </div>
@@ -672,6 +739,7 @@ export default function SchedulePage() {
               })}
             </div>
           </div>
+
 
           {/* 3. Team Season Schedule */}
           <div className="space-y-4">
