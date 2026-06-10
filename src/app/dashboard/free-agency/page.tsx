@@ -57,6 +57,7 @@ export default function FreeAgencyPage() {
   // Per-player offer states
   const [offerStatuses, setOfferStatuses] = useState<Record<string, OfferStatus>>({});
   const [inlineErrors, setInlineErrors] = useState<Record<string, string>>({});
+  const [customOffers, setCustomOffers] = useState<Record<string, number>>({});
 
   // Search / Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -103,14 +104,14 @@ export default function FreeAgencyPage() {
     );
   }
 
-  const handleSendOffer = async (playerId: string) => {
+  const handleSendOffer = async (playerId: string, offerAmount: number) => {
     if (!userTeamId) return;
 
     setOfferStatuses((prev) => ({ ...prev, [playerId]: "pending" }));
     setInlineErrors((prev) => { const n = { ...prev }; delete n[playerId]; return n; });
 
     try {
-      const result = await sendOfferAction(playerId, userTeamId);
+      const result = await sendOfferAction(playerId, userTeamId, offerAmount);
       setOfferStatuses((prev) => ({ ...prev, [playerId]: result.status as OfferStatus }));
 
       if (result.status === "accepted") {
@@ -275,7 +276,8 @@ export default function FreeAgencyPage() {
               {filteredFreeAgents.length > 0 ? (
                 filteredFreeAgents.map((player) => {
                   const isRosterFull = (capInfo?.rosterCount || 0) >= MAX_ROSTER_SIZE;
-                  const canAfford = capInfo ? capInfo.space >= player.salary : false;
+                  const currentOffer = customOffers[player.id] ?? player.salary;
+                  const canAfford = capInfo ? capInfo.space >= currentOffer : false;
                   const isAffordable = !isRosterFull && canAfford;
                   const status = offerStatuses[player.id] ?? "none";
                   const inlineError = inlineErrors[player.id];
@@ -308,7 +310,7 @@ export default function FreeAgencyPage() {
 
                       {/* Salary */}
                       <td className="py-4 px-4 text-sm font-bold">
-                        <span className={canAfford ? "text-amber-500" : "text-red-400"}>
+                        <span className={capInfo && capInfo.space >= player.salary ? "text-amber-500" : "text-red-400"}>
                           {formatPHP(player.salary)}
                         </span>
                       </td>
@@ -322,18 +324,58 @@ export default function FreeAgencyPage() {
 
                       {/* Action */}
                       <td className="py-4 px-6 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          {status === "none" && isAffordable && (
-                            <button
-                              type="button"
-                              onClick={() => handleSendOffer(player.id)}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-                            >
-                              Send Offer
-                            </button>
+                        <div className="flex flex-col items-center gap-2">
+                          {status === "none" && (
+                            <div className="flex flex-col items-center gap-1.5">
+                              {/* Negotiated offer inputs */}
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  value={currentOffer}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value) || 0;
+                                    setCustomOffers((prev) => ({ ...prev, [player.id]: val }));
+                                  }}
+                                  className="w-28 px-2 py-1 bg-zinc-950 border border-zinc-800 focus:border-orange-500 rounded text-xs text-white text-center font-bold font-mono focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendOffer(player.id, currentOffer)}
+                                  disabled={!isAffordable}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white rounded text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-orange-500/10 disabled:hover:text-orange-400"
+                                >
+                                  Send Offer
+                                </button>
+                              </div>
+
+                              {/* Quick offer buttons */}
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomOffers((prev) => ({ ...prev, [player.id]: player.salary }))}
+                                  className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 text-[10px] font-bold text-zinc-400 hover:text-white rounded"
+                                >
+                                  Match
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomOffers((prev) => ({ ...prev, [player.id]: Math.round(player.salary * 1.1) }))}
+                                  className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 text-[10px] font-bold text-zinc-400 hover:text-white rounded"
+                                >
+                                  +10%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomOffers((prev) => ({ ...prev, [player.id]: Math.round(player.salary * 1.2) }))}
+                                  className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 text-[10px] font-bold text-zinc-400 hover:text-white rounded"
+                                >
+                                  +20%
+                                </button>
+                              </div>
+                            </div>
                           )}
                           {status === "none" && !isAffordable && (
-                            <span className="text-[11px] text-zinc-500 font-semibold">
+                            <span className="text-[10px] text-zinc-500 font-semibold mt-1">
                               {isRosterFull ? `Roster Full` : "Over Budget"}
                             </span>
                           )}
@@ -356,7 +398,7 @@ export default function FreeAgencyPage() {
                             </span>
                           )}
                           {inlineError && (
-                            <span className="text-[10px] text-red-400/80 max-w-[160px] text-center leading-tight">{inlineError}</span>
+                            <span className="text-[10px] text-red-400/80 max-w-[200px] text-center leading-tight mt-1">{inlineError}</span>
                           )}
                         </div>
                       </td>

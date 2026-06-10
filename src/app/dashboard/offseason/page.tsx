@@ -12,6 +12,7 @@ import {
   getDraftProspectsAction,
   getUserDraftPicksAction,
   runOffseasonFreeAgencyAction,
+  getDraftSessionPicksAction,
 } from "@/app/actions/offseasonEngine";
 import {
   getExpiringPlayersAction,
@@ -19,6 +20,7 @@ import {
   runCpuReSigningsAction,
   getDraftLotteryPicksAction,
   finalizeOffseasonAction,
+  finalizeLotteryAction,
 } from "@/app/actions/offseasonWizard";
 import {
   Trophy,
@@ -143,6 +145,9 @@ export default function OffseasonWizardPage() {
 
   // Draft Picks State
   const [userDraftPicks, setUserDraftPicks] = useState<any[]>([]);
+  const [evolutionResults, setEvolutionResults] = useState<any>(null);
+  const [showRegressions, setShowRegressions] = useState(false);
+  const [sessionPicks, setSessionPicks] = useState<any[]>([]);
 
   // Phase 5: Free Agency State
   const [freeAgencySimulated, setFreeAgencySimulated] = useState<boolean>(false);
@@ -172,6 +177,7 @@ export default function OffseasonWizardPage() {
       pickHistory: updates.pickHistory ?? pickHistory,
       freeAgencySimulated: updates.freeAgencySimulated !== undefined ? updates.freeAgencySimulated : freeAgencySimulated,
       freeAgencyLogs: updates.freeAgencyLogs !== undefined ? updates.freeAgencyLogs : freeAgencyLogs,
+      evolutionResults: updates.evolutionResults !== undefined ? updates.evolutionResults : evolutionResults,
     };
     localStorage.setItem("filipino-basketball-manager-offseason-wizard", JSON.stringify(state));
   };
@@ -223,6 +229,7 @@ export default function OffseasonWizardPage() {
           if (loadedState.pickHistory) setPickHistory(loadedState.pickHistory);
           if (loadedState.freeAgencySimulated !== undefined) setFreeAgencySimulated(loadedState.freeAgencySimulated);
           if (loadedState.freeAgencyLogs) setFreeAgencyLogs(loadedState.freeAgencyLogs);
+          if (loadedState.evolutionResults) setEvolutionResults(loadedState.evolutionResults);
         } catch (e) {
           console.error("Failed to parse saved wizard state:", e);
         }
@@ -268,10 +275,18 @@ export default function OffseasonWizardPage() {
       }
 
       // Check upcoming season year
+      let upcomingYear = 2027;
       const standingsRes = await getStandingsDataAction();
       if (standingsRes.success && standingsRes.completedGames && standingsRes.completedGames.length > 0) {
         const yr = standingsRes.completedGames[0].seasonYear;
-        setNextSeasonYear(yr + 1);
+        upcomingYear = yr + 1;
+        setNextSeasonYear(upcomingYear);
+      }
+
+      // Fetch draft session picks
+      const sessionRes = await getDraftSessionPicksAction(upcomingYear);
+      if (sessionRes.success && sessionRes.picks) {
+        setSessionPicks(sessionRes.picks);
       }
     } catch (err: any) {
       console.error(err);
@@ -352,6 +367,9 @@ export default function OffseasonWizardPage() {
       const res = await processPlayerEvolutionAction();
       if (res.success && res.logs) {
         setEvolutionLogs(res.logs);
+        if (res.evolutionResults) {
+          setEvolutionResults(res.evolutionResults);
+        }
         
         // B. Generate Rookie pool for the draft
         const poolRes = await generateRookiePoolAction(nextSeasonYear);
@@ -372,6 +390,7 @@ export default function OffseasonWizardPage() {
         saveWizardState({
           evolutionLogs: res.logs,
           evolutionSimulated: true,
+          evolutionResults: res.evolutionResults,
         });
       } else {
         setWizardError("Failed to run player evolution. Please try again.");
@@ -451,13 +470,38 @@ export default function OffseasonWizardPage() {
     }, 900);
   };
 
-  const proceedToPhase4 = () => {
-    setCurrentPhase(4);
-    saveWizardState({ currentPhase: 4 });
+  const proceedToPhase4 = async () => {
+    try {
+      setLoading(true);
+      setWizardError(null);
+      const draftOrderIds = draftOrder.map((t) => t.id);
+      const res = await finalizeLotteryAction(draftOrderIds, nextSeasonYear);
+      if (res.success) {
+        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+        if (sessionRes.success && sessionRes.picks) {
+          setSessionPicks(sessionRes.picks);
+        }
+        setCurrentPhase(4);
+        saveWizardState({ currentPhase: 4 });
+      } else {
+        setWizardError(res.error || "Failed to finalize lottery picks in database.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError("Error finalizing lottery database order.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Phase 4 Actions: Rookie Draft Room
-  const runCpuPicks = async (startIndex: number, currentProspects: Prospect[], history: DraftPick[]) => {
+  const runDraftSimulation = async (
+    startIndex: number,
+    currentProspects: Prospect[],
+    history: DraftPick[],
+    autoDraftUser: boolean = false,
+    autoDraftEntireRemaining: boolean = false
+  ) => {
     if (draftingActive) return;
     setDraftingActive(true);
 
@@ -467,10 +511,14 @@ export default function OffseasonWizardPage() {
 
     const draftedIds = new Set(localHistory.map((h) => h.player.id));
 
-    while (idx < 30) {
-      const currentTeam = draftOrder[idx];
-      if (currentTeam.id === userTeamId) {
-        // Pause and let user draft
+    while (idx < 60) {
+      const currentPick = sessionPicks[idx];
+      if (!currentPick) break;
+
+      const isUser = currentPick.ownerTeamId === userTeamId;
+
+      if (isUser && !autoDraftUser && !autoDraftEntireRemaining) {
+        // Pause and let user draft manually
         setDraftingActive(false);
         setProspects(localProspects);
         setPickHistory(localHistory);
@@ -479,17 +527,18 @@ export default function OffseasonWizardPage() {
         return;
       }
 
-      // CPU selects highest-rated prospect
+      // Find best available prospect
       const available = localProspects.filter((p) => !draftedIds.has(p.id));
       if (available.length === 0) break;
 
       const bestPlayer = available.reduce((best, cur) => (cur.overall > best.overall ? cur : best), available[0]);
 
-      const res = await executeDraftPickAction(currentTeam.id, bestPlayer.id);
+      // Execute pick
+      const res = await executeDraftPickAction(currentPick.ownerTeamId!, bestPlayer.id, currentPick.pickNumber!, nextSeasonYear);
       if (res.success) {
         draftedIds.add(bestPlayer.id);
         const pickDetails: DraftPick = {
-          team: currentTeam,
+          team: { id: currentPick.ownerTeamId!, name: currentPick.ownerName!, city: currentPick.ownerCity! } as any,
           player: bestPlayer,
           pickNumber: idx + 1,
         };
@@ -498,41 +547,48 @@ export default function OffseasonWizardPage() {
 
         setPickHistory([...localHistory]);
         setProspects([...localProspects]);
-        
+
         idx++;
         setCurrentPickIndex(idx);
         saveWizardState({ currentPickIndex: idx, pickHistory: localHistory });
 
-        // Visual delay
+        // If we only wanted to auto-draft a single user pick, stop here so the user sees the pick and CPU continues if needed
+        if (isUser && autoDraftUser && !autoDraftEntireRemaining) {
+          setDraftingActive(false);
+          // Now let CPU continue for remaining picks until user is up again
+          runDraftSimulation(idx, localProspects, localHistory, false, false);
+          return;
+        }
+
+        // Delay for visual feedback
         await new Promise((r) => setTimeout(r, 600));
       } else {
-        console.error("CPU pick failed:", res.error);
+        console.error("Draft pick failed:", res.error);
         break;
       }
     }
 
     setDraftingActive(false);
-    if (idx >= 30) {
-      // Draft completed!
-      saveWizardState({ currentPickIndex: 30, pickHistory: localHistory });
+    if (idx >= 60) {
+      saveWizardState({ currentPickIndex: 60, pickHistory: localHistory });
     }
   };
 
   const handleUserDraftPick = async () => {
     if (!selectedProspectId || draftingActive) return;
 
-    const currentTeam = draftOrder[currentPickIndex];
-    if (currentTeam.id !== userTeamId) return; // Not user's turn
+    const currentPick = sessionPicks[currentPickIndex];
+    if (!currentPick || currentPick.ownerTeamId !== userTeamId) return; // Not user's turn
 
     const selectedPlayer = prospects.find((p) => p.id === selectedProspectId);
     if (!selectedPlayer) return;
 
     setDraftingActive(true);
     try {
-      const res = await executeDraftPickAction(userTeamId, selectedProspectId);
+      const res = await executeDraftPickAction(userTeamId!, selectedProspectId, currentPick.pickNumber!, nextSeasonYear);
       if (res.success) {
         const pickDetails: DraftPick = {
-          team: currentTeam,
+          team: { id: userTeamId!, name: currentPick.ownerName!, city: currentPick.ownerCity! } as any,
           player: selectedPlayer,
           pickNumber: currentPickIndex + 1,
         };
@@ -557,7 +613,7 @@ export default function OffseasonWizardPage() {
         setDraftingActive(false);
 
         // Immediately trigger CPU picks following user turn
-        await runCpuPicks(nextIdx, remaining, updatedHistory);
+        await runDraftSimulation(nextIdx, remaining, updatedHistory, false, false);
       } else {
         setWizardError("Failed to draft selected player. Please check your selection and try again.");
         setDraftingActive(false);
@@ -570,7 +626,15 @@ export default function OffseasonWizardPage() {
   };
 
   const handleStartCpuPicks = async () => {
-    await runCpuPicks(currentPickIndex, prospects, pickHistory);
+    await runDraftSimulation(currentPickIndex, prospects, pickHistory, false, false);
+  };
+
+  const handleCpuDraftForUser = async () => {
+    await runDraftSimulation(currentPickIndex, prospects, pickHistory, true, false);
+  };
+
+  const handleAutoDraftEntireRemaining = async () => {
+    await runDraftSimulation(currentPickIndex, prospects, pickHistory, false, true);
   };
 
   const proceedToPhase5 = () => {
@@ -672,7 +736,8 @@ export default function OffseasonWizardPage() {
   ];
 
   const userTeam = draftOrder.find((t) => t.id === userTeamId);
-  const isUserTurn = currentPickIndex < 30 && draftOrder[currentPickIndex]?.id === userTeamId;
+  const currentPick = sessionPicks[currentPickIndex];
+  const isUserTurn = currentPickIndex < 60 && currentPick?.ownerTeamId === userTeamId;
 
   return (
     <div className="space-y-8 relative pb-16">
@@ -916,40 +981,135 @@ export default function OffseasonWizardPage() {
           )}
 
           {evolutionLogs.length > 0 && (
-            <div className="space-y-4">
-              <h5 className="text-sm font-bold text-zinc-300 px-1">League Transitions Summary</h5>
-              <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 max-h-[350px] overflow-y-auto space-y-2 divide-y divide-zinc-900/50">
-                {evolutionLogs.map((log, idx) => {
-                  const isRetirement = log.includes("retirement") || log.includes("🚨");
-                  const isUnrestricted = log.includes("unrestricted");
-                  const isProgression = log.includes("📈");
-                  const isRegression = log.includes("📉");
+            <div className="space-y-6">
+              {/* Stats Overview Grid */}
+              {evolutionResults && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Players Improved</span>
+                    <span className="text-2xl font-extrabold text-green-400 mt-2">+{evolutionResults.improvedCount}</span>
+                  </div>
+                  <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Players Regressed</span>
+                    <span className="text-2xl font-extrabold text-red-400 mt-2">-{evolutionResults.regressedCount}</span>
+                  </div>
+                  <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 flex flex-col justify-between">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Biggest Leap</span>
+                    {evolutionResults.biggestLeap ? (
+                      <div className="mt-2">
+                        <span className="text-sm font-extrabold text-white block truncate">
+                          {evolutionResults.biggestLeap.playerName}
+                        </span>
+                        <span className="text-[10px] font-bold text-orange-400 block mt-0.5 truncate">
+                          {evolutionResults.biggestLeap.teamName} • +{evolutionResults.biggestLeap.deltaOverall} OVR
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-extrabold text-zinc-600 mt-2">—</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                  return (
-                    <div
-                      key={idx}
-                      className={`text-xs font-semibold py-2.5 px-3 rounded-lg flex items-center gap-2.5 ${
-                        isRetirement
-                          ? "bg-red-500/5 text-red-400"
-                          : isUnrestricted
-                          ? "bg-amber-500/5 text-amber-400"
-                          : isProgression
-                          ? "bg-green-500/5 text-green-400"
-                          : isRegression
-                          ? "bg-zinc-900/40 text-zinc-500"
-                          : "text-zinc-300"
-                      }`}
+              {/* Top 10 Tables */}
+              {evolutionResults && evolutionResults.players && (
+                <div className="bg-zinc-950/40 border border-zinc-900 rounded-2xl p-5 space-y-4">
+                  <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+                    <h5 className="text-sm font-bold text-white">
+                      {showRegressions ? "Top 10 Offseason Regressions" : "Top 10 Most Improved Players"}
+                    </h5>
+                    <button
+                      type="button"
+                      onClick={() => setShowRegressions(!showRegressions)}
+                      className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-850 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
                     >
-                      <span className="text-[10px] text-zinc-600">#{idx + 1}</span>
-                      <span>{log}</span>
-                    </div>
-                  );
-                })}
+                      Show {showRegressions ? "Most Improved" : "Regressions"}
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-zinc-900 text-zinc-500 font-bold uppercase tracking-wider">
+                          <th className="py-2 px-3">Rank</th>
+                          <th className="py-2 px-3">Player</th>
+                          <th className="py-2 px-3">Team</th>
+                          <th className="py-2 px-3 text-center">Age</th>
+                          <th className="py-2 px-3 text-center">Before</th>
+                          <th className="py-2 px-3 text-center">After</th>
+                          <th className="py-2 px-3 text-center">Delta</th>
+                          <th className="py-2 px-3">Key Changes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-900 font-semibold text-zinc-300">
+                        {(showRegressions
+                          ? [...evolutionResults.players].filter((p: any) => p.deltaOverall < 0).reverse().slice(0, 10)
+                          : [...evolutionResults.players].filter((p: any) => p.deltaOverall > 0).slice(0, 10)
+                        ).map((p: any, idx: number) => {
+                          const changes = Object.entries(p.changedAttributes || {})
+                            .map(([attr, delta]) => `${Number(delta) > 0 ? "+" : ""}${delta} ${attr}`)
+                            .join(", ");
+                          return (
+                            <tr key={p.playerId} className="hover:bg-zinc-900/10">
+                              <td className="py-2 px-3 text-zinc-500">#{idx + 1}</td>
+                              <td className="py-2 px-3 text-white font-extrabold">{p.playerName}</td>
+                              <td className="py-2 px-3 text-zinc-400">{p.teamName}</td>
+                              <td className="py-2 px-3 text-center text-zinc-400">{p.age}</td>
+                              <td className="py-2 px-3 text-center text-zinc-500">{p.oldOverall}</td>
+                              <td className="py-2 px-3 text-center text-zinc-200">{p.newOverall}</td>
+                              <td className={`py-2 px-3 text-center font-extrabold ${p.deltaOverall > 0 ? "text-green-400" : "text-red-400"}`}>
+                                {p.deltaOverall > 0 ? `+${p.deltaOverall}` : p.deltaOverall}
+                              </td>
+                              <td className="py-2 px-3 text-[11px] text-zinc-400 max-w-[200px] truncate" title={changes}>
+                                {changes || "No attributes changed"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Scrollable logs summary */}
+              <div className="space-y-2">
+                <h5 className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider px-1">Detailed Transitions Log</h5>
+                <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-4 max-h-[200px] overflow-y-auto space-y-2 divide-y divide-zinc-900/50">
+                  {evolutionLogs.map((log, idx) => {
+                    const isRetirement = log.includes("retirement") || log.includes("🚨");
+                    const isUnrestricted = log.includes("unrestricted");
+                    const isProgression = log.includes("📈");
+                    const isRegression = log.includes("📉");
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`text-xs font-semibold py-2 px-3 rounded-lg flex items-center gap-2.5 ${
+                          isRetirement
+                            ? "bg-red-500/5 text-red-400"
+                            : isUnrestricted
+                            ? "bg-amber-500/5 text-amber-400"
+                            : isProgression
+                            ? "bg-green-500/5 text-green-400"
+                            : isRegression
+                            ? "bg-zinc-900/20 text-zinc-500"
+                            : "text-zinc-300"
+                        }`}
+                      >
+                        <span className="text-[10px] text-zinc-600">#{idx + 1}</span>
+                        <span>{log}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex justify-end">
+
+              <div className="flex justify-end pt-2">
                 <button
+                  type="button"
                   onClick={proceedToPhase3}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 rounded-xl font-bold text-xs transition-all cursor-pointer hover:scale-[1.02]"
                 >
                   <span>Proceed to Phase 3: Draft Lottery</span>
                   <ChevronRight className="w-4 h-4 text-orange-500" />
@@ -1163,12 +1323,12 @@ export default function OffseasonWizardPage() {
             <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-5 shadow-lg">
               <h5 className="font-bold text-white text-sm border-b border-zinc-900 pb-2">Draft Console</h5>
 
-              {currentPickIndex < 30 ? (
+              {currentPickIndex < 60 ? (
                 <div className="space-y-4">
                   {/* Current pick display */}
                   <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-900 space-y-2">
                     <div className="flex justify-between items-center text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
-                      <span>Pick #{currentPickIndex + 1} of 30</span>
+                      <span>Pick #{currentPickIndex + 1} of 60</span>
                       <span className={isUserTurn ? "text-orange-500 animate-pulse font-extrabold" : ""}>
                         {isUserTurn ? "On the Clock" : "Simulating"}
                       </span>
@@ -1180,7 +1340,7 @@ export default function OffseasonWizardPage() {
                       <div>
                         <span className="text-xs text-zinc-400 block font-semibold">Current Team Drafting</span>
                         <span className="text-sm font-extrabold text-white">
-                          {draftOrder[currentPickIndex]?.city} {draftOrder[currentPickIndex]?.name}
+                          {currentPick ? `${currentPick.ownerCity} ${currentPick.ownerName}` : "—"}
                           {isUserTurn && " (Your Team)"}
                         </span>
                       </div>
@@ -1206,6 +1366,7 @@ export default function OffseasonWizardPage() {
                         ))}
                       </select>
                       <button
+                        type="button"
                         onClick={handleUserDraftPick}
                         disabled={!selectedProspectId || draftingActive}
                         className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:scale-[1.02] text-white rounded-xl font-bold text-xs shadow-md transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer"
@@ -1217,6 +1378,14 @@ export default function OffseasonWizardPage() {
                         )}
                         <span>Draft Selected Player</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={handleCpuDraftForUser}
+                        disabled={draftingActive}
+                        className="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 rounded-xl text-xs font-bold transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer"
+                      >
+                        <span>Let CPU Draft For Me</span>
+                      </button>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -1224,9 +1393,10 @@ export default function OffseasonWizardPage() {
                         CPU teams are currently drafting. Click the simulation button to advance.
                       </div>
                       <button
+                        type="button"
                         onClick={handleStartCpuPicks}
                         disabled={draftingActive}
-                        className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 rounded-xl font-bold text-xs transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer"
+                        className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-850 rounded-xl font-bold text-xs transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer"
                       >
                         {draftingActive ? (
                           <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
@@ -1234,6 +1404,14 @@ export default function OffseasonWizardPage() {
                           <RefreshCw className="w-4 h-4 text-orange-500" />
                         )}
                         <span>Simulate CPU Picks</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAutoDraftEntireRemaining}
+                        disabled={draftingActive}
+                        className="w-full flex items-center justify-center gap-2 px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 rounded-xl text-xs font-bold transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer"
+                      >
+                        <span>Auto-Draft Entire Draft</span>
                       </button>
                     </div>
                   )}
@@ -1243,9 +1421,10 @@ export default function OffseasonWizardPage() {
                   <CheckCircle className="w-10 h-10 text-green-400 mx-auto" />
                   <h6 className="font-extrabold text-white text-sm">Rookie Draft Complete</h6>
                   <p className="text-zinc-400 text-xs leading-relaxed">
-                    All 30 draft positions have successfully selected prospects. Proceed to the free agency phase.
+                    All 60 draft positions have successfully selected prospects. Proceed to the free agency phase.
                   </p>
                   <button
+                    type="button"
                     onClick={proceedToPhase5}
                     className="w-full py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-bold text-xs border border-zinc-800 transition-all cursor-pointer"
                   >

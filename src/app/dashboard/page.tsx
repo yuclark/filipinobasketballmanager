@@ -6,6 +6,7 @@ import { useGameStore } from "@/store/useGameStore";
 import { getTeamRoster } from "@/app/actions";
 import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import { releasePlayerAction } from "@/app/actions/transactions";
+import { getUserDraftPicksAction } from "@/app/actions/offseasonEngine";
 import { getTeamSeasonStatsAction } from "@/app/actions/statsEngine";
 import {
   Users,
@@ -53,6 +54,7 @@ export default function RosterPage() {
 
   const [mounted, setMounted] = useState(false);
   const [playersList, setPlayersList] = useState<Player[]>([]);
+  const [draftPicksList, setDraftPicksList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +92,11 @@ export default function RosterPage() {
           playoffs: statsRes.playoffs,
           career: statsRes.career,
         });
+      }
+
+      const picksRes = await getUserDraftPicksAction(userTeamId!);
+      if (picksRes.success && picksRes.picks) {
+        setDraftPicksList(picksRes.picks);
       }
     } catch (err) {
       console.error(err);
@@ -571,6 +578,51 @@ export default function RosterPage() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Draft Assets Section */}
+      <div className="mt-8 pt-8 border-t border-zinc-900">
+        <h4 className="text-lg font-bold text-white mb-2">Franchise Draft Assets</h4>
+        <p className="text-zinc-500 text-sm mb-4">
+          Future draft selections owned by your franchise. These picks can be traded in the Trade Operations Office.
+        </p>
+
+        {draftPicksList.length === 0 ? (
+          <div className="bg-zinc-950/20 border border-zinc-900 rounded-2xl p-6 text-center text-zinc-500 text-xs italic">
+            No future draft assets currently owned.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {draftPicksList.map((pick) => (
+              <div
+                key={pick.id}
+                className="bg-zinc-950/40 border border-zinc-900 hover:border-zinc-800 transition-all rounded-2xl p-4 flex flex-col justify-between gap-3 relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 blur-2xl rounded-full pointer-events-none group-hover:bg-orange-500/10 transition-all" />
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                      Season {pick.season}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-extrabold bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                      Rnd {pick.round}
+                    </span>
+                  </div>
+                  <h5 className="text-sm font-bold text-zinc-200">
+                    Round {pick.round} Draft Pick
+                  </h5>
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    Original: {pick.originalTeamCity} {pick.originalTeamName}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between mt-1 pt-2 border-t border-zinc-900/60">
+                  <span className="text-[10px] font-medium text-zinc-400">Trade Value</span>
+                  <span className="text-xs font-bold text-amber-500">{pick.round === 1 ? 78 : 65} pts</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

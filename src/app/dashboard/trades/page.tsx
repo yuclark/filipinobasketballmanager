@@ -8,6 +8,7 @@ import {
   getTeamSalarySpace,
   executeTradeAction,
 } from "@/app/actions/transactions";
+import { getUserDraftPicksAction } from "@/app/actions/offseasonEngine";
 import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import {
   ArrowLeftRight,
@@ -71,6 +72,12 @@ export default function TradesPage() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedCpuIds, setSelectedCpuIds] = useState<string[]>([]);
 
+  // Draft pick lists and selections
+  const [userDraftPicks, setUserDraftPicks] = useState<any[]>([]);
+  const [cpuDraftPicks, setCpuDraftPicks] = useState<any[]>([]);
+  const [selectedUserPickIds, setSelectedUserPickIds] = useState<string[]>([]);
+  const [selectedCpuPickIds, setSelectedCpuPickIds] = useState<string[]>([]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -97,6 +104,11 @@ export default function TradesPage() {
             roster: userCap.roster as Player[],
           });
         }
+
+        const picksRes = await getUserDraftPicksAction(userTeamId!);
+        if (picksRes.success && picksRes.picks) {
+          setUserDraftPicks(picksRes.picks);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -114,6 +126,7 @@ export default function TradesPage() {
       try {
         setLoadingCpuRoster(true);
         setSelectedCpuIds([]); // Clear previous trade selection
+        setSelectedCpuPickIds([]); // Clear previous trade selection
         const cpuCap = await getTeamSalarySpace(selectedCpuTeamId);
         if (cpuCap.success) {
           setCpuCapInfo({
@@ -122,6 +135,11 @@ export default function TradesPage() {
             rosterCount: cpuCap.rosterCount!,
             roster: cpuCap.roster as Player[],
           });
+        }
+
+        const cpuPicksRes = await getUserDraftPicksAction(selectedCpuTeamId);
+        if (cpuPicksRes.success && cpuPicksRes.picks) {
+          setCpuDraftPicks(cpuPicksRes.picks);
         }
       } catch (err) {
         console.error(err);
@@ -170,12 +188,34 @@ export default function TradesPage() {
     );
   };
 
+  const toggleUserPick = (pickId: string) => {
+    setSelectedUserPickIds((prev) =>
+      prev.includes(pickId) ? prev.filter((id) => id !== pickId) : [...prev, pickId]
+    );
+  };
+
+  const toggleCpuPick = (pickId: string) => {
+    setSelectedCpuPickIds((prev) =>
+      prev.includes(pickId) ? prev.filter((id) => id !== pickId) : [...prev, pickId]
+    );
+  };
+
   // Dynamic Trade Evaluation
   const userSelectedPlayers = userCapInfo?.roster.filter((p) => selectedUserIds.includes(p.id)) || [];
   const cpuSelectedPlayers = cpuCapInfo?.roster.filter((p) => selectedCpuIds.includes(p.id)) || [];
 
   const userSelectedOvr = userSelectedPlayers.reduce((sum, p) => sum + p.overall, 0);
   const cpuSelectedOvr = cpuSelectedPlayers.reduce((sum, p) => sum + p.overall, 0);
+
+  const userSelectedPickValue = userDraftPicks
+    .filter((p) => selectedUserPickIds.includes(p.id))
+    .reduce((sum, p) => sum + (p.round === 1 ? 78 : 65), 0);
+  const cpuSelectedPickValue = cpuDraftPicks
+    .filter((p) => selectedCpuPickIds.includes(p.id))
+    .reduce((sum, p) => sum + (p.round === 1 ? 78 : 65), 0);
+
+  const userTotalValue = userSelectedOvr + userSelectedPickValue;
+  const cpuTotalValue = cpuSelectedOvr + cpuSelectedPickValue;
 
   const userSelectedSalary = userSelectedPlayers.reduce((sum, p) => sum + p.salary, 0);
   const cpuSelectedSalary = cpuSelectedPlayers.reduce((sum, p) => sum + p.salary, 0);
@@ -188,16 +228,16 @@ export default function TradesPage() {
   const userNewCount = (userCapInfo?.rosterCount || 0) - selectedUserIds.length + selectedCpuIds.length;
   const cpuNewCount = (cpuCapInfo?.rosterCount || 0) - selectedCpuIds.length + selectedUserIds.length;
 
-  const isUserSelected = selectedUserIds.length > 0;
-  const isCpuSelected = selectedCpuIds.length > 0;
+  const isUserSelected = selectedUserIds.length > 0 || selectedUserPickIds.length > 0;
+  const isCpuSelected = selectedCpuIds.length > 0 || selectedCpuPickIds.length > 0;
 
   // Fairness Check: OVR deficit must be within 15%
-  const ovrDiff = Math.abs(userSelectedOvr - cpuSelectedOvr);
-  const maxAllowedOvrDiff = Math.max(userSelectedOvr, cpuSelectedOvr) * 0.15;
+  const ovrDiff = Math.abs(userTotalValue - cpuTotalValue);
+  const maxAllowedOvrDiff = Math.max(userTotalValue, cpuTotalValue) * 0.15;
   const isOvrFair = ovrDiff <= maxAllowedOvrDiff;
   const ovrDiffPercent =
-    Math.max(userSelectedOvr, cpuSelectedOvr) > 0
-      ? Math.round((ovrDiff / Math.max(userSelectedOvr, cpuSelectedOvr)) * 100)
+    Math.max(userTotalValue, cpuTotalValue) > 0
+      ? Math.round((ovrDiff / Math.max(userTotalValue, cpuTotalValue)) * 100)
       : 0;
 
   // Validation Flags
@@ -247,13 +287,17 @@ export default function TradesPage() {
         userTeamId,
         selectedUserIds,
         selectedCpuTeamId,
-        selectedCpuIds
+        selectedCpuIds,
+        selectedUserPickIds,
+        selectedCpuPickIds
       );
 
       if (res.success) {
         setTradeSuccess("Trade executed successfully! Roster updated.");
         setSelectedUserIds([]);
         setSelectedCpuIds([]);
+        setSelectedUserPickIds([]);
+        setSelectedCpuPickIds([]);
         router.refresh();
       } else {
         setTradeError(res.error || "Trade proposal failed. Check roster size and salary requirements.");
@@ -379,6 +423,50 @@ export default function TradesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Draft Picks Selector */}
+          <div className="mt-6">
+            <h5 className="text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Available Draft Picks</h5>
+            {userDraftPicks.length === 0 ? (
+              <p className="text-xs text-zinc-600 italic">No future draft picks available.</p>
+            ) : (
+              <div className="max-h-[150px] overflow-y-auto rounded-xl border border-zinc-900 bg-zinc-950/20 divide-y divide-zinc-900">
+                {userDraftPicks.map((pick) => {
+                  const isChecked = selectedUserPickIds.includes(pick.id);
+                  return (
+                    <div
+                      key={pick.id}
+                      onClick={() => toggleUserPick(pick.id)}
+                      className={`flex items-center justify-between py-2 px-4 cursor-pointer hover:bg-zinc-900/50 transition-colors text-xs ${
+                        isChecked ? "bg-orange-500/5" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // Controlled via container click
+                          className="w-4 h-4 accent-orange-500 cursor-pointer"
+                        />
+                        <div>
+                          <p className="font-bold text-zinc-200">
+                            Season {pick.season} Round {pick.round} Pick
+                          </p>
+                          <p className="text-[10px] text-zinc-500">
+                            Original: {pick.originalTeamCity} {pick.originalTeamName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-zinc-400 block">Value</span>
+                        <span className="font-extrabold text-amber-500">{pick.round === 1 ? 78 : 65} pts</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Side: Opposing CPU Franchise */}
@@ -451,6 +539,50 @@ export default function TradesPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Draft Picks Selector */}
+          <div className="mt-6">
+            <h5 className="text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Available Draft Picks</h5>
+            {cpuDraftPicks.length === 0 ? (
+              <p className="text-xs text-zinc-600 italic">No future draft picks available.</p>
+            ) : (
+              <div className="max-h-[150px] overflow-y-auto rounded-xl border border-zinc-900 bg-zinc-950/20 divide-y divide-zinc-900">
+                {cpuDraftPicks.map((pick) => {
+                  const isChecked = selectedCpuPickIds.includes(pick.id);
+                  return (
+                    <div
+                      key={pick.id}
+                      onClick={() => toggleCpuPick(pick.id)}
+                      className={`flex items-center justify-between py-2 px-4 cursor-pointer hover:bg-zinc-900/50 transition-colors text-xs ${
+                        isChecked ? "bg-orange-500/5" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // Controlled via container click
+                          className="w-4 h-4 accent-orange-500 cursor-pointer"
+                        />
+                        <div>
+                          <p className="font-bold text-zinc-200">
+                            Season {pick.season} Round {pick.round} Pick
+                          </p>
+                          <p className="text-[10px] text-zinc-500">
+                            Original: {pick.originalTeamCity} {pick.originalTeamName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-zinc-400 block">Value</span>
+                        <span className="font-extrabold text-amber-500">{pick.round === 1 ? 78 : 65} pts</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -462,12 +594,15 @@ export default function TradesPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 flex-1">
             {/* Value Check */}
             <div className="space-y-2">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Package OVR Balance</span>
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Package Value Balance</span>
               <div className="flex items-end gap-2">
-                <span className="text-xl font-extrabold text-white">{userSelectedOvr}</span>
+                <span className="text-xl font-extrabold text-white">{userTotalValue}</span>
                 <span className="text-xs text-zinc-500 mb-1">VS</span>
-                <span className="text-xl font-extrabold text-white">{cpuSelectedOvr}</span>
+                <span className="text-xl font-extrabold text-white">{cpuTotalValue}</span>
               </div>
+              <span className="text-[10px] text-zinc-400 block mt-0.5">
+                ({userSelectedOvr} players + {userSelectedPickValue} picks) vs ({cpuSelectedOvr} players + {cpuSelectedPickValue} picks)
+              </span>
               {isUserSelected && isCpuSelected && (
                 <span className={`text-[11px] font-semibold block ${isOvrFair ? "text-emerald-400" : "text-red-400"}`}>
                   Difference: {ovrDiffPercent}% {isOvrFair ? "(Fair deal, <= 15%)" : "(Unbalanced, > 15%)"}

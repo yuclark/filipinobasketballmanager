@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, inArray, isNull, isNotNull, desc, and } from "drizzle-orm";
-import { teams, players, transactions, games } from "@/db/schema";
+import { teams, players, transactions, games, draftPicks } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
@@ -175,11 +175,45 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
   }
 }
 
-export async function sendOfferAction(playerId: string, teamId: string): Promise<{
+export async function getTeamOverall(teamId: string): Promise<number> {
+  try {
+    const roster = await db
+      .select({ overall: players.overall })
+      .from(players)
+      .where(and(eq(players.teamId, teamId), eq(players.status, "Active")))
+      .orderBy(desc(players.overall));
+
+    if (roster.length === 0) return 60; // baseline if empty
+
+    const top5 = roster.slice(0, 5);
+    const next5 = roster.slice(5, 10);
+
+    const avgTop5 = top5.reduce((sum, p) => sum + p.overall, 0) / Math.max(1, top5.length);
+    const avgNext5 = next5.length > 0 
+      ? next5.reduce((sum, p) => sum + p.overall, 0) / next5.length 
+      : avgTop5 - 10; // penalty if roster is small
+
+    const teamOvr = Math.round(avgTop5 * 0.75 + avgNext5 * 0.25);
+    return Math.max(50, Math.min(99, teamOvr));
+  } catch (error) {
+    console.error("Failed to calculate team overall:", error);
+    return 70;
+  }
+}
+
+export async function sendOfferAction(
+  playerId: string,
+  teamId: string,
+  offerAmount?: number
+): Promise<{
   success: boolean;
   status: "accepted" | "rejected";
+  accepted?: boolean;
   playerName?: string;
   reason?: string;
+  finalOffer?: number;
+  playerDemand?: number;
+  acceptanceChance?: number;
 }> {
   try {
     const [player] = await db
@@ -201,6 +235,12 @@ export async function sendOfferAction(playerId: string, teamId: string): Promise
     const [team] = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
     if (!team) return { success: false, status: "rejected", reason: "Team not found." };
 
+    const actualOffer = offerAmount ?? player.salary;
+
+    if (actualOffer < 500000) {
+      return { success: false, status: "rejected", reason: "Offer is below the league minimum salary of ₱500,000." };
+    }
+
     // Roster size check
     const currentRoster = await db
       .select({ id: players.id })
@@ -219,44 +259,78 @@ export async function sendOfferAction(playerId: string, teamId: string): Promise
     const currentPayroll = rosterSalaries.reduce((s, p) => s + (p.salary ?? 0), 0);
     const remaining = SALARY_CAP - currentPayroll;
 
-    if (player.salary > remaining) {
+    if (actualOffer > remaining) {
       return {
         success: false,
         status: "rejected",
-        reason: `Insufficient cap space. ${player.firstName} ${player.lastName} demands ₱${player.salary.toLocaleString("en-PH")}, you have ₱${remaining.toLocaleString("en-PH")} remaining.`,
+        reason: `Insufficient cap space. You offered ₱${actualOffer.toLocaleString("en-PH")}, but only have ₱${remaining.toLocaleString("en-PH")} remaining.`,
       };
     }
 
-    // OVR-tiered acceptance probability — stars are pickier
-    const acceptanceChance =
+    const playerDemand = player.salary;
+    const offerRatio = actualOffer / playerDemand;
+
+    // Team Overall Attractiveness
+    const teamOvr = await getTeamOverall(teamId);
+    const ovrFactor = (teamOvr - 72) / 150; // High OVR -> bonus, Low OVR -> penalty
+
+    // Age factor (older vets are more easily bought)
+    const ageFactor = player.age >= 31 ? Math.min(0.15, (player.age - 30) * 0.02) : 0;
+
+    // OVR-tiered base acceptance probability
+    const baseChance =
       player.overall >= 85 ? 0.55
       : player.overall >= 75 ? 0.72
       : player.overall >= 65 ? 0.85
       : 0.95;
 
-    const accepted = Math.random() < acceptanceChance;
+    // Offer ratio bonus/penalty
+    const ratioFactor = offerRatio >= 1 
+      ? (offerRatio - 1) * 1.5 
+      : -((1 - offerRatio) * 4.0);
+
+    let chance = baseChance + ovrFactor + ageFactor + ratioFactor;
+    // Auto reject if offer is way below demand
+    if (offerRatio < 0.7) {
+      chance = 0.02;
+    }
+    chance = Math.max(0.10, Math.min(0.97, chance));
+
+    const accepted = Math.random() < chance;
     const playerName = `${player.firstName} ${player.lastName}`;
 
     if (accepted) {
       await db
         .update(players)
-        .set({ teamId, contractYearsRemaining: 3 })
+        .set({ teamId, contractYearsRemaining: 3, salary: actualOffer })
         .where(eq(players.id, playerId));
 
       const { day, year } = await getCurrentLeagueDayAndYear();
       await db.insert(transactions).values({
         type: "Signing",
-        description: `${team.city} ${team.name} signed free agent ${playerName} for ₱${player.salary.toLocaleString("en-PH")}/yr.`,
+        description: `${team.city} ${team.name} signed free agent ${playerName} for ₱${actualOffer.toLocaleString("en-PH")}/yr (OVR ${player.overall}).`,
         seasonYear: year,
         gameDay: day,
       });
 
-      return { success: true, status: "accepted", playerName };
+      return {
+        success: true,
+        status: "accepted",
+        accepted: true,
+        playerName,
+        finalOffer: actualOffer,
+        playerDemand,
+        acceptanceChance: Math.round(chance * 100),
+      };
     } else {
       return {
         success: false,
         status: "rejected",
-        reason: `${playerName} declined your offer.`,
+        accepted: false,
+        reason: `${playerName} declined your offer of ₱${actualOffer.toLocaleString("en-PH")}/yr (Chance: ${Math.round(chance * 100)}%).`,
+        finalOffer: actualOffer,
+        playerDemand,
+        acceptanceChance: Math.round(chance * 100),
       };
     }
   } catch (error: any) {
@@ -327,10 +401,15 @@ export async function executeTradeAction(
   teamAId: string,
   playerAIds: string[],
   teamBId: string,
-  playerBIds: string[]
+  playerBIds: string[],
+  pickAIds?: string[],
+  pickBIds?: string[]
 ) {
-  if (playerAIds.length === 0 || playerBIds.length === 0) {
-    return { success: false, error: "Trade must involve at least one player from each team." };
+  const hasAAssets = playerAIds.length > 0 || (pickAIds && pickAIds.length > 0);
+  const hasBAssets = playerBIds.length > 0 || (pickBIds && pickBIds.length > 0);
+
+  if (!hasAAssets || !hasBAssets) {
+    return { success: false, error: "Trade must involve at least one asset (player or draft pick) from each team." };
   }
 
   try {
@@ -346,15 +425,13 @@ export async function executeTradeAction(
       return { success: false, error: "One or both teams not found." };
     }
 
-    const rosterA = await db
-      .select()
-      .from(players)
-      .where(inArray(players.id, playerAIds));
+    const rosterA = playerAIds.length > 0
+      ? await db.select().from(players).where(inArray(players.id, playerAIds))
+      : [];
 
-    const rosterB = await db
-      .select()
-      .from(players)
-      .where(inArray(players.id, playerBIds));
+    const rosterB = playerBIds.length > 0
+      ? await db.select().from(players).where(inArray(players.id, playerBIds))
+      : [];
 
     if (rosterA.length !== playerAIds.length || rosterB.length !== playerBIds.length) {
       return { success: false, error: "Some players involved in the trade proposal were not found." };
@@ -367,9 +444,24 @@ export async function executeTradeAction(
       return { success: false, error: "Roster discrepancy: some players do not belong to their specified team or are not active." };
     }
 
+    // Load and validate draft picks
+    const picksA = pickAIds && pickAIds.length > 0
+      ? await db.select().from(draftPicks).where(inArray(draftPicks.id, pickAIds))
+      : [];
+    const picksB = pickBIds && pickBIds.length > 0
+      ? await db.select().from(draftPicks).where(inArray(draftPicks.id, pickBIds))
+      : [];
+
+    const invalidPicksA = picksA.some((p) => p.ownerTeamId !== teamAId || p.isUsed);
+    const invalidPicksB = picksB.some((p) => p.ownerTeamId !== teamBId || p.isUsed);
+
+    if (invalidPicksA || invalidPicksB) {
+      return { success: false, error: "One or more draft picks are not owned by the proposing team or have already been used." };
+    }
+
     // Check point deficit (fair trade evaluation)
-    const ovrA = rosterA.reduce((sum, p) => sum + p.overall, 0);
-    const ovrB = rosterB.reduce((sum, p) => sum + p.overall, 0);
+    const ovrA = rosterA.reduce((sum, p) => sum + p.overall, 0) + picksA.reduce((sum, p) => sum + (p.round === 1 ? 78 : 65), 0);
+    const ovrB = rosterB.reduce((sum, p) => sum + p.overall, 0) + picksB.reduce((sum, p) => sum + (p.round === 1 ? 78 : 65), 0);
 
     const ovrDiff = Math.abs(ovrA - ovrB);
     const maxAllowedDiff = Math.max(ovrA, ovrB) * 0.15; // 15% variance
@@ -377,7 +469,7 @@ export async function executeTradeAction(
     if (ovrDiff > maxAllowedDiff) {
       return {
         success: false,
-        error: `Trade rejected: Unfair deal. The difference in overall player packages (${ovrDiff} points) exceeds the 15% league variance limit (max allowed: ${Math.round(
+        error: `Trade rejected: Unfair deal. The difference in overall asset values (${ovrDiff} points) exceeds the 15% league variance limit (max allowed: ${Math.round(
           maxAllowedDiff
         )} points).`,
       };
@@ -436,18 +528,43 @@ export async function executeTradeAction(
     }
 
     // Execute updates sequentially
-    await db
-      .update(players)
-      .set({ teamId: teamBId })
-      .where(inArray(players.id, playerAIds));
+    if (playerAIds.length > 0) {
+      await db
+        .update(players)
+        .set({ teamId: teamBId })
+        .where(inArray(players.id, playerAIds));
+    }
 
-    await db
-      .update(players)
-      .set({ teamId: teamAId })
-      .where(inArray(players.id, playerBIds));
+    if (playerBIds.length > 0) {
+      await db
+        .update(players)
+        .set({ teamId: teamAId })
+        .where(inArray(players.id, playerBIds));
+    }
 
-    const namesA = rosterA.map((p) => `${p.firstName} ${p.lastName}`).join(", ");
-    const namesB = rosterB.map((p) => `${p.firstName} ${p.lastName}`).join(", ");
+    if (pickAIds && pickAIds.length > 0) {
+      await db
+        .update(draftPicks)
+        .set({ ownerTeamId: teamBId })
+        .where(inArray(draftPicks.id, pickAIds));
+    }
+
+    if (pickBIds && pickBIds.length > 0) {
+      await db
+        .update(draftPicks)
+        .set({ ownerTeamId: teamAId })
+        .where(inArray(draftPicks.id, pickBIds));
+    }
+
+    const namesA = [
+      ...rosterA.map((p) => `${p.firstName} ${p.lastName}`),
+      ...picksA.map((p) => `${p.season} ${p.round === 1 ? "1st" : "2nd"} Round Pick`)
+    ].join(", ");
+
+    const namesB = [
+      ...rosterB.map((p) => `${p.firstName} ${p.lastName}`),
+      ...picksB.map((p) => `${p.season} ${p.round === 1 ? "1st" : "2nd"} Round Pick`)
+    ].join(", ");
 
     const tradeDesc = `TRADE: ${teamA.city} ${teamA.name} sent ${namesA} to ${teamB.city} ${teamB.name} in exchange for ${namesB}.`;
 

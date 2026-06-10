@@ -305,6 +305,78 @@ export async function simulateGameLogic(
     throw new Error(`Rosters cannot be empty.`);
   }
 
+  // Helpers for stat generation
+  function getNightlyVariance(player: DBPlayer, isStar: boolean): number {
+    const rand = Math.random();
+    if (isStar) {
+      if (rand < 0.15) { // Cold night
+        return 0.75 + Math.random() * 0.15;
+      } else if (rand < 0.80) { // Normal night
+        return 0.92 + Math.random() * 0.16;
+      } else if (rand < 0.95) { // Hot night
+        return 1.10 + Math.random() * 0.18;
+      } else { // Rare explosion night
+        return 1.28 + Math.random() * 0.10;
+      }
+    } else {
+      if (rand < 0.25) { // Cold
+        return 0.65 + Math.random() * 0.20;
+      } else if (rand < 0.75) { // Normal
+        return 0.88 + Math.random() * 0.20;
+      } else { // Hot
+        return 1.10 + Math.random() * 0.20;
+      }
+    }
+  }
+
+  function getBaseUsage(rank: number): number {
+    if (rank === 0) return 0.24 + Math.random() * 0.09; // 24% - 33%
+    if (rank === 1) return 0.20 + Math.random() * 0.06; // 20% - 26%
+    if (rank === 2) return 0.15 + Math.random() * 0.06; // 15% - 21%
+    if (rank === 3 || rank === 4) return 0.10 + Math.random() * 0.06; // 10% - 16%
+    if (rank === 5) return 0.12 + Math.random() * 0.06; // 12% - 18%
+    if (rank >= 6 && rank <= 9) return 0.06 + Math.random() * 0.06; // 6% - 12%
+    return 0.01 + Math.random() * 0.05; // 1% - 6%
+  }
+
+  function allocateMinutes(rosterLength: number, isBlowout: boolean, isClose: boolean, otPeriods: number): number[] {
+    const baseMinutes = new Array(rosterLength).fill(0);
+    for (let i = 0; i < rosterLength; i++) {
+      let min = 0;
+      if (i === 0) min = 34;
+      else if (i === 1) min = 32;
+      else if (i === 2) min = 30;
+      else if (i === 3) min = 28;
+      else if (i === 4) min = 26;
+      else if (i === 5) min = 24;
+      else if (i <= 9) min = 14;
+      else min = 4;
+
+      if (isBlowout) {
+        if (i < 5) min -= 6 + Math.round(Math.random() * 3);
+        else if (i <= 9) min += 2 + Math.round(Math.random() * 2);
+        else min += 4 + Math.round(Math.random() * 3);
+      } else if (isClose) {
+        if (i < 5) min += 2 + Math.round(Math.random() * 2);
+        else if (i <= 9) min -= 1 + Math.round(Math.random());
+        else min = Math.max(0, min - 2);
+      } else {
+        min += Math.round(randomNormal(0, 2));
+      }
+
+      if (otPeriods > 0) {
+        if (i < 6) {
+          min += otPeriods * 4 + Math.round(Math.random() * 2);
+        } else if (i <= 9) {
+          min += otPeriods * 1;
+        }
+      }
+
+      baseMinutes[i] = Math.max(0, Math.min(48, min));
+    }
+    return baseMinutes;
+  }
+
   const getWeightedAttr = (roster: DBPlayer[], key: keyof DBPlayer): number => {
     return roster.reduce((sum, player, idx) => {
       const weight = idx < 5 ? 0.15 : 0.025;
@@ -340,11 +412,16 @@ export async function simulateGameLogic(
   const homeReboundRating = getWeightedAttr(homePlayers, "rebounding");
   const awayReboundRating = getWeightedAttr(awayPlayers, "rebounding");
 
-  const expectedHome = 100 + 3 + (homeORtg - awayDRtg) * 0.5;
-  const expectedAway = 100 + (awayORtg - homeDRtg) * 0.5;
+  // Lower Filipino league scoring environment
+  const expectedHome = 86 + 2 + (homeORtg - awayDRtg) * 0.4;
+  const expectedAway = 86 + (awayORtg - homeDRtg) * 0.4;
 
-  let homeScore = Math.max(70, Math.round(expectedHome + randomNormal(0, 8)));
-  let awayScore = Math.max(70, Math.round(expectedAway + randomNormal(0, 8)));
+  let homeScore = Math.max(68, Math.round(expectedHome + randomNormal(0, 6)));
+  let awayScore = Math.max(68, Math.round(expectedAway + randomNormal(0, 6)));
+
+  // Clamp team scores to realistic maximum of 114 except in double overtime or rare outliers
+  if (homeScore > 114 && Math.random() > 0.1) homeScore = 108 + Math.floor(Math.random() * 6);
+  if (awayScore > 114 && Math.random() > 0.1) awayScore = 108 + Math.floor(Math.random() * 6);
 
   let otPeriods = 0;
   while (homeScore === awayScore) {
@@ -352,6 +429,45 @@ export async function simulateGameLogic(
     homeScore += Math.max(2, Math.round(12 + randomNormal(0, 3)));
     awayScore += Math.max(2, Math.round(12 + randomNormal(0, 3)));
   }
+
+  const scoreDiff = Math.abs(homeScore - awayScore);
+  const isBlowout = scoreDiff >= 18;
+  const isClose = scoreDiff <= 6;
+
+  const homeMinutes = allocateMinutes(homePlayers.length, isBlowout, isClose, otPeriods);
+  const awayMinutes = allocateMinutes(awayPlayers.length, isBlowout, isClose, otPeriods);
+
+  const getScoringWeight = (p: DBPlayer, idx: number, minutes: number) => {
+    const usage = getBaseUsage(idx);
+    const scoringAttr = (p.insideScoring + p.threePoint + p.overall) / 3;
+    const variance = getNightlyVariance(p, idx <= 2);
+    return usage * scoringAttr * (minutes / 30) * variance;
+  };
+
+  const getReboundWeight = (p: DBPlayer, idx: number, minutes: number) => {
+    const base = p.rebounding * 1.5 + p.interiorDefense * 0.4;
+    return base * (minutes / 30) * (0.8 + Math.random() * 0.4);
+  };
+
+  const getAssistWeight = (p: DBPlayer, idx: number, minutes: number) => {
+    const base = p.playmaking * 1.6 + p.speed * 0.2;
+    return base * (minutes / 30) * (0.8 + Math.random() * 0.4);
+  };
+
+  const getStealWeight = (p: DBPlayer, idx: number, minutes: number) => {
+    const base = p.perimeterDefense * 1.4 + p.speed * 0.4;
+    return base * (minutes / 30) * (0.8 + Math.random() * 0.4);
+  };
+
+  const getBlockWeight = (p: DBPlayer, idx: number, minutes: number) => {
+    const base = p.interiorDefense * 1.5 + p.rebounding * 0.3;
+    return base * (minutes / 30) * (0.8 + Math.random() * 0.4);
+  };
+
+  const getTurnoverWeight = (p: DBPlayer, idx: number, minutes: number) => {
+    const base = (100 - p.playmaking) * 1.5 + (100 - p.overall) * 0.5;
+    return base * (minutes / 30) * (0.8 + Math.random() * 0.4);
+  };
 
   const distributeStats = (
     teamTotal: number,
@@ -394,23 +510,23 @@ export async function simulateGameLogic(
   const totalHomeTurnovers = Math.max(5, Math.round((100 - getWeightedAttr(homePlayers, "playmaking")) * 0.18 + randomNormal(0, 2)));
   const totalAwayTurnovers = Math.max(5, Math.round((100 - getWeightedAttr(awayPlayers, "playmaking")) * 0.18 + randomNormal(0, 2)));
 
-  const homePoints = distributeStats(homeScore, homePlayers, (p, idx) => p.overall * (idx < 5 ? 3.5 : 1));
-  const awayPoints = distributeStats(awayScore, awayPlayers, (p, idx) => p.overall * (idx < 5 ? 3.5 : 1));
+  const homePoints = distributeStats(homeScore, homePlayers, (p, idx) => getScoringWeight(p, idx, homeMinutes[idx]));
+  const awayPoints = distributeStats(awayScore, awayPlayers, (p, idx) => getScoringWeight(p, idx, awayMinutes[idx]));
 
-  const homeRebounds = distributeStats(totalHomeRebounds, homePlayers, (p, idx) => p.rebounding * (idx < 5 ? 3.5 : 1));
-  const awayRebounds = distributeStats(totalAwayRebounds, awayPlayers, (p, idx) => p.rebounding * (idx < 5 ? 3.5 : 1));
+  const homeRebounds = distributeStats(totalHomeRebounds, homePlayers, (p, idx) => getReboundWeight(p, idx, homeMinutes[idx]));
+  const awayRebounds = distributeStats(totalAwayRebounds, awayPlayers, (p, idx) => getReboundWeight(p, idx, awayMinutes[idx]));
 
-  const homeAssists = distributeStats(totalHomeAssists, homePlayers, (p, idx) => p.playmaking * (idx < 5 ? 4.5 : 1));
-  const awayAssists = distributeStats(totalAwayAssists, awayPlayers, (p, idx) => p.playmaking * (idx < 5 ? 4.5 : 1));
+  const homeAssists = distributeStats(totalHomeAssists, homePlayers, (p, idx) => getAssistWeight(p, idx, homeMinutes[idx]));
+  const awayAssists = distributeStats(totalAwayAssists, awayPlayers, (p, idx) => getAssistWeight(p, idx, awayMinutes[idx]));
 
-  const homeSteals = distributeStats(totalHomeSteals, homePlayers, (p, idx) => p.perimeterDefense * (idx < 5 ? 3 : 1));
-  const awaySteals = distributeStats(totalAwaySteals, awayPlayers, (p, idx) => p.perimeterDefense * (idx < 5 ? 3 : 1));
+  const homeSteals = distributeStats(totalHomeSteals, homePlayers, (p, idx) => getStealWeight(p, idx, homeMinutes[idx]));
+  const awaySteals = distributeStats(totalAwaySteals, awayPlayers, (p, idx) => getStealWeight(p, idx, awayMinutes[idx]));
 
-  const homeBlocks = distributeStats(totalHomeBlocks, homePlayers, (p, idx) => p.interiorDefense * (idx < 5 ? 3 : 1));
-  const awayBlocks = distributeStats(totalAwayBlocks, awayPlayers, (p, idx) => p.interiorDefense * (idx < 5 ? 3 : 1));
+  const homeBlocks = distributeStats(totalHomeBlocks, homePlayers, (p, idx) => getBlockWeight(p, idx, homeMinutes[idx]));
+  const awayBlocks = distributeStats(totalAwayBlocks, awayPlayers, (p, idx) => getBlockWeight(p, idx, awayMinutes[idx]));
 
-  const homeTurnovers = distributeStats(totalHomeTurnovers, homePlayers, (p, idx) => (100 - p.playmaking) * (idx < 5 ? 3 : 1));
-  const awayTurnovers = distributeStats(totalAwayTurnovers, awayPlayers, (p, idx) => (100 - p.playmaking) * (idx < 5 ? 3 : 1));
+  const homeTurnovers = distributeStats(totalHomeTurnovers, homePlayers, (p, idx) => getTurnoverWeight(p, idx, homeMinutes[idx]));
+  const awayTurnovers = distributeStats(totalAwayTurnovers, awayPlayers, (p, idx) => getTurnoverWeight(p, idx, awayMinutes[idx]));
 
   const playerStatsToInsert: Array<typeof playerGameStats.$inferInsert> = [];
 
@@ -421,7 +537,8 @@ export async function simulateGameLogic(
     astArr: number[],
     stlArr: number[],
     blkArr: number[],
-    toArr: number[]
+    toArr: number[],
+    minutesArr: number[]
   ) => {
     for (let i = 0; i < roster.length; i++) {
       const p = roster[i];
@@ -431,6 +548,7 @@ export async function simulateGameLogic(
       const steals = stlArr[i];
       const blocks = blkArr[i];
       const turnovers = toArr[i];
+      const minutes = minutesArr[i];
 
       const threeProb = p.threePoint / (p.threePoint + p.insideScoring + 1);
       let fg3m = Math.min(Math.floor(pts / 3), Math.round(pts * threeProb * 0.25 + Math.random()));
@@ -449,15 +567,6 @@ export async function simulateGameLogic(
 
       const threeAccuracy = p.threePoint * 0.0035 + 0.2;
       const fg3a = fg3m + Math.max(0, Math.round(fg3m * (1 / threeAccuracy - 1) + Math.random() * 2));
-
-      // Role-weighted minutes: starters 28-36, bench 8-18, deep bench 3-6
-      const starterMinutes = [36, 34, 32, 30, 28]; // top 5
-      const benchMinutes   = [18, 16, 14, 12, 11, 10, 9, 8, 8, 7]; // next 10
-      let minutes: number;
-      if (i < 5)       minutes = starterMinutes[i] + Math.round((Math.random() - 0.5) * 4);
-      else if (i < 15) minutes = benchMinutes[i - 5] + Math.round((Math.random() - 0.5) * 3);
-      else             minutes = 3 + Math.round(Math.random() * 3);
-      minutes = Math.max(0, minutes);
 
       playerStatsToInsert.push({
         gameId: game.id,
@@ -479,8 +588,8 @@ export async function simulateGameLogic(
     }
   };
 
-  addPlayerStats(homePlayers, homePoints, homeRebounds, homeAssists, homeSteals, homeBlocks, homeTurnovers);
-  addPlayerStats(awayPlayers, awayPoints, awayRebounds, awayAssists, awaySteals, awayBlocks, awayTurnovers);
+  addPlayerStats(homePlayers, homePoints, homeRebounds, homeAssists, homeSteals, homeBlocks, homeTurnovers, homeMinutes);
+  addPlayerStats(awayPlayers, awayPoints, awayRebounds, awayAssists, awaySteals, awayBlocks, awayTurnovers, awayMinutes);
 
   return {
     updatedGame: {
@@ -493,7 +602,6 @@ export async function simulateGameLogic(
     overtimes: otPeriods,
   };
 }
-
 export async function simulateGameAction(gameId: string) {
   try {
     const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);

@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { players, teams, games, transactions } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { generateRookiePoolAction, replenishLeagueRostersAction } from "@/app/actions/offseasonEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
@@ -338,6 +338,29 @@ export async function finalizeOffseasonAction() {
       gameDay: 1,
     });
 
+    // 6. Generate draft picks for the next season (Round 1 & Round 2)
+    const allTeams = await db.select().from(teams);
+    const draftPicksToInsert: Array<typeof draftPicks.$inferInsert> = [];
+    for (const team of allTeams) {
+      draftPicksToInsert.push({
+        ownerTeamId: team.id,
+        originalTeamId: team.id,
+        season: nextYear,
+        round: 1,
+        pickNumber: null,
+        isUsed: false,
+      });
+      draftPicksToInsert.push({
+        ownerTeamId: team.id,
+        originalTeamId: team.id,
+        season: nextYear,
+        round: 2,
+        pickNumber: null,
+        isUsed: false,
+      });
+    }
+    await db.insert(draftPicks).values(draftPicksToInsert);
+
     // Generate fresh rookie class for the upcoming draft pool (so they can be scouted during the season)
     await generateRookiePoolAction(nextYear, true);
 
@@ -345,5 +368,42 @@ export async function finalizeOffseasonAction() {
   } catch (error: any) {
     console.error("Failed to finalize offseason:", error);
     return { success: false, error: error.message || "Failed to finalize offseason." };
+  }
+}
+
+// Assign pick numbers based on lottery draft order
+export async function finalizeLotteryAction(draftOrderIds: string[], season: number) {
+  try {
+    for (let i = 0; i < draftOrderIds.length; i++) {
+      const teamId = draftOrderIds[i];
+
+      // Round 1
+      await db
+        .update(draftPicks)
+        .set({ pickNumber: i + 1 })
+        .where(
+          and(
+            eq(draftPicks.originalTeamId, teamId),
+            eq(draftPicks.round, 1),
+            eq(draftPicks.season, season)
+          )
+        );
+
+      // Round 2
+      await db
+        .update(draftPicks)
+        .set({ pickNumber: 30 + i + 1 })
+        .where(
+          and(
+            eq(draftPicks.originalTeamId, teamId),
+            eq(draftPicks.round, 2),
+            eq(draftPicks.season, season)
+          )
+        );
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to finalize lottery:", error);
+    return { success: false, error: error.message || "Failed to finalize lottery." };
   }
 }

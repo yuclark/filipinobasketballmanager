@@ -153,8 +153,35 @@ export default function HistoryPage() {
                         </td>
                       </tr>
                       {expandedSeason === season.year && (
-                        <tr className="bg-[var(--color-surface-2)]">
-                          <td colSpan={7} className="px-6 py-4">
+                        <tr className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] last:border-0">
+                          <td colSpan={7} className="px-6 py-5">
+                            {season.champion && (
+                              <div className="mb-6 bg-zinc-950/40 border border-zinc-900/60 rounded-2xl p-4.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2.5 bg-orange-500/10 rounded-xl text-orange-500 border border-orange-500/20">
+                                    <Trophy className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Season Finals Matchup</span>
+                                    <span className="text-sm font-extrabold text-zinc-100">
+                                      {season.champion.championTeam} <span className="text-zinc-500 font-medium">defeated</span> {season.champion.runnerUpTeam}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4 sm:border-l border-zinc-900/60 sm:pl-6 self-stretch sm:self-auto justify-between sm:justify-start">
+                                  <div className="text-left sm:text-right">
+                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Series Score</span>
+                                    <span className="text-sm font-extrabold text-amber-500">{season.champion.seriesScore}</span>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Finals MVP</span>
+                                    <span className="text-sm font-extrabold text-zinc-100">
+                                      {season.champion.finalsMvp} <span className="text-[10px] text-zinc-500">({season.champion.finalsMvpTeam})</span>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                               <div>
                                 <p className="text-[10px] font-bold tracking-wider uppercase text-[var(--color-text-faint)] mb-2">All-League 1st Team</p>

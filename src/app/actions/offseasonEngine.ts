@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, desc, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
 import { players, teams, games, transactions, draftPicks } from "@/db/schema";
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
@@ -70,7 +70,7 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
 
     const prospects: Array<typeof players.$inferInsert> = [];
 
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 75; i++) {
       const isFilAm = Math.random() < 0.2; // 20% Fil-Am
       const firstName = isFilAm
         ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
@@ -157,6 +157,12 @@ export async function processPlayerEvolutionAction() {
     const evolutionLogs: string[] = [];
     const updatedPlayers: any[] = [];
     const newTransactions: any[] = [];
+    
+    // Structured evolution results
+    const evolutionResultsList: any[] = [];
+    let retiredCount = 0;
+    let improvedCount = 0;
+    let regressedCount = 0;
 
     for (const player of activePlayers) {
       const team = player.teamId ? teamMap.get(player.teamId) : null;
@@ -177,6 +183,7 @@ export async function processPlayerEvolutionAction() {
             contractYearsRemaining: 0,
           });
 
+          retiredCount++;
           const logMsg = `🚨 ${team ? `${team.city} ${team.name} veteran ` : ""}${player.firstName} ${player.lastName} has officially announced his retirement at Age ${player.age}.`;
           evolutionLogs.push(logMsg);
           newTransactions.push({
@@ -262,6 +269,57 @@ export async function processPlayerEvolutionAction() {
         evolutionLogs.push(`📉 ${teamNameStr} ${player.firstName} ${player.lastName} declined -${player.overall - nextOverall} OVR (OVR ${nextOverall}, Age ${player.age})`);
       }
 
+      const deltaOverall = nextOverall - player.overall;
+      if (deltaOverall > 0) improvedCount++;
+      else if (deltaOverall < 0) regressedCount++;
+
+      // Track detailed changes
+      const changedAttributes: Record<string, number> = {};
+      let biggestImprovedAttr = "";
+      let maxImprovement = 0;
+      let biggestDeclinedAttr = "";
+      let maxDecline = 0;
+
+      const attrComparisons = [
+        { key: "threePoint", oldVal: player.threePoint, newVal: nextThreePoint, label: "3PT" },
+        { key: "insideScoring", oldVal: player.insideScoring, newVal: nextInsideScoring, label: "Inside" },
+        { key: "playmaking", oldVal: player.playmaking, newVal: nextPlaymaking, label: "Playmaking" },
+        { key: "perimeterDefense", oldVal: player.perimeterDefense, newVal: nextPerimeterDefense, label: "Defense" },
+        { key: "interiorDefense", oldVal: player.interiorDefense, newVal: nextInteriorDefense, label: "Interior" },
+        { key: "rebounding", oldVal: player.rebounding, newVal: nextRebounding, label: "Rebound" },
+        { key: "speed", oldVal: player.speed, newVal: nextSpeed, label: "Speed" },
+        { key: "stamina", oldVal: player.stamina, newVal: nextStamina, label: "Stamina" },
+      ];
+
+      for (const comp of attrComparisons) {
+        const delta = comp.newVal - comp.oldVal;
+        if (delta !== 0) {
+          changedAttributes[comp.label] = delta;
+          if (delta > maxImprovement) {
+            maxImprovement = delta;
+            biggestImprovedAttr = comp.label;
+          }
+          if (-delta > maxDecline) {
+            maxDecline = -delta;
+            biggestDeclinedAttr = comp.label;
+          }
+        }
+      }
+
+      evolutionResultsList.push({
+        playerId: player.id,
+        playerName: `${player.firstName} ${player.lastName}`,
+        teamId: player.teamId,
+        teamName: team ? `${team.city} ${team.name}` : "Free Agent",
+        age: player.age,
+        oldOverall: player.overall,
+        newOverall: nextOverall,
+        deltaOverall,
+        changedAttributes,
+        biggestImprovedAttribute: biggestImprovedAttr,
+        biggestDeclinedAttribute: biggestDeclinedAttr,
+      });
+
       // C. Age increment and Contract Decrement
       const nextAge = player.age + 1;
       let nextContractYears = player.contractYearsRemaining - 1;
@@ -339,14 +397,34 @@ export async function processPlayerEvolutionAction() {
     // Enforce strict roster limits at the end of Phase 2 evolution/retirements
     await enforceLeagueRosterLimitsAction();
 
-    return { success: true, logs: evolutionLogs };
+    // Determine biggest leap
+    let biggestLeap: any = null;
+    let maxLeap = 0;
+    for (const res of evolutionResultsList) {
+      if (res.deltaOverall > maxLeap) {
+        maxLeap = res.deltaOverall;
+        biggestLeap = res;
+      }
+    }
+
+    return {
+      success: true,
+      logs: evolutionLogs,
+      evolutionResults: {
+        improvedCount,
+        regressedCount,
+        retiredCount,
+        biggestLeap,
+        players: evolutionResultsList.sort((a, b) => b.deltaOverall - a.deltaOverall),
+      }
+    };
   } catch (error: any) {
     console.error("Failed to run player evolution:", error);
     return { success: false, error: error.message || "Failed to progress players." };
   }
 }
 
-export async function executeDraftPickAction(teamId: string, playerId: string) {
+export async function executeDraftPickAction(teamId: string, playerId: string, pickNumber: number, season: number) {
   try {
     const [player] = await db.select().from(players).where(eq(players.id, playerId)).limit(1);
     if (!player) return { success: false, error: "Player not found." };
@@ -364,6 +442,17 @@ export async function executeDraftPickAction(teamId: string, playerId: string) {
         contractYearsRemaining: 3,
       })
       .where(eq(players.id, playerId));
+
+    // Mark pick as used in draftPicks table
+    await db
+      .update(draftPicks)
+      .set({ isUsed: true })
+      .where(
+        and(
+          eq(draftPicks.pickNumber, pickNumber),
+          eq(draftPicks.season, season)
+        )
+      );
 
     // Record transaction
     const lastGame = await db
@@ -385,6 +474,32 @@ export async function executeDraftPickAction(teamId: string, playerId: string) {
   } catch (error: any) {
     console.error("Draft pick execution failed:", error);
     return { success: false, error: error.message || "Draft pick failed." };
+  }
+}
+
+export async function getDraftSessionPicksAction(season: number) {
+  try {
+    const picks = await db
+      .select({
+        id: draftPicks.id,
+        ownerTeamId: draftPicks.ownerTeamId,
+        originalTeamId: draftPicks.originalTeamId,
+        season: draftPicks.season,
+        round: draftPicks.round,
+        pickNumber: draftPicks.pickNumber,
+        isUsed: draftPicks.isUsed,
+        ownerCity: teams.city,
+        ownerName: teams.name,
+      })
+      .from(draftPicks)
+      .leftJoin(teams, eq(draftPicks.ownerTeamId, teams.id))
+      .where(and(eq(draftPicks.season, season), isNotNull(draftPicks.pickNumber)))
+      .orderBy(draftPicks.pickNumber);
+
+    return { success: true, picks };
+  } catch (error: any) {
+    console.error("Failed to load draft session picks:", error);
+    return { success: false, picks: [], error: error.message || "Failed to load picks." };
   }
 }
 
@@ -557,6 +672,29 @@ export async function advanceToNextSeasonAction() {
       seasonYear: nextYear,
       gameDay: 1,
     });
+
+    // Generate draft picks for the next season (Round 1 & Round 2)
+    const allTeams = await db.select().from(teams);
+    const draftPicksToInsert: Array<typeof draftPicks.$inferInsert> = [];
+    for (const team of allTeams) {
+      draftPicksToInsert.push({
+        ownerTeamId: team.id,
+        originalTeamId: team.id,
+        season: nextYear,
+        round: 1,
+        pickNumber: null,
+        isUsed: false,
+      });
+      draftPicksToInsert.push({
+        ownerTeamId: team.id,
+        originalTeamId: team.id,
+        season: nextYear,
+        round: 2,
+        pickNumber: null,
+        isUsed: false,
+      });
+    }
+    await db.insert(draftPicks).values(draftPicksToInsert);
 
     // Generate fresh rookie class for the upcoming draft pool (so they can be scouted during the season)
     await generateRookiePoolAction(nextYear, true);
