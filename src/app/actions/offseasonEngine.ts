@@ -9,45 +9,45 @@ import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
 // Name Pools
 const FIRST_NAMES = [
-  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe", 
-  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond", 
-  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio", 
-  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic", 
+  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe",
+  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond",
+  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio",
+  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic",
   "Poy", "Troy", "Jerick", "Allein", "Mac", "Ramon", "Nonoy", "Mike"
 ];
 
 const SURNAMES = [
-  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy", 
-  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger", 
-  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright", 
-  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo", 
+  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy",
+  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger",
+  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright",
+  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo",
   "Oftana", "Perez", "Sangalang", "Jalalon", "David", "Pascual", "Guanzon"
 ];
 
 const FILAM_FIRST_NAMES = [
-  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew", 
-  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor", 
+  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew",
+  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor",
   "DeAndre", "Tyler", "Justin", "Brandon", "Ethan", "Jeremy", "Zachary"
 ];
 
 const FILAM_SURNAMES = [
-  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright", 
-  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore", 
+  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright",
+  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore",
   "Green", "Tautuaa", "Ellis", "Harris", "Parks", "Williams", "Smith", "Johnson"
 ];
 
 const POSITIONS = ["PG", "SG", "SF", "PF", "C"];
 
 const LUZON_HOMETOWNS = [
-  "Manila", "Quezon City", "Makati", "Pampanga", "Bulacan", "Laguna", 
-  "Cavite", "Batangas", "Pangasinan", "Baguio", "Legazpi", "Isabela", 
+  "Manila", "Quezon City", "Makati", "Pampanga", "Bulacan", "Laguna",
+  "Cavite", "Batangas", "Pangasinan", "Baguio", "Legazpi", "Isabela",
   "Valenzuela", "Pasig", "Taguig", "Angeles City", "Rizal", "Tarlac"
 ];
 
 const VISMIN_HOMETOWNS = [
-  "Cebu City", "Mandaue City", "Iloilo City", "Bacolod", "Davao City", 
-  "Zamboanga City", "Cagayan de Oro", "General Santos", "Butuan", "Iligan", 
-  "Cotabato City", "Dumaguete", "Tagbilaran", "Tacloban", "Lapu-Lapu", 
+  "Cebu City", "Mandaue City", "Iloilo City", "Bacolod", "Davao City",
+  "Zamboanga City", "Cagayan de Oro", "General Santos", "Butuan", "Iligan",
+  "Cotabato City", "Dumaguete", "Tagbilaran", "Tacloban", "Lapu-Lapu",
   "Ormoc", "Dapitan", "Pagadian"
 ];
 
@@ -58,7 +58,7 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
         .select({ count: sql<number>`count(*)` })
         .from(players)
         .where(eq(players.status, "DraftPool"));
-      
+
       if (Number(existing[0]?.count ?? 0) > 0) {
         console.log("[Offseason Engine] Draft pool already exists, skipping regeneration to preserve scouting records.");
         return { success: true };
@@ -81,7 +81,7 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
 
       const age = Math.floor(Math.random() * 4) + 19; // 19 to 22
       const position = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
-      
+
       const hometown = Math.random() < 0.5
         ? LUZON_HOMETOWNS[Math.floor(Math.random() * LUZON_HOMETOWNS.length)]
         : VISMIN_HOMETOWNS[Math.floor(Math.random() * VISMIN_HOMETOWNS.length)];
@@ -205,7 +205,7 @@ export async function processPlayerEvolutionAction() {
         // Boost +1 to +5
         diff = Math.floor(Math.random() * 5) + 1;
         const totalPointsToAdd = diff * 8;
-        
+
         let added = 0;
         const attrs = ["threePoint", "insideScoring", "playmaking", "perimeterDefense", "interiorDefense", "rebounding", "speed", "stamina"];
         while (added < totalPointsToAdd) {
@@ -218,10 +218,10 @@ export async function processPlayerEvolutionAction() {
           else if (attr === "rebounding" && nextRebounding < 99) { nextRebounding++; added++; }
           else if (attr === "speed" && nextSpeed < 99) { nextSpeed++; added++; }
           else if (attr === "stamina" && nextStamina < 99) { nextStamina++; added++; }
-          
+
           if (nextThreePoint === 99 && nextInsideScoring === 99 && nextPlaymaking === 99 &&
-              nextPerimeterDefense === 99 && nextInteriorDefense === 99 && nextRebounding === 99 &&
-              nextSpeed === 99 && nextStamina === 99) {
+            nextPerimeterDefense === 99 && nextInteriorDefense === 99 && nextRebounding === 99 &&
+            nextSpeed === 99 && nextStamina === 99) {
             break;
           }
         }
@@ -232,11 +232,11 @@ export async function processPlayerEvolutionAction() {
         // Regression -1 to -4
         diff = Math.floor(Math.random() * 4) + 1;
         const totalPointsToDeduct = diff * 8;
-        
+
         let deducted = 0;
         const physicalDefenseAttrs = ["speed", "stamina", "perimeterDefense", "interiorDefense"];
         const otherAttrs = ["threePoint", "insideScoring", "playmaking", "rebounding"];
-        
+
         while (deducted < totalPointsToDeduct) {
           const usePhysical = Math.random() < 0.7;
           const attr = usePhysical
@@ -253,7 +253,7 @@ export async function processPlayerEvolutionAction() {
           else if (attr === "rebounding" && nextRebounding > 40) { nextRebounding--; deducted++; }
 
           if (nextSpeed === 40 && nextStamina === 40 && nextPerimeterDefense === 40 && nextInteriorDefense === 40 &&
-              nextThreePoint === 40 && nextInsideScoring === 40 && nextPlaymaking === 40 && nextRebounding === 40) {
+            nextThreePoint === 40 && nextInsideScoring === 40 && nextPlaymaking === 40 && nextRebounding === 40) {
             break;
           }
         }
@@ -270,7 +270,7 @@ export async function processPlayerEvolutionAction() {
       if (nextContractYears <= 0 && player.teamId !== null) {
         nextTeamId = null;
         nextContractYears = 0;
-        
+
         const logMsg = `🔓 ${player.firstName} ${player.lastName} became an unrestricted free agent as their contract expired.`;
         evolutionLogs.push(logMsg);
         newTransactions.push({
@@ -444,7 +444,7 @@ export async function replenishLeagueRostersAction() {
           console.warn("[Roster Replenishment] Free agency pool is too small! Generating emergency free agents...");
           const emergencyFAs: Array<typeof players.$inferInsert> = [];
           const neededFAsCount = (faIndex + playersNeeded) - freeAgents.length;
-          
+
           for (let k = 0; k < neededFAsCount + 10; k++) {
             const isFilAm = Math.random() < 0.2;
             const firstName = isFilAm

@@ -358,7 +358,7 @@ export async function executeTradeAction(
 
     const namesA = rosterA.map((p) => `${p.firstName} ${p.lastName}`).join(", ");
     const namesB = rosterB.map((p) => `${p.firstName} ${p.lastName}`).join(", ");
-    
+
     const tradeDesc = `TRADE: ${teamA.city} ${teamA.name} sent ${namesA} to ${teamB.city} ${teamB.name} in exchange for ${namesB}.`;
 
     await db.insert(transactions).values({

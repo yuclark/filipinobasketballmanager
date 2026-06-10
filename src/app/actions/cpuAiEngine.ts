@@ -9,30 +9,30 @@ const SALARY_CAP = 50000000; // 50,000,000 PHP
 
 // Name pools for emergency free agent generation
 const FIRST_NAMES = [
-  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe", 
-  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond", 
-  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio", 
-  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic", 
+  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe",
+  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond",
+  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio",
+  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic",
   "Poy", "Troy", "Jerick", "Allein", "Mac", "Ramon", "Nonoy", "Mike"
 ];
 
 const SURNAMES = [
-  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy", 
-  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger", 
-  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright", 
-  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo", 
+  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy",
+  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger",
+  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright",
+  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo",
   "Oftana", "Perez", "Sangalang", "Jalalon", "David", "Pascual", "Guanzon"
 ];
 
 const FILAM_FIRST_NAMES = [
-  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew", 
-  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor", 
+  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew",
+  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor",
   "DeAndre", "Tyler", "Justin", "Brandon", "Ethan", "Jeremy", "Zachary"
 ];
 
 const FILAM_SURNAMES = [
-  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright", 
-  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore", 
+  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright",
+  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore",
   "Green", "Tautuaa", "Ellis", "Harris", "Parks", "Williams", "Smith", "Johnson"
 ];
 
@@ -117,7 +117,7 @@ export async function enforceLeagueRosterLimitsAction() {
             const lastName = isFilAm
               ? FILAM_SURNAMES[Math.floor(Math.random() * FILAM_SURNAMES.length)]
               : SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
-            
+
             const age = Math.floor(Math.random() * 8) + 21; // 21 to 28
             const overall = Math.floor(Math.random() * 6) + 60; // 60 to 65
 
@@ -166,7 +166,7 @@ export async function enforceLeagueRosterLimitsAction() {
               })
               .where(eq(players.id, bestFa.id))
               .returning();
-            
+
             chosenPlayer = updated;
 
             await db.insert(transactions).values({
@@ -185,7 +185,7 @@ export async function enforceLeagueRosterLimitsAction() {
 
         // Sort roster by overall ascending (lowest overall rating first)
         const sortedRoster = [...teamRoster].sort((a, b) => a.overall - b.overall);
-        
+
         for (let i = 0; i < excess; i++) {
           const p = sortedRoster[i];
           await db
@@ -299,7 +299,7 @@ export async function runCpuDailyAiEngineAction(
     // ─── 2. CPU-TO-CPU TRADES (Only before Day 50) ───
     if (gameDay < 50) {
       const tradeMatchingTeams = [];
-      
+
       for (const team of cpuTeams) {
         const roster = currentPlayersState.filter(
           (p) => p.teamId === team.id && p.status === "Active"
@@ -391,13 +391,13 @@ export async function runCpuDailyAiEngineAction(
       // Alternative "Asset Optimization" Trade Pathway
       if (!tradeExecuted && Math.random() < 0.08) {
         console.log("[CPU Daily AI Engine] Asset Optimization trade trigger hit (8% roll). Searching for swaps...");
-        
+
         // Generate all ordered pairs of distinct CPU teams
         const pairs: Array<{
           teamA: typeof tradeMatchingTeams[0];
           teamB: typeof tradeMatchingTeams[0];
         }> = [];
-        
+
         for (let i = 0; i < tradeMatchingTeams.length; i++) {
           for (let j = 0; j < tradeMatchingTeams.length; j++) {
             if (i === j) continue;

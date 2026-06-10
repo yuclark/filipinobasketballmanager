@@ -69,7 +69,7 @@ export default function FreeAgencyPage() {
       setLoading(true);
       const agents = (await getFreeAgents()) as Player[];
       const cap = await getTeamSalarySpace(userTeamId);
-      
+
       setFreeAgents(agents);
       if (cap.success) {
         setCapInfo({
@@ -101,7 +101,7 @@ export default function FreeAgencyPage() {
 
   const handleSignPlayer = async (playerId: string, name: string) => {
     if (!userTeamId || !capInfo) return;
-    
+
     const confirmSign = confirm(`Do you want to sign ${name} to a contract?`);
     if (!confirmSign) return;
 
@@ -265,11 +265,10 @@ export default function FreeAgencyPage() {
                 <button
                   key={pos}
                   onClick={() => setSelectedPosition(pos)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-all ${
-                    selectedPosition === pos
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-all ${selectedPosition === pos
                       ? "bg-orange-500 text-white border-transparent"
                       : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-200"
-                  }`}
+                    }`}
                 >
                   {pos}
                 </button>
@@ -383,7 +382,7 @@ export default function FreeAgencyPage() {
                         <span
                           className={`inline-flex items-center justify-center font-extrabold text-sm w-9 h-9 rounded-xl shadow-sm ${getOverallBadgeClass(
                             player.overall
-                      )}`}
+                          )}`}
                         >
                           {player.overall}
                         </span>

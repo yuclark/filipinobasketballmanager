@@ -16,44 +16,44 @@ const db = drizzle(sql, { schema });
 
 // Culturally authentic name pools
 const FILIPINO_FIRST_NAMES = [
-  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe", 
-  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond", 
-  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio", 
-  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic", 
+  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe",
+  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond",
+  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio",
+  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic",
   "Poy", "Troy", "Jerick", "Allein", "Mac", "Ramon", "Nonoy", "Mike"
 ];
 
 const FILIPINO_SURNAMES = [
-  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy", 
-  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger", 
-  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright", 
-  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo", 
+  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy",
+  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger",
+  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright",
+  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo",
   "Oftana", "Perez", "Sangalang", "Jalalon", "David", "Pascual", "Guanzon"
 ];
 
 const FILAM_FIRST_NAMES = [
-  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew", 
-  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor", 
+  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew",
+  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor",
   "DeAndre", "Tyler", "Justin", "Brandon", "Ethan", "Jeremy", "Zachary"
 ];
 
 const FILAM_SURNAMES = [
-  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright", 
-  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore", 
+  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright",
+  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore",
   "Green", "Tautuaa", "Ellis", "Harris", "Parks", "Williams", "Smith", "Johnson"
 ];
 
 // Region-specific Hometowns
 const LUZON_HOMETOWNS = [
-  "Manila", "Quezon City", "Makati", "Pampanga", "Bulacan", "Laguna", 
-  "Cavite", "Batangas", "Pangasinan", "Baguio", "Legazpi", "Isabela", 
+  "Manila", "Quezon City", "Makati", "Pampanga", "Bulacan", "Laguna",
+  "Cavite", "Batangas", "Pangasinan", "Baguio", "Legazpi", "Isabela",
   "Valenzuela", "Pasig", "Taguig", "Angeles City", "Rizal", "Tarlac"
 ];
 
 const VISMIN_HOMETOWNS = [
-  "Cebu City", "Mandaue City", "Iloilo City", "Bacolod", "Davao City", 
-  "Zamboanga City", "Cagayan de Oro", "General Santos", "Butuan", "Iligan", 
-  "Cotabato City", "Dumaguete", "Tagbilaran", "Tacloban", "Lapu-Lapu", 
+  "Cebu City", "Mandaue City", "Iloilo City", "Bacolod", "Davao City",
+  "Zamboanga City", "Cagayan de Oro", "General Santos", "Butuan", "Iligan",
+  "Cotabato City", "Dumaguete", "Tagbilaran", "Tacloban", "Lapu-Lapu",
   "Ormoc", "Dapitan", "Pagadian"
 ];
 
@@ -106,30 +106,30 @@ async function main() {
   try {
     // 1. CLEAN RESET (SEQUENTIAL TRUNCATION) USING DB INSTANCE DIRECTLY
     console.log("Truncating dependent transaction tables...");
-    
+
     await db.delete(schema.playerGameStats);
     console.log(" - Truncated player_game_stats");
-    
+
     await db.delete(schema.games);
     console.log(" - Truncated games");
-    
+
     await db.delete(schema.transactions);
     console.log(" - Truncated transactions");
-    
+
     await db.delete(schema.playerAwards);
     console.log(" - Truncated player_awards");
-    
+
     await db.delete(schema.allLeagueTeams);
     console.log(" - Truncated all_league_teams");
-    
+
     await db.delete(schema.seasonChampions);
     console.log(" - Truncated season_champions");
 
     console.log("Truncating core players and teams tables...");
-    
+
     await db.delete(schema.players);
     console.log(" - Truncated players");
-    
+
     await db.delete(schema.teams);
     console.log(" - Truncated teams");
 
@@ -200,7 +200,7 @@ async function main() {
             rebounding +
             speed +
             stamina) /
-            8
+          8
         );
 
         const contractYearsRemaining = getRandomElement([1, 2, 3]);
@@ -293,7 +293,7 @@ async function main() {
           rebounding +
           speed +
           stamina) /
-          8
+        8
       );
 
       const salary = Math.round((1500000 + ((overall - 55) / (90 - 55)) * (4500000 - 1500000)) / 10000) * 10000;

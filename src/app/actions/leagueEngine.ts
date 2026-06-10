@@ -450,9 +450,14 @@ export async function simulateGameLogic(
       const threeAccuracy = p.threePoint * 0.0035 + 0.2;
       const fg3a = fg3m + Math.max(0, Math.round(fg3m * (1 / threeAccuracy - 1) + Math.random() * 2));
 
-      const minutes = i < 5
-        ? Math.floor(Math.random() * 11) + 28
-        : Math.floor(Math.random() * 15) + 10;
+      // Role-weighted minutes: starters 28-36, bench 8-18, deep bench 3-6
+      const starterMinutes = [36, 34, 32, 30, 28]; // top 5
+      const benchMinutes   = [18, 16, 14, 12, 11, 10, 9, 8, 8, 7]; // next 10
+      let minutes: number;
+      if (i < 5)       minutes = starterMinutes[i] + Math.round((Math.random() - 0.5) * 4);
+      else if (i < 15) minutes = benchMinutes[i - 5] + Math.round((Math.random() - 0.5) * 3);
+      else             minutes = 3 + Math.round(Math.random() * 3);
+      minutes = Math.max(0, minutes);
 
       playerStatsToInsert.push({
         gameId: game.id,
@@ -499,7 +504,7 @@ export async function simulateGameAction(gameId: string) {
       .select()
       .from(players)
       .where(and(eq(players.teamId, game.homeTeamId), eq(players.status, "Active")));
-    
+
     const awayPlayersList = await db
       .select()
       .from(players)
@@ -848,7 +853,7 @@ export async function simulateUntilPlayoffsAction(
       .select({ count: sql<number>`count(*)` })
       .from(games)
       .where(and(eq(games.stage, "Regular"), eq(games.status, "Scheduled")));
-    
+
     if (Number(remainingGames[0]?.count ?? 0) === 0 || res.status === "REGULAR_SEASON_COMPLETE") {
       console.log(`[League Engine] Regular season complete (simulateUntilPlayoffsAction). Triggering Season ${seasonYear} awards calculation...`);
       await calculateRegularSeasonAwardsAction(seasonYear).catch((err) =>
