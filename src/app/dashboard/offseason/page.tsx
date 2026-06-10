@@ -109,6 +109,8 @@ export default function OffseasonWizardPage() {
   const [cpuReSignLogs, setCpuReSignLogs] = useState<string[]>([]);
   const [cpuReSignSimulated, setCpuReSignSimulated] = useState<boolean>(false);
   const [submittingExtensions, setSubmittingExtensions] = useState<boolean>(false);
+  const [wizardError, setWizardError] = useState<string | null>(null);
+  const [wizardSuccess, setWizardSuccess] = useState<string | null>(null);
 
   // Phase 2: Evolution State
   const [evolutionLogs, setEvolutionLogs] = useState<string[]>([]);
@@ -275,13 +277,13 @@ export default function OffseasonWizardPage() {
           saveWizardState({ reSignedPlayerIds: next });
           return next;
         });
-        alert("Player re-signed successfully!");
+        setWizardSuccess("Player re-signed successfully!");
       } else {
-        alert("Failed to re-sign player. Please verify that your team has enough budget or roster space.");
+        setWizardError("Failed to re-sign player. Please verify that your team has enough budget or roster space.");
       }
     } catch (e: any) {
       console.error(e);
-      alert("Error re-signing player.");
+      setWizardError("Error re-signing player.");
     } finally {
       setSubmittingExtensions(false);
     }
@@ -307,11 +309,11 @@ export default function OffseasonWizardPage() {
           cpuReSignSimulated: true
         });
       } else {
-        alert("Failed to run CPU extensions. Please try again.");
+        setWizardError("Failed to run CPU extensions. Please try again.");
       }
     } catch (e: any) {
       console.error(e);
-      alert("Error running CPU extensions.");
+      setWizardError("Error running CPU extensions.");
     } finally {
       setSubmittingExtensions(false);
     }
@@ -351,11 +353,11 @@ export default function OffseasonWizardPage() {
           evolutionSimulated: true,
         });
       } else {
-        alert("Failed to run player evolution. Please try again.");
+        setWizardError("Failed to run player evolution. Please try again.");
       }
     } catch (e: any) {
       console.error(e);
-      alert("Error during evolution run.");
+      setWizardError("Error during evolution run.");
     } finally {
       setEvolving(false);
     }
@@ -536,12 +538,12 @@ export default function OffseasonWizardPage() {
         // Immediately trigger CPU picks following user turn
         await runCpuPicks(nextIdx, remaining, updatedHistory);
       } else {
-        alert("Failed to draft selected player. Please check your selection and try again.");
+        setWizardError("Failed to draft selected player. Please check your selection and try again.");
         setDraftingActive(false);
       }
     } catch (e) {
       console.error(e);
-      alert("Draft execution failed.");
+      setWizardError("Draft execution failed.");
       setDraftingActive(false);
     }
   };
@@ -561,18 +563,17 @@ export default function OffseasonWizardPage() {
       setLaunching(true);
       const res = await finalizeOffseasonAction();
       if (res.success) {
-        // Clear wizard state from localStorage
         localStorage.removeItem("filipino-basketball-manager-offseason-wizard");
         setLeagueDay(1);
-        alert(`Successfully launched Season ${res.nextYear}! Redirecting to roster page.`);
-        router.push("/dashboard");
+        setWizardSuccess(`Season ${res.nextYear} launched! Redirecting to dashboard...`);
+        setTimeout(() => router.push("/dashboard"), 1500);
       } else {
-        alert("Failed to launch season. Please check your roster requirements (12-18 players) and try again.");
+        setWizardError("Failed to launch season. Please check your roster requirements (12-18 players) and try again.");
         setLaunching(false);
       }
     } catch (e: any) {
       console.error(e);
-      alert("Failed to advance season.");
+      setWizardError("Failed to advance season.");
       setLaunching(false);
     }
   };
@@ -621,7 +622,21 @@ export default function OffseasonWizardPage() {
 
   return (
     <div className="space-y-8 relative pb-16">
-      
+
+      {/* Inline wizard notifications */}
+      {wizardSuccess && (
+        <div className="px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400 font-semibold flex items-center justify-between">
+          <span>✓ {wizardSuccess}</span>
+          <button onClick={() => setWizardSuccess(null)} className="ml-4 text-emerald-400/60 hover:text-emerald-300 text-xs font-bold">✕</button>
+        </div>
+      )}
+      {wizardError && (
+        <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400 font-semibold flex items-center justify-between">
+          <span>✕ {wizardError}</span>
+          <button onClick={() => setWizardError(null)} className="ml-4 text-red-400/60 hover:text-red-300 text-xs font-bold">✕</button>
+        </div>
+      )}
+
       {/* Wizard Progress Tracker Stepper */}
       <div className="bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 shadow-xl">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-800 pb-5 mb-5">

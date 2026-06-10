@@ -183,14 +183,14 @@ export default function SchedulePage() {
     try {
       const res = await generateScheduleAction();
       if (res.success) {
-        alert("Full 82-game schedule generated successfully!");
+        setToastMessage("Full 82-game schedule generated successfully!");
         loadDayGames();
       } else {
-        alert("Failed to generate schedule. Please try again.");
+        setToastMessage("Failed to generate schedule. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error generating schedule.");
+      setToastMessage("Error generating schedule.");
     } finally {
       setActionLoading(false);
     }
@@ -204,11 +204,11 @@ export default function SchedulePage() {
       if (res.success) {
         loadDayGames();
       } else {
-        alert("Simulation failed.");
+        setToastMessage("Simulation failed.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error simulating game.");
+      setToastMessage("Error simulating game.");
     } finally {
       setSimulating(false);
     }
@@ -222,11 +222,11 @@ export default function SchedulePage() {
       if (res.success) {
         advanceDay();
       } else {
-        alert("Simulation failed.");
+        setToastMessage("Simulation failed.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error simulating remaining games.");
+      setToastMessage("Error simulating remaining games.");
     } finally {
       setSimulating(false);
     }
@@ -264,7 +264,7 @@ export default function SchedulePage() {
         }
 
         if (res.status === "ERROR") {
-          alert("Simulation failed. Please check team states and try again.");
+          setToastMessage("Simulation failed. Please check team states and try again.");
           break;
         }
 
@@ -286,9 +286,8 @@ export default function SchedulePage() {
         setTeamSchedule(schedule);
       }
     } catch (err) {
-
       console.error(err);
-      alert("Error executing batch simulation.");
+      setToastMessage("Error executing batch simulation.");
     } finally {
       setSimulating(false);
     }
@@ -353,7 +352,7 @@ export default function SchedulePage() {
       }
     } catch (err) {
       console.error(err);
-      alert("Error executing simulation.");
+      setToastMessage("Error executing simulation.");
     } finally {
       setSimulating(false);
     }
@@ -364,14 +363,13 @@ export default function SchedulePage() {
     try {
       const res = await initializePlayoffsAction();
       if (res.success) {
-        alert("Playoffs initialized successfully! Redirecting to Postseason Tournament.");
         router.push("/dashboard/playoffs");
       } else {
-        alert("Failed to initialize playoffs. Please try again.");
+        setToastMessage("Failed to initialize playoffs. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error initializing playoffs.");
+      setToastMessage("Error initializing playoffs.");
     } finally {
       setActionLoading(false);
     }

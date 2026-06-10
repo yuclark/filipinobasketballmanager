@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
-import { getFreeAgents, getTeamSalarySpace, signFreeAgentAction } from "@/app/actions/transactions";
+import { getFreeAgents, getTeamSalarySpace, sendOfferAction } from "@/app/actions/transactions";
 import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import {
   Briefcase,
@@ -11,9 +11,10 @@ import {
   Loader2,
   Sparkles,
   ArrowUpDown,
-  UserPlus,
+  CheckCircle,
+  XCircle,
   Coins,
-  ShieldAlert,
+  Clock,
 } from "lucide-react";
 
 interface Player {
@@ -38,6 +39,7 @@ interface Player {
 }
 
 type SortKey = "name" | "age" | "hometown" | "overall" | "salary" | "position";
+type OfferStatus = "none" | "pending" | "accepted" | "rejected";
 
 export default function FreeAgencyPage() {
   const router = useRouter();
@@ -51,9 +53,12 @@ export default function FreeAgencyPage() {
     rosterCount: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
 
-  // Search/Filters
+  // Per-player offer states
+  const [offerStatuses, setOfferStatuses] = useState<Record<string, OfferStatus>>({});
+  const [inlineErrors, setInlineErrors] = useState<Record<string, string>>({});
+
+  // Search / Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPosition, setSelectedPosition] = useState<string>("All");
   const [sortKey, setSortKey] = useState<SortKey>("overall");
@@ -69,7 +74,6 @@ export default function FreeAgencyPage() {
       setLoading(true);
       const agents = (await getFreeAgents()) as Player[];
       const cap = await getTeamSalarySpace(userTeamId);
-
       setFreeAgents(agents);
       if (cap.success) {
         setCapInfo({
@@ -99,37 +103,31 @@ export default function FreeAgencyPage() {
     );
   }
 
-  const handleSignPlayer = async (playerId: string, name: string) => {
-    if (!userTeamId || !capInfo) return;
+  const handleSendOffer = async (playerId: string) => {
+    if (!userTeamId) return;
 
-    const confirmSign = confirm(`Do you want to sign ${name} to a contract?`);
-    if (!confirmSign) return;
+    setOfferStatuses((prev) => ({ ...prev, [playerId]: "pending" }));
+    setInlineErrors((prev) => { const n = { ...prev }; delete n[playerId]; return n; });
 
-    setActionLoading(true);
     try {
-      const res = await signFreeAgentAction(playerId, userTeamId);
-      if (res.success) {
-        alert(`${name} has been successfully added to your roster!`);
-        // Reloading window refreshes the shared layout header budgets as well
-        window.location.reload();
-      } else {
-        alert("Failed to sign player. Make sure you have enough budget and roster space (maximum 18 players).");
+      const result = await sendOfferAction(playerId, userTeamId);
+      setOfferStatuses((prev) => ({ ...prev, [playerId]: result.status as OfferStatus }));
+
+      if (result.status === "accepted") {
+        // Refresh cap info inline — no page reload
+        await loadData();
+        router.refresh();
+      } else if (result.reason) {
+        setInlineErrors((prev) => ({ ...prev, [playerId]: result.reason! }));
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error executing trade transaction.");
-    } finally {
-      setActionLoading(false);
+    } catch {
+      setOfferStatuses((prev) => ({ ...prev, [playerId]: "rejected" }));
+      setInlineErrors((prev) => ({ ...prev, [playerId]: "Network error. Please try again." }));
     }
   };
 
-  const formatPHP = (amount: number) => {
-    return new Intl.NumberFormat("en-PH", {
-      style: "currency",
-      currency: "PHP",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const formatPHP = (amount: number) =>
+    new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(amount);
 
   const getOverallBadgeClass = (overall: number) => {
     if (overall >= 90) return "bg-orange-500/10 text-orange-400 border border-orange-500/30";
@@ -139,48 +137,27 @@ export default function FreeAgencyPage() {
   };
 
   const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortKey(key);
-      setSortAsc(false);
-    }
+    if (sortKey === key) setSortAsc(!sortAsc);
+    else { setSortKey(key); setSortAsc(false); }
   };
 
-  // Filter & Sort free agents
   const filteredFreeAgents = freeAgents
     .filter((player) => {
       const fullName = `${player.firstName} ${player.lastName}`.toLowerCase();
       const hometown = player.hometown.toLowerCase();
       const query = searchQuery.toLowerCase();
       const posMatches = selectedPosition === "All" || player.position === selectedPosition;
-
       return (fullName.includes(query) || hometown.includes(query)) && posMatches;
     })
     .sort((a, b) => {
       let valA: any = "";
       let valB: any = "";
-
-      if (sortKey === "name") {
-        valA = `${a.firstName} ${a.lastName}`.toLowerCase();
-        valB = `${b.firstName} ${b.lastName}`.toLowerCase();
-      } else if (sortKey === "age") {
-        valA = a.age;
-        valB = b.age;
-      } else if (sortKey === "hometown") {
-        valA = a.hometown.toLowerCase();
-        valB = b.hometown.toLowerCase();
-      } else if (sortKey === "overall") {
-        valA = a.overall;
-        valB = b.overall;
-      } else if (sortKey === "salary") {
-        valA = a.salary;
-        valB = b.salary;
-      } else if (sortKey === "position") {
-        valA = a.position;
-        valB = b.position;
-      }
-
+      if (sortKey === "name") { valA = `${a.firstName} ${a.lastName}`.toLowerCase(); valB = `${b.firstName} ${b.lastName}`.toLowerCase(); }
+      else if (sortKey === "age") { valA = a.age; valB = b.age; }
+      else if (sortKey === "hometown") { valA = a.hometown.toLowerCase(); valB = b.hometown.toLowerCase(); }
+      else if (sortKey === "overall") { valA = a.overall; valB = b.overall; }
+      else if (sortKey === "salary") { valA = a.salary; valB = b.salary; }
+      else if (sortKey === "position") { valA = a.position; valB = b.position; }
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ? 1 : -1;
       return 0;
@@ -188,12 +165,6 @@ export default function FreeAgencyPage() {
 
   return (
     <div className="space-y-6 relative">
-      {actionLoading && (
-        <div className="fixed inset-0 bg-zinc-950/40 flex items-center justify-center z-50 backdrop-blur-xs">
-          <Loader2 className="w-10 h-10 text-orange-500 animate-spin" />
-        </div>
-      )}
-
       {/* Roster Size & Budget Space details */}
       {capInfo && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 shadow-xl">
@@ -215,9 +186,7 @@ export default function FreeAgencyPage() {
             </div>
             <div>
               <span className="text-zinc-500 font-bold uppercase tracking-wider text-[10px] block">Active Payroll</span>
-              <span className="text-xl font-extrabold text-zinc-300">
-                {formatPHP(capInfo.totalSalaries)}
-              </span>
+              <span className="text-xl font-extrabold text-zinc-300">{formatPHP(capInfo.totalSalaries)}</span>
             </div>
           </div>
 
@@ -235,17 +204,16 @@ export default function FreeAgencyPage() {
         </div>
       )}
 
-      {/* Free Agent Table with filters */}
+      {/* Free Agent Table */}
       <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm">
         {/* Filters */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
           <div>
             <h3 className="text-xl font-bold text-white mb-1">Marketplace Board</h3>
-            <p className="text-zinc-500 text-sm">Unsigned free agents available to join franchises.</p>
+            <p className="text-zinc-500 text-sm">Send offers to unsigned free agents. Higher-rated players may decline.</p>
           </div>
-
           <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-            {/* Search Input */}
+            {/* Search */}
             <div className="relative w-full md:w-64">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500">
                 <Search className="w-4 h-4" />
@@ -258,17 +226,17 @@ export default function FreeAgencyPage() {
                 className="w-full pl-9 pr-4 py-2 bg-zinc-950 border border-zinc-800 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none transition-all"
               />
             </div>
-
-            {/* Position filter tabs */}
+            {/* Position filter */}
             <div className="flex gap-1 overflow-x-auto pb-1 md:pb-0">
               {["All", "PG", "SG", "SF", "PF", "C"].map((pos) => (
                 <button
                   key={pos}
                   onClick={() => setSelectedPosition(pos)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-all ${selectedPosition === pos
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-all ${
+                    selectedPosition === pos
                       ? "bg-orange-500 text-white border-transparent"
                       : "bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-200"
-                    }`}
+                  }`}
                 >
                   {pos}
                 </button>
@@ -277,64 +245,28 @@ export default function FreeAgencyPage() {
           </div>
         </div>
 
-        {/* Free Agency List Table */}
+        {/* Table */}
         <div className="overflow-x-auto rounded-xl border border-zinc-900">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-400 font-bold text-xs uppercase tracking-wider select-none">
-                <th
-                  onClick={() => handleSort("name")}
-                  className="py-4.5 px-6 cursor-pointer hover:bg-zinc-900 transition-colors w-1/4"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Player</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
-                  </div>
+                <th onClick={() => handleSort("name")} className="py-4.5 px-6 cursor-pointer hover:bg-zinc-900 transition-colors w-1/4">
+                  <div className="flex items-center gap-1.5"><span>Player</span><ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" /></div>
                 </th>
-                <th
-                  onClick={() => handleSort("position")}
-                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
-                >
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span>Pos</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
-                  </div>
+                <th onClick={() => handleSort("position")} className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center">
+                  <div className="flex items-center justify-center gap-1.5"><span>Pos</span><ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" /></div>
                 </th>
-                <th
-                  onClick={() => handleSort("age")}
-                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
-                >
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span>Age</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
-                  </div>
+                <th onClick={() => handleSort("age")} className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center">
+                  <div className="flex items-center justify-center gap-1.5"><span>Age</span><ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" /></div>
                 </th>
-                <th
-                  onClick={() => handleSort("hometown")}
-                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Hometown</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
-                  </div>
+                <th onClick={() => handleSort("hometown")} className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors">
+                  <div className="flex items-center gap-1.5"><span>Hometown</span><ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" /></div>
                 </th>
-                <th
-                  onClick={() => handleSort("salary")}
-                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Contract Demand</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
-                  </div>
+                <th onClick={() => handleSort("salary")} className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors">
+                  <div className="flex items-center gap-1.5"><span>Contract Demand</span><ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" /></div>
                 </th>
-                <th
-                  onClick={() => handleSort("overall")}
-                  className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
-                >
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span>OVR</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
-                  </div>
+                <th onClick={() => handleSort("overall")} className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center">
+                  <div className="flex items-center justify-center gap-1.5"><span>OVR</span><ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" /></div>
                 </th>
                 <th className="py-4.5 px-6 text-center">Action</th>
               </tr>
@@ -344,7 +276,9 @@ export default function FreeAgencyPage() {
                 filteredFreeAgents.map((player) => {
                   const isRosterFull = (capInfo?.rosterCount || 0) >= MAX_ROSTER_SIZE;
                   const canAfford = capInfo ? capInfo.space >= player.salary : false;
-                  const canSign = !isRosterFull && canAfford;
+                  const isAffordable = !isRosterFull && canAfford;
+                  const status = offerStatuses[player.id] ?? "none";
+                  const inlineError = inlineErrors[player.id];
 
                   return (
                     <tr key={player.id} className="hover:bg-zinc-900/30 transition-all">
@@ -363,9 +297,7 @@ export default function FreeAgencyPage() {
 
                       {/* Position */}
                       <td className="py-4 px-4 text-center font-bold text-zinc-300">
-                        <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md text-xs">
-                          {player.position}
-                        </span>
+                        <span className="px-2 py-1 bg-zinc-900 border border-zinc-800 rounded-md text-xs">{player.position}</span>
                       </td>
 
                       {/* Age */}
@@ -375,37 +307,58 @@ export default function FreeAgencyPage() {
                       <td className="py-4 px-4 text-sm font-medium text-zinc-400">{player.hometown}</td>
 
                       {/* Salary */}
-                      <td className="py-4 px-4 text-sm font-bold text-amber-500">{formatPHP(player.salary)}</td>
+                      <td className="py-4 px-4 text-sm font-bold">
+                        <span className={canAfford ? "text-amber-500" : "text-red-400"}>
+                          {formatPHP(player.salary)}
+                        </span>
+                      </td>
 
                       {/* Overall */}
                       <td className="py-4 px-4 text-center">
-                        <span
-                          className={`inline-flex items-center justify-center font-extrabold text-sm w-9 h-9 rounded-xl shadow-sm ${getOverallBadgeClass(
-                            player.overall
-                          )}`}
-                        >
+                        <span className={`inline-flex items-center justify-center font-extrabold text-sm w-9 h-9 rounded-xl shadow-sm ${getOverallBadgeClass(player.overall)}`}>
                           {player.overall}
                         </span>
                       </td>
 
-                      {/* Sign Button */}
+                      {/* Action */}
                       <td className="py-4 px-6 text-center">
-                        {canSign ? (
-                          <button
-                            onClick={() => handleSignPlayer(player.id, `${player.firstName} ${player.lastName}`)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-                          >
-                            <UserPlus className="w-4 h-4" />
-                            <span>Sign FA</span>
-                          </button>
-                        ) : (
-                          <div className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 border border-zinc-850 rounded-lg text-[10px] text-zinc-500 font-semibold max-w-[140px] text-left">
-                            <ShieldAlert className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-                            <span>
-                              {isRosterFull ? `Roster Full (${MAX_ROSTER_SIZE})` : "Exceeds Salary Cap"}
+                        <div className="flex flex-col items-center gap-1">
+                          {status === "none" && isAffordable && (
+                            <button
+                              type="button"
+                              onClick={() => handleSendOffer(player.id)}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+                            >
+                              Send Offer
+                            </button>
+                          )}
+                          {status === "none" && !isAffordable && (
+                            <span className="text-[11px] text-zinc-500 font-semibold">
+                              {isRosterFull ? `Roster Full` : "Over Budget"}
                             </span>
-                          </div>
-                        )}
+                          )}
+                          {status === "pending" && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 font-semibold">
+                              <Clock className="w-3.5 h-3.5 animate-pulse" />
+                              Considering...
+                            </span>
+                          )}
+                          {status === "accepted" && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-400">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Signed
+                            </span>
+                          )}
+                          {status === "rejected" && (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-red-400">
+                              <XCircle className="w-3.5 h-3.5" />
+                              Declined
+                            </span>
+                          )}
+                          {inlineError && (
+                            <span className="text-[10px] text-red-400/80 max-w-[160px] text-center leading-tight">{inlineError}</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

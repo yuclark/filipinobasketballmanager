@@ -58,6 +58,9 @@ export default function TradeBlockPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [offers, setOffers] = useState<any[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [tradeSuccess, setTradeSuccess] = useState<string | null>(null);
+  const [confirmingTradeId, setConfirmingTradeId] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -113,6 +116,7 @@ export default function TradeBlockPage() {
   // Toggle Trade Block Status
   const handleToggleBlock = async (playerId: string, currentVal: boolean) => {
     setActionLoading(true);
+    setActionError(null);
     try {
       const newVal = !currentVal;
       const res = await togglePlayerTradeBlockAction(playerId, newVal);
@@ -121,11 +125,11 @@ export default function TradeBlockPage() {
           prev.map((p) => (p.id === playerId ? { ...p, isOnTradeBlock: newVal } : p))
         );
       } else {
-        alert("Failed to update player trade block status. Please try again.");
+        setActionError("Failed to update player trade block status. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("An error occurred while updating the trade block status.");
+      setActionError("An error occurred while updating the trade block status.");
     } finally {
       setActionLoading(false);
     }
@@ -150,25 +154,27 @@ export default function TradeBlockPage() {
   // Accept Trade
   const handleAcceptTrade = async (cpuPlayerId: string, cpuPlayerName: string) => {
     if (!selectedPlayer) return;
-    const confirmTrade = confirm(
-      `Confirm Trade proposal:\nTrade away: ${selectedPlayer.firstName} ${selectedPlayer.lastName}\nReceive: ${cpuPlayerName}\n\nAre you sure you want to execute this trade?`
-    );
-    if (!confirmTrade) return;
 
+    if (confirmingTradeId !== cpuPlayerId) {
+      setConfirmingTradeId(cpuPlayerId);
+      return;
+    }
+    setConfirmingTradeId(null);
+    setActionError(null);
     setActionLoading(true);
     try {
       const res = await executeUserTradeAction(selectedPlayer.id, cpuPlayerId);
       if (res.success) {
-        alert(" Blockbuster Trade executed successfully!");
+        setTradeSuccess(`Trade executed! ${selectedPlayer.firstName} ${selectedPlayer.lastName} → ${cpuPlayerName}`);
         setIsModalOpen(false);
-        // Reload layout budget calculations by reloading window
-        window.location.reload();
+        await loadRoster();
+        router.refresh();
       } else {
-        alert("Failed to execute trade. Roster capacity or salary rules might have been violated.");
+        setActionError(res.error || "Failed to execute trade. Roster or salary rules violated.");
       }
     } catch (err) {
       console.error(err);
-      alert("An error occurred during trade execution.");
+      setActionError("An error occurred during trade execution.");
     } finally {
       setActionLoading(false);
     }

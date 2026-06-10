@@ -56,6 +56,8 @@ export default function RosterPage() {
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [confirmReleaseId, setConfirmReleaseId] = useState<string | null>(null);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -129,23 +131,25 @@ export default function RosterPage() {
   }
 
   // Release Action Handler
-  const handleRelease = async (playerId: string, name: string) => {
-    const confirmRelease = confirm(`Are you sure you want to release ${name} into free agency?`);
-    if (!confirmRelease) return;
-
+  const handleRelease = async (playerId: string) => {
+    if (confirmReleaseId !== playerId) {
+      setConfirmReleaseId(playerId);
+      return;
+    }
+    setConfirmReleaseId(null);
+    setReleaseError(null);
     try {
       setReloading(true);
       const res = await releasePlayerAction(playerId);
       if (res.success) {
-        // Reload layout/page budget calculations by reloading window, or re-fetching local list
-        // Reloading the page guarantees the shared layout budget headers reload too!
-        window.location.reload();
+        await loadRoster();
+        router.refresh();
       } else {
-        alert("Failed to release player. Make sure releasing this player does not violate roster minimums.");
+        setReleaseError(res.error || "Failed to release player. Roster minimum may be violated.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error executing transaction.");
+      setReleaseError("Error executing release transaction.");
     } finally {
       setReloading(false);
     }
@@ -226,6 +230,13 @@ export default function RosterPage() {
       {reloading && (
         <div className="absolute inset-0 bg-zinc-950/40 rounded-3xl flex items-center justify-center z-30 backdrop-blur-xs">
           <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+        </div>
+      )}
+
+      {releaseError && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400 font-semibold flex items-center justify-between">
+          <span>{releaseError}</span>
+          <button onClick={() => setReleaseError(null)} className="ml-4 text-red-400/60 hover:text-red-300 text-xs font-bold">✕</button>
         </div>
       )}
 
@@ -521,15 +532,32 @@ export default function RosterPage() {
                       );
                     })()}
 
-                    {/* Release Button */}
+                    {/* Release Button — two-step confirm, no browser dialog */}
                     <td className="py-4 px-6 text-center">
-                      <button
-                        onClick={() => handleRelease(player.id, `${player.firstName} ${player.lastName}`)}
-                        className="p-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold"
-                      >
-                        <UserMinus className="w-4.5 h-4.5" />
-                        <span className="hidden lg:inline">Release</span>
-                      </button>
+                      {confirmReleaseId === player.id ? (
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <button
+                            onClick={() => handleRelease(player.id)}
+                            className="px-2.5 py-1.5 bg-red-500 text-white rounded-lg text-[10px] font-bold cursor-pointer hover:bg-red-600 transition-all"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => setConfirmReleaseId(null)}
+                            className="px-2.5 py-1.5 bg-zinc-800 text-zinc-300 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-zinc-700 transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleRelease(player.id)}
+                          className="p-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white rounded-lg transition-all cursor-pointer inline-flex items-center gap-1.5 text-xs font-bold"
+                        >
+                          <UserMinus className="w-4.5 h-4.5" />
+                          <span className="hidden lg:inline">Release</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

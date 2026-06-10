@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, inArray, isNull, desc, and } from "drizzle-orm";
+import { eq, inArray, isNull, isNotNull, desc, and } from "drizzle-orm";
 import { teams, players, transactions, games } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
@@ -172,6 +172,96 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
   } catch (error: any) {
     console.error("Free agent signing failed:", error);
     return { success: false, error: error.message || "Failed to sign player." };
+  }
+}
+
+export async function sendOfferAction(playerId: string, teamId: string): Promise<{
+  success: boolean;
+  status: "accepted" | "rejected";
+  playerName?: string;
+  reason?: string;
+}> {
+  try {
+    const [player] = await db
+      .select()
+      .from(players)
+      .where(eq(players.id, playerId))
+      .limit(1);
+
+    if (!player) {
+      return { success: false, status: "rejected", reason: "Player not found." };
+    }
+    if (player.status !== "Active") {
+      return { success: false, status: "rejected", reason: "Player is no longer available." };
+    }
+    if (player.teamId !== null) {
+      return { success: false, status: "rejected", reason: "Player has already signed with another team." };
+    }
+
+    const [team] = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
+    if (!team) return { success: false, status: "rejected", reason: "Team not found." };
+
+    // Roster size check
+    const currentRoster = await db
+      .select({ id: players.id })
+      .from(players)
+      .where(and(eq(players.teamId, teamId), isNotNull(players.teamId)));
+
+    if (currentRoster.length >= MAX_ROSTER_SIZE) {
+      return { success: false, status: "rejected", reason: `Roster is full (${MAX_ROSTER_SIZE} players max).` };
+    }
+
+    // Cap check
+    const rosterSalaries = await db
+      .select({ salary: players.salary })
+      .from(players)
+      .where(eq(players.teamId, teamId));
+    const currentPayroll = rosterSalaries.reduce((s, p) => s + (p.salary ?? 0), 0);
+    const remaining = SALARY_CAP - currentPayroll;
+
+    if (player.salary > remaining) {
+      return {
+        success: false,
+        status: "rejected",
+        reason: `Insufficient cap space. ${player.firstName} ${player.lastName} demands ₱${player.salary.toLocaleString("en-PH")}, you have ₱${remaining.toLocaleString("en-PH")} remaining.`,
+      };
+    }
+
+    // OVR-tiered acceptance probability — stars are pickier
+    const acceptanceChance =
+      player.overall >= 85 ? 0.55
+      : player.overall >= 75 ? 0.72
+      : player.overall >= 65 ? 0.85
+      : 0.95;
+
+    const accepted = Math.random() < acceptanceChance;
+    const playerName = `${player.firstName} ${player.lastName}`;
+
+    if (accepted) {
+      await db
+        .update(players)
+        .set({ teamId, contractYearsRemaining: 3 })
+        .where(eq(players.id, playerId));
+
+      const { day, year } = await getCurrentLeagueDayAndYear();
+      await db.insert(transactions).values({
+        type: "Signing",
+        description: `${team.city} ${team.name} signed free agent ${playerName} for ₱${player.salary.toLocaleString("en-PH")}/yr.`,
+        seasonYear: year,
+        gameDay: day,
+      });
+
+      return { success: true, status: "accepted", playerName };
+    } else {
+      return {
+        success: false,
+        status: "rejected",
+        reason: `${playerName} declined your offer.`,
+      };
+    }
+  } catch (error: any) {
+    console.error("sendOfferAction failed:", error);
+    return { success: false, status: "rejected", reason: error.message || "Offer failed." };
   }
 }
 

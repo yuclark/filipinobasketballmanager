@@ -122,3 +122,13 @@ export const allLeagueTeams = pgTable("all_league_teams", {
     .references(() => players.id, { onDelete: "cascade" })
     .notNull(),
 });
+
+export const draftPicks = pgTable('draft_picks', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ownerTeamId: uuid('owner_team_id').references(() => teams.id, { onDelete: 'set null' }),
+  originalTeamId: uuid('original_team_id').references(() => teams.id, { onDelete: 'set null' }),
+  season: integer('season').notNull(),
+  round: integer('round').notNull(), // 1 or 2
+  pickNumber: integer('pick_number'),  // 1–60, null until lottery run
+  isUsed: boolean('is_used').default(false).notNull(),
+});

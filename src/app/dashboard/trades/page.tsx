@@ -63,6 +63,9 @@ export default function TradesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingCpuRoster, setLoadingCpuRoster] = useState(false);
   const [tradeExecuting, setTradeExecuting] = useState(false);
+  const [tradeSuccess, setTradeSuccess] = useState<string | null>(null);
+  const [tradeError, setTradeError] = useState<string | null>(null);
+  const [confirmingTrade, setConfirmingTrade] = useState(false);
 
   // Checkbox selections
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -231,9 +234,13 @@ export default function TradesPage() {
   const handleSubmitTrade = async () => {
     if (tradeStatus !== "approved" || !userTeamId || !selectedCpuTeamId) return;
 
-    const confirmTrade = confirm("Are you sure you want to execute this trade?");
-    if (!confirmTrade) return;
-
+    if (!confirmingTrade) {
+      setConfirmingTrade(true);
+      return;
+    }
+    setConfirmingTrade(false);
+    setTradeSuccess(null);
+    setTradeError(null);
     setTradeExecuting(true);
     try {
       const res = await executeTradeAction(
@@ -244,14 +251,16 @@ export default function TradesPage() {
       );
 
       if (res.success) {
-        alert("Trade executed successfully! Roster databases updated.");
-        window.location.reload();
+        setTradeSuccess("Trade executed successfully! Roster updated.");
+        setSelectedUserIds([]);
+        setSelectedCpuIds([]);
+        router.refresh();
       } else {
-        alert("Trade proposal failed. Please ensure the trade complies with roster size and salary requirements.");
+        setTradeError(res.error || "Trade proposal failed. Check roster size and salary requirements.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error executing trade transaction.");
+      setTradeError("Error executing trade transaction.");
     } finally {
       setTradeExecuting(false);
     }
@@ -527,17 +536,49 @@ export default function TradesPage() {
               </div>
             )}
 
-            <button
-              onClick={handleSubmitTrade}
-              disabled={tradeStatus !== "approved" || tradeExecuting}
-              className={`w-full py-3.5 rounded-xl text-sm font-extrabold uppercase tracking-wide cursor-pointer transition-all active:scale-[0.98] ${
-                tradeStatus === "approved"
-                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01]"
-                  : "bg-zinc-900 text-zinc-600 border border-zinc-850 cursor-not-allowed"
-              }`}
-            >
-              Submit Trade Proposal
-            </button>
+            {tradeSuccess && (
+              <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 font-semibold">
+                ✓ {tradeSuccess}
+              </div>
+            )}
+            {tradeError && (
+              <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 font-semibold">
+                ✕ {tradeError}
+              </div>
+            )}
+
+            {confirmingTrade ? (
+              <div className="space-y-2">
+                <p className="text-[11px] text-amber-400 font-semibold text-center">Confirm this trade?</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSubmitTrade}
+                    disabled={tradeExecuting}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-orange-500 to-amber-500 text-white cursor-pointer transition-all"
+                  >
+                    {tradeExecuting ? "Processing..." : "Confirm Trade"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmingTrade(false)}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-extrabold bg-zinc-800 text-zinc-300 cursor-pointer hover:bg-zinc-700 transition-all"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleSubmitTrade}
+                disabled={tradeStatus !== "approved" || tradeExecuting}
+                className={`w-full py-3.5 rounded-xl text-sm font-extrabold uppercase tracking-wide cursor-pointer transition-all active:scale-[0.98] ${
+                  tradeStatus === "approved"
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01]"
+                    : "bg-zinc-900 text-zinc-600 border border-zinc-850 cursor-not-allowed"
+                }`}
+              >
+                Submit Trade Proposal
+              </button>
+            )}
           </div>
 
         </div>

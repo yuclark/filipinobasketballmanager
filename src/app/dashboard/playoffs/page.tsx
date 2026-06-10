@@ -81,6 +81,7 @@ export default function PlayoffsPage() {
   const [boxScoreStats, setBoxScoreStats] = useState<any[]>([]);
   const [loadingBoxScore, setLoadingBoxScore] = useState(false);
   const [isMacroSimGrandFinals, setIsMacroSimGrandFinals] = useState<boolean>(false);
+  const [playoffNotification, setPlayoffNotification] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -175,11 +176,11 @@ export default function PlayoffsPage() {
       if (res.success) {
         await loadPlayoffData();
       } else {
-        alert("Failed to seed playoff matchups. Please try again.");
+        setError("Failed to seed playoff matchups. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error initializing postseason.");
+      setError("Error initializing postseason.");
     } finally {
       setLoading(false);
     }
@@ -194,18 +195,18 @@ export default function PlayoffsPage() {
       const res = await simulatePlayoffDayAction();
       if (res.success) {
         if (res.complete) {
-          alert("Playoff Grand Finals concluded! We have crowned a FBM Champion!");
+          setPlayoffNotification("🏆 Playoff Grand Finals concluded! We have crowned a FBM Champion!");
         } else if (res.advancedRound) {
-          alert("All series in the current round are completed! Progression to the next round seeded.");
+          setPlayoffNotification("All series in the current round are completed! Next round seeded.");
         }
         await loadPlayoffData();
         router.refresh();
       } else {
-        alert("Failed to simulate playoff day. Please try again.");
+        setError("Failed to simulate playoff day. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error simulating postseason matchups.");
+      setError("Error simulating postseason matchups.");
     } finally {
       setSimulating(false);
     }
@@ -218,15 +219,15 @@ export default function PlayoffsPage() {
       setSimulating(true);
       const res = await simulateUntilGrandFinalsAction();
       if (res.success) {
-        alert("Playoffs advanced to the Grand Finals! Matchups generated.");
+        setPlayoffNotification("Playoffs advanced to the Grand Finals! Matchups generated.");
         await loadPlayoffData();
         router.refresh();
       } else {
-        alert("Failed to fast-forward playoffs. Please try again.");
+        setError("Failed to fast-forward playoffs. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error fast-forwarding playoffs.");
+      setError("Error fast-forwarding playoffs.");
     } finally {
       setSimulating(false);
       setIsMacroSimGrandFinals(false);
@@ -241,11 +242,11 @@ export default function PlayoffsPage() {
       if (res.success && res.games) {
         setSeriesGames(res.games);
       } else {
-        alert("Failed to load series games. Please try again.");
+        setError("Failed to load series games. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error loading series games.");
+      setError("Error loading series games.");
     } finally {
       setLoadingSeriesGames(false);
     }
@@ -256,12 +257,11 @@ export default function PlayoffsPage() {
     setLoadingBoxScore(true);
     try {
       const stats = await getGameBoxScore(game.id);
-      // Sort players by points descending
       const sorted = (stats as any[]).sort((a, b) => b.points - a.points);
       setBoxScoreStats(sorted);
     } catch (err) {
       console.error(err);
-      alert("Error loading box score.");
+      setError("Error loading box score.");
     } finally {
       setLoadingBoxScore(false);
     }
