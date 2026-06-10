@@ -113,7 +113,7 @@ export default function FreeAgencyPage() {
         // Reloading window refreshes the shared layout header budgets as well
         window.location.reload();
       } else {
-        alert(res.error || "Failed to sign player.");
+        alert("Failed to sign player. Make sure you have enough budget and roster space (maximum 18 players).");
       }
     } catch (err) {
       console.error(err);

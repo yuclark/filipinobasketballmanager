@@ -79,11 +79,11 @@ export default function AwardsCeremonyPage() {
       if (res.success) {
         router.push("/dashboard/playoffs");
       } else {
-        alert(res.error || "Failed to initialize playoffs.");
+        alert("Failed to initialize playoffs. Please try again.");
       }
     } catch (err: any) {
       console.error(err);
-      alert("Error initializing playoffs: " + (err.message || err));
+      alert("An error occurred while initializing playoffs. Please try again.");
     } finally {
       setActionLoading(false);
     }

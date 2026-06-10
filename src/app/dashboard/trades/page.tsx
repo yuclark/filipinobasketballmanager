@@ -247,7 +247,7 @@ export default function TradesPage() {
         alert("Trade executed successfully! Roster databases updated.");
         window.location.reload();
       } else {
-        alert(res.error || "Trade proposal failed.");
+        alert("Trade proposal failed. Please ensure the trade complies with roster size and salary requirements.");
       }
     } catch (err) {
       console.error(err);

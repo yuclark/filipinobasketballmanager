@@ -119,7 +119,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-cyan-500/5 blur-[100px] rounded-full pointer-events-none" />
 
       {/* Sidebar Navigation */}
-      <aside className="fixed top-0 left-0 h-screen w-60 overflow-y-auto z-40 bg-[var(--color-surface)] border-r border-[var(--color-border)] p-6 hidden md:flex flex-col justify-between">
+      <aside className="fixed top-0 left-0 h-screen w-60 overflow-y-auto z-40 bg-[var(--color-surface)] border-r border-[var(--color-border)] p-6 hidden md:flex flex-col justify-between scrollbar-hide">
         <div>
           {/* Logo / Title */}
           <div className="flex items-center gap-1.5 mb-8 px-2">

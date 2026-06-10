@@ -175,7 +175,7 @@ export default function PlayoffsPage() {
       if (res.success) {
         await loadPlayoffData();
       } else {
-        alert(res.error || "Failed to seed playoff matchups.");
+        alert("Failed to seed playoff matchups. Please try again.");
       }
     } catch (err) {
       console.error(err);
@@ -199,7 +199,7 @@ export default function PlayoffsPage() {
         }
         await loadPlayoffData();
       } else {
-        alert(res.error || "Failed to simulate playoff Day.");
+        alert("Failed to simulate playoff day. Please try again.");
       }
     } catch (err) {
       console.error(err);
@@ -218,7 +218,7 @@ export default function PlayoffsPage() {
         alert("Playoffs advanced to the Grand Finals! Matchups generated.");
         await loadPlayoffData();
       } else {
-        alert(res.error || "Failed to fast-forward playoffs.");
+        alert("Failed to fast-forward playoffs. Please try again.");
       }
     } catch (err) {
       console.error(err);
@@ -237,7 +237,7 @@ export default function PlayoffsPage() {
       if (res.success && res.games) {
         setSeriesGames(res.games);
       } else {
-        alert(res.error || "Failed to load series games.");
+        alert("Failed to load series games. Please try again.");
       }
     } catch (err) {
       console.error(err);

@@ -145,7 +145,7 @@ export default function SchedulePage() {
         alert("Full 82-game schedule generated successfully!");
         loadDayGames();
       } else {
-        alert(res.error || "Failed to generate schedule.");
+        alert("Failed to generate schedule. Please try again.");
       }
     } catch (err) {
       console.error(err);
@@ -250,7 +250,7 @@ export default function SchedulePage() {
         }
 
         if (res.status === "ERROR") {
-          alert(res.error || "Simulation failed.");
+          alert("Simulation failed. Please check team states and try again.");
           break;
         }
 
@@ -279,7 +279,7 @@ export default function SchedulePage() {
         alert("Playoffs initialized successfully! Redirecting to Postseason Tournament.");
         router.push("/dashboard/playoffs");
       } else {
-        alert(res.error || "Failed to initialize playoffs.");
+        alert("Failed to initialize playoffs. Please try again.");
       }
     } catch (err) {
       console.error(err);

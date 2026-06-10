@@ -121,7 +121,7 @@ export default function TradeBlockPage() {
           prev.map((p) => (p.id === playerId ? { ...p, isOnTradeBlock: newVal } : p))
         );
       } else {
-        alert(res.error || "Failed to update player trade block status.");
+        alert("Failed to update player trade block status. Please try again.");
       }
     } catch (err) {
       console.error(err);
@@ -164,7 +164,7 @@ export default function TradeBlockPage() {
         // Reload layout budget calculations by reloading window
         window.location.reload();
       } else {
-        alert(res.error || "Failed to execute trade.");
+        alert("Failed to execute trade. Roster capacity or salary rules might have been violated.");
       }
     } catch (err) {
       console.error(err);

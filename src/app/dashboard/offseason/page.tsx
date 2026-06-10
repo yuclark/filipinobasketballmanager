@@ -277,7 +277,7 @@ export default function OffseasonWizardPage() {
         });
         alert("Player re-signed successfully!");
       } else {
-        alert(res.error || "Failed to re-sign player.");
+        alert("Failed to re-sign player. Please verify that your team has enough budget or roster space.");
       }
     } catch (e: any) {
       console.error(e);
@@ -307,7 +307,7 @@ export default function OffseasonWizardPage() {
           cpuReSignSimulated: true
         });
       } else {
-        alert(res.error || "Failed to run CPU extensions.");
+        alert("Failed to run CPU extensions. Please try again.");
       }
     } catch (e: any) {
       console.error(e);
@@ -351,7 +351,7 @@ export default function OffseasonWizardPage() {
           evolutionSimulated: true,
         });
       } else {
-        alert(res.error || "Failed to run player evolution.");
+        alert("Failed to run player evolution. Please try again.");
       }
     } catch (e: any) {
       console.error(e);
@@ -536,7 +536,7 @@ export default function OffseasonWizardPage() {
         // Immediately trigger CPU picks following user turn
         await runCpuPicks(nextIdx, remaining, updatedHistory);
       } else {
-        alert(res.error || "Failed to draft selected player.");
+        alert("Failed to draft selected player. Please check your selection and try again.");
         setDraftingActive(false);
       }
     } catch (e) {
@@ -567,7 +567,7 @@ export default function OffseasonWizardPage() {
         alert(`Successfully launched Season ${res.nextYear}! Redirecting to roster page.`);
         router.push("/dashboard");
       } else {
-        alert(res.error || "Failed to reset season.");
+        alert("Failed to launch season. Please check your roster requirements (12-18 players) and try again.");
         setLaunching(false);
       }
     } catch (e: any) {

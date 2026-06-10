@@ -141,7 +141,7 @@ export default function RosterPage() {
         // Reloading the page guarantees the shared layout budget headers reload too!
         window.location.reload();
       } else {
-        alert(res.error || "Failed to release player.");
+        alert("Failed to release player. Make sure releasing this player does not violate roster minimums.");
       }
     } catch (err) {
       console.error(err);
