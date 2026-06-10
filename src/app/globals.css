@@ -25,11 +25,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Hide scrollbar universally but keep scroll functionality */
-.scrollbar-hide {
-  -ms-overflow-style: none;   /* Internet Explorer and Edge */
-  scrollbar-width: none;      /* Firefox */
+/* Hide ALL scrollbars globally while keeping scroll functionality */
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;              /* Chrome, Safari, Opera */
+*::-webkit-scrollbar {
+  display: none;
 }
