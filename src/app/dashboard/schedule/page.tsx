@@ -48,6 +48,7 @@ interface Game {
   seasonYear: number;
   gameNumber: number;
   status: string;
+  stage: string;
   homeScore: number;
   awayScore: number;
   homeTeam: Team;
@@ -149,6 +150,17 @@ export default function SchedulePage() {
     setViewingDay(currentLeagueDay);
   }, [currentLeagueDay]);
 
+  useEffect(() => {
+    if (mounted && currentLeagueDay === 82 && gamesList.length > 0) {
+      const allDone = gamesList.every((g) => g.status === "Completed");
+      const isRegular = gamesList[0].stage === "Regular";
+      if (allDone && isRegular) {
+        console.log("[Schedule Page] Regular season is completed, redirecting to awards...");
+        router.push("/dashboard/awards");
+      }
+    }
+  }, [mounted, currentLeagueDay, gamesList, router]);
+
   const loadViewingDayGames = async () => {
     if (!userTeamId) return;
     try {
@@ -202,6 +214,10 @@ export default function SchedulePage() {
     try {
       const res = await simulateGameAction(gameId);
       if (res.success) {
+        if (res.status === "REGULAR_SEASON_COMPLETE") {
+          router.push("/dashboard/awards");
+          return;
+        }
         loadDayGames();
       } else {
         setToastMessage("Simulation failed.");
@@ -220,6 +236,10 @@ export default function SchedulePage() {
     try {
       const res = await simulateRemainingDayGames(currentLeagueDay);
       if (res.success) {
+        if (res.status === "REGULAR_SEASON_COMPLETE") {
+          router.push("/dashboard/awards");
+          return;
+        }
         advanceDay();
       } else {
         setToastMessage("Simulation failed.");
@@ -480,12 +500,11 @@ export default function SchedulePage() {
               </div>
             ) : currentLeagueDay === 82 && areAllGamesPlayed ? (
               <button
-                onClick={handleAdvanceToPlayoffs}
-                disabled={actionLoading}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_20px_rgba(249,115,22,0.3)] hover:scale-[1.01] cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
+                onClick={() => router.push("/dashboard/awards")}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_20px_rgba(249,115,22,0.3)] hover:scale-[1.01] cursor-pointer transition-all active:scale-[0.98]"
               >
-                <Trophy className="w-4 h-4 text-white" />
-                <span>🏆 Advance to Postseason Playoffs</span>
+                <Award className="w-4 h-4 text-white" />
+                <span>🏆 View Regular Season Awards</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             ) : (

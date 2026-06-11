@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { db } from "@/db";
 import { eq, and, inArray, sql, aliasedTable } from "drizzle-orm";
 import {
@@ -304,6 +306,15 @@ export async function calculateRegularSeasonAwardsAction(seasonYear: number, tx?
     await persistLogic(tx || db);
 
     console.log(`[Awards Engine] Season ${seasonYear} regular-season awards calculated and saved.`);
+
+    try {
+      revalidatePath("/dashboard/awards");
+      revalidatePath("/dashboard/history");
+      revalidatePath("/dashboard/schedule");
+    } catch (revalErr) {
+      console.warn("[Awards Engine] Failed to revalidate paths:", revalErr);
+    }
+
     return {
       success: true,
       mvpPlayerId: mvpCandidate?.playerId ?? null,
@@ -537,8 +548,16 @@ export async function getLeagueHistoryAction() {
   }
 }
 
-export async function getSeasonAwardsAction(seasonYear: number) {
+export async function getSeasonAwardsAction(seasonYear?: number) {
   try {
+    let targetYear = seasonYear;
+    if (!targetYear) {
+      const maxAward = await db
+        .select({ year: sql<number>`max(${playerAwards.seasonYear})` })
+        .from(playerAwards);
+      targetYear = maxAward[0]?.year ?? 2026;
+    }
+
     const awards = await db
       .select({
         id: playerAwards.id,
@@ -553,7 +572,7 @@ export async function getSeasonAwardsAction(seasonYear: number) {
       .from(playerAwards)
       .leftJoin(players, eq(playerAwards.playerId, players.id))
       .leftJoin(teams, eq(playerAwards.teamId, teams.id))
-      .where(eq(playerAwards.seasonYear, seasonYear));
+      .where(eq(playerAwards.seasonYear, targetYear));
 
     const allLeague = await db
       .select({
@@ -570,7 +589,7 @@ export async function getSeasonAwardsAction(seasonYear: number) {
       .from(allLeagueTeams)
       .leftJoin(players, eq(allLeagueTeams.playerId, players.id))
       .leftJoin(teams, eq(players.teamId, teams.id))
-      .where(eq(allLeagueTeams.seasonYear, seasonYear));
+      .where(eq(allLeagueTeams.seasonYear, targetYear));
 
     return { success: true, awards, allLeague };
   } catch (error: any) {

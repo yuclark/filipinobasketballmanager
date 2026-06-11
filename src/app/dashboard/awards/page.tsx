@@ -52,7 +52,7 @@ export default function AwardsCeremonyPage() {
       setLoading(true);
       setError(null);
       // Fetch for 2026 season by default
-      const res = await getSeasonAwardsAction(2026);
+      const res = await getSeasonAwardsAction();
       if (res.success && res.awards && res.allLeague) {
         setIndividualAwards(res.awards as AwardItem[]);
         setAllLeagueTeamsData(res.allLeague as AllLeagueItem[]);

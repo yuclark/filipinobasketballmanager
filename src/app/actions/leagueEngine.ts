@@ -643,10 +643,33 @@ export async function simulateGameAction(gameId: string) {
       .where(eq(games.id, game.id))
       .returning();
 
+    // Check if the regular season is now complete
+    if (game.stage === "Regular") {
+      const remainingGames = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(games)
+        .where(and(eq(games.stage, "Regular"), eq(games.status, "Scheduled")));
+
+      if (Number(remainingGames[0]?.count ?? 0) === 0) {
+        console.log(`[League Engine] Regular season complete via single game simulation. Triggering Season ${game.seasonYear} awards calculation...`);
+        await calculateRegularSeasonAwardsAction(game.seasonYear).catch((err) =>
+          console.error("[League Engine] Awards calculation in simulateGameAction failed silently:", err)
+        );
+        await enforceLeagueRosterLimitsAction();
+        return {
+          success: true,
+          game: updatedGame[0],
+          overtimes: res.overtimes,
+          status: "REGULAR_SEASON_COMPLETE",
+        };
+      }
+    }
+
     return {
       success: true,
       game: updatedGame[0],
       overtimes: res.overtimes,
+      status: "SUCCESS",
     };
   } catch (error: any) {
     console.error("Simulation failed:", error);
@@ -662,11 +685,19 @@ export async function simulateRemainingDayGames(day: number) {
       .where(and(eq(games.gameNumber, day), eq(games.status, "Scheduled")));
 
     const results = [];
+    let isComplete = false;
     for (const game of scheduledGames) {
       const res = await simulateGameAction(game.id);
       results.push(res);
+      if (res.status === "REGULAR_SEASON_COMPLETE") {
+        isComplete = true;
+      }
     }
-    return { success: true, count: results.length };
+    return {
+      success: true,
+      count: results.length,
+      status: isComplete ? "REGULAR_SEASON_COMPLETE" : "SUCCESS",
+    };
   } catch (error: any) {
     console.error("Failed to simulate remaining day games:", error);
     return { success: false, error: error.message || "Simulation failed." };

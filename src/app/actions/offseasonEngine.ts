@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions } from "@/db/schema";
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
@@ -503,6 +503,20 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
       gameDay: 82,
     });
 
+    // Check if that was the last pick of the draft
+    const remainingUnused = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(draftPicks)
+      .where(and(eq(draftPicks.season, season), eq(draftPicks.isUsed, false)));
+
+    if (Number(remainingUnused[0]?.count ?? 0) === 0) {
+      await db
+        .update(draftSessions)
+        .set({ status: "completed", updatedAt: new Date() })
+        .where(eq(draftSessions.seasonYear, season));
+      console.log(`[Draft] All draft picks used. Season ${season} draft session marked as completed.`);
+    }
+
     return { success: true };
   } catch (error: any) {
     console.error("Draft pick execution failed:", error);
@@ -512,6 +526,7 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
 
 export async function getDraftSessionPicksAction(season: number) {
   try {
+    await getOrCreateActiveDraftSessionBySeason(season);
     const picks = await db
       .select({
         id: draftPicks.id,
@@ -894,6 +909,129 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
   }
 }
 
+async function createDraftPicksForSeason(seasonYear: number) {
+  const existingPicks = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(draftPicks)
+    .where(eq(draftPicks.season, seasonYear));
+
+  if (Number(existingPicks[0]?.count ?? 0) > 0) {
+    console.log(`[Draft Init] Draft picks already exist for season ${seasonYear}, skipping creation.`);
+    return;
+  }
+
+  const allTeams = await db.select().from(teams);
+  const draftPicksToInsert: Array<typeof draftPicks.$inferInsert> = [];
+  for (const team of allTeams) {
+    draftPicksToInsert.push({
+      ownerTeamId: team.id,
+      originalTeamId: team.id,
+      season: seasonYear,
+      round: 1,
+      pickNumber: null,
+      isUsed: false,
+    });
+    draftPicksToInsert.push({
+      ownerTeamId: team.id,
+      originalTeamId: team.id,
+      season: seasonYear,
+      round: 2,
+      pickNumber: null,
+      isUsed: false,
+    });
+  }
+  await db.insert(draftPicks).values(draftPicksToInsert);
+  console.log(`[Draft Init] Inserted ${draftPicksToInsert.length} draft picks for season ${seasonYear}.`);
+}
+
+export async function getOrCreateActiveDraftSessionBySeason(seasonYear: number) {
+  const [existingSession] = await db
+    .select()
+    .from(draftSessions)
+    .where(eq(draftSessions.seasonYear, seasonYear))
+    .limit(1);
+
+  if (existingSession) {
+    console.log(`[Draft Init] Draft session loaded: ${existingSession.id} for season ${seasonYear}`);
+    if (existingSession.status === "pending") {
+      await db
+        .update(draftSessions)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(eq(draftSessions.id, existingSession.id));
+      existingSession.status = "active";
+    }
+    await createDraftPicksForSeason(seasonYear);
+    return existingSession;
+  }
+
+  console.log(`[Draft Init] No session found for ${seasonYear}, creating new active session...`);
+  const [newSession] = await db
+    .insert(draftSessions)
+    .values({
+      seasonYear,
+      status: "active",
+      currentPickNumber: 1,
+      currentRound: 1,
+    })
+    .returning();
+
+  console.log(`[Draft Init] Draft session created: ${newSession.id}`);
+  await createDraftPicksForSeason(seasonYear);
+  return newSession;
+}
+
+export async function initializeDraftSessionAction(seasonYear: number) {
+  try {
+    const [existingSession] = await db
+      .select()
+      .from(draftSessions)
+      .where(eq(draftSessions.seasonYear, seasonYear))
+      .limit(1);
+
+    if (existingSession) {
+      if (existingSession.status === "pending") {
+        await db
+          .update(draftSessions)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(eq(draftSessions.id, existingSession.id));
+      }
+      await createDraftPicksForSeason(seasonYear);
+      return {
+        success: true,
+        seasonYear,
+        draftSessionId: existingSession.id,
+        created: false,
+        alreadyExisted: true,
+      };
+    }
+
+    console.log(`[Draft Init] No session found for ${seasonYear}, creating new active session...`);
+    const [newSession] = await db
+      .insert(draftSessions)
+      .values({
+        seasonYear,
+        status: "active",
+        currentPickNumber: 1,
+        currentRound: 1,
+      })
+      .returning();
+
+    console.log(`[Draft Init] Draft session created: ${newSession.id}`);
+    await createDraftPicksForSeason(seasonYear);
+
+    return {
+      success: true,
+      seasonYear,
+      draftSessionId: newSession.id,
+      created: true,
+      alreadyExisted: false,
+    };
+  } catch (error: any) {
+    console.error(`[Draft Init] Failed to initialize draft session for ${seasonYear}:`, error);
+    throw error;
+  }
+}
+
 interface SingleDraftPickResult {
   success: boolean;
   error?: string;
@@ -972,6 +1110,21 @@ async function processSingleDraftPick(
 
 export async function simulateCpuPicksAction(userTeamId: string, season: number) {
   try {
+    console.log(`[Draft Sim] Starting CPU draft simulation for season ${season}`);
+    const session = await getOrCreateActiveDraftSessionBySeason(season);
+    if (!session) {
+      console.log("[Draft Sim] Failed: no draft session exists after initialization attempt");
+      return { success: false, status: "NO_ACTIVE_DRAFT" as const, message: "No active draft found." };
+    }
+
+    if (session.status === "completed") {
+      return { success: true, status: "COMPLETED" as const, picksSimulated: 0, selections: [] };
+    }
+
+    if (session.seasonYear !== season) {
+      return { success: false, error: `Cross-season draft mismatch: session season is ${session.seasonYear}, requested is ${season}.` };
+    }
+
     // 1. Fetch all picks for the season ordered by pickNumber
     const picks = await db
       .select({
@@ -1000,6 +1153,10 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     const unusedPicks = picks.filter((p) => !p.isUsed);
     // Guard: COMPLETED
     if (unusedPicks.length === 0) {
+      await db
+        .update(draftSessions)
+        .set({ status: "completed", updatedAt: new Date() })
+        .where(eq(draftSessions.id, session.id));
       return { success: true, status: "COMPLETED" as const, picksSimulated: 0, selections: [] };
     }
 
@@ -1059,16 +1216,24 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
 
     // Recheck if all picks are now completed
     const remainingUnused = await db
-      .select()
+      .select({ count: sql<number>`count(*)` })
       .from(draftPicks)
       .where(and(eq(draftPicks.season, season), eq(draftPicks.isUsed, false)));
 
-    if (remainingUnused.length === 0) {
+    if (Number(remainingUnused[0]?.count ?? 0) === 0) {
+      await db
+        .update(draftSessions)
+        .set({ status: "completed", updatedAt: new Date() })
+        .where(eq(draftSessions.id, session.id));
       return { success: true, status: "COMPLETED" as const, selections, picksSimulated };
     }
 
     // If we stopped because user is on the clock next
-    const firstUnused = remainingUnused.sort((a, b) => (a.pickNumber ?? 0) - (b.pickNumber ?? 0))[0];
+    const unusedPicksDb = await db
+      .select()
+      .from(draftPicks)
+      .where(and(eq(draftPicks.season, season), eq(draftPicks.isUsed, false)));
+    const firstUnused = unusedPicksDb.sort((a, b) => (a.pickNumber ?? 0) - (b.pickNumber ?? 0))[0];
     if (firstUnused && firstUnused.ownerTeamId === userTeamId) {
       return { success: true, status: "USER_ON_CLOCK" as const, selections, picksSimulated };
     }
@@ -1082,6 +1247,22 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
 
 export async function autoCompleteDraftAction(userTeamId: string, season: number, autoDraftUser: boolean) {
   try {
+    const session = await getOrCreateActiveDraftSessionBySeason(season);
+    if (!session) {
+      console.log("[Draft Auto] Failed: no draft session exists after initialization attempt");
+      return { success: false, status: "NO_ACTIVE_DRAFT" as const, message: "No active draft found." };
+    }
+
+    console.log(`[Draft Auto] Using session ${session.id} for season ${season}`);
+
+    if (session.status === "completed") {
+      return { success: true, status: "COMPLETED" as const, totalPicksSimulated: 0, selections: [] };
+    }
+
+    if (session.seasonYear !== season) {
+      return { success: false, error: `Cross-season draft mismatch: session season is ${session.seasonYear}, requested is ${season}.` };
+    }
+
     // 1. Fetch all picks for the season ordered by pickNumber
     const picks = await db
       .select({
@@ -1110,6 +1291,10 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     const unusedPicks = picks.filter((p) => !p.isUsed);
     // Guard: COMPLETED
     if (unusedPicks.length === 0) {
+      await db
+        .update(draftSessions)
+        .set({ status: "completed", updatedAt: new Date() })
+        .where(eq(draftSessions.id, session.id));
       return { success: true, status: "COMPLETED" as const, totalPicksSimulated: 0, selections: [] };
     }
 
@@ -1166,6 +1351,12 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
         totalPicksSimulated++;
       }
     }
+
+    // Mark session as completed
+    await db
+      .update(draftSessions)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(eq(draftSessions.id, session.id));
 
     return { success: true, status: "COMPLETED" as const, selections, totalPicksSimulated };
   } catch (error: any) {

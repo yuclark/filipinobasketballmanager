@@ -2,9 +2,9 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
-import { generateRookiePoolAction, replenishLeagueRostersAction } from "@/app/actions/offseasonEngine";
+import { generateRookiePoolAction, replenishLeagueRostersAction, getOrCreateActiveDraftSessionBySeason } from "@/app/actions/offseasonEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
@@ -374,6 +374,12 @@ export async function finalizeOffseasonAction() {
 // Assign pick numbers based on lottery draft order
 export async function finalizeLotteryAction(draftOrderIds: string[], season: number) {
   try {
+    console.log(`[Offseason] Advancing to Phase 4 for season ${season}`);
+    const session = await getOrCreateActiveDraftSessionBySeason(season);
+    if (!session) {
+      throw new Error("Failed to initialize draft session.");
+    }
+
     for (let i = 0; i < draftOrderIds.length; i++) {
       const teamId = draftOrderIds[i];
 

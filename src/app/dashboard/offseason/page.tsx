@@ -15,6 +15,7 @@ import {
   getDraftSessionPicksAction,
   simulateCpuPicksAction,
   autoCompleteDraftAction,
+  initializeDraftSessionAction,
 } from "@/app/actions/offseasonEngine";
 import {
   getExpiringPlayersAction,
@@ -141,6 +142,9 @@ export default function OffseasonWizardPage() {
   const [currentPickIndex, setCurrentPickIndex] = useState<number>(0);
   const [pickHistory, setPickHistory] = useState<DraftPick[]>([]);
   const [draftingActive, setDraftingActive] = useState<boolean>(false);
+  const [draftInitializing, setDraftInitializing] = useState<boolean>(false);
+  const [draftInitError, setDraftInitError] = useState<string | null>(null);
+  const [draftSessionActive, setDraftSessionActive] = useState<boolean>(false);
 
   // Phase 5: Launch State
   const [nextSeasonYear, setNextSeasonYear] = useState<number>(2027);
@@ -305,6 +309,38 @@ export default function OffseasonWizardPage() {
       loadWizardState();
     }
   }, [mounted, currentPhase]);
+
+  // Auto-initialize draft session when entering Phase 4
+  useEffect(() => {
+    if (mounted && currentPhase === 4 && !draftSessionActive && !draftInitializing && !draftInitError) {
+      const initDraft = async () => {
+        setDraftInitializing(true);
+        setDraftInitError(null);
+        try {
+          const res = await initializeDraftSessionAction(nextSeasonYear);
+          if (res.success) {
+            setDraftSessionActive(true);
+            console.log(`[Offseason] Draft session initialized for season ${nextSeasonYear}`);
+            // Refresh session picks after initialization
+            const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+            if (sessionRes.success && sessionRes.picks) {
+              setSessionPicks(sessionRes.picks);
+              const usedPicks = sessionRes.picks.filter((p: any) => p.isUsed);
+              setCurrentPickIndex(usedPicks.length);
+            }
+          } else {
+            setDraftInitError("Draft session initialization failed. Please try again.");
+          }
+        } catch (err: any) {
+          console.error("[Offseason] Draft init error:", err);
+          setDraftInitError(err.message || "Failed to initialize draft session.");
+        } finally {
+          setDraftInitializing(false);
+        }
+      };
+      initDraft();
+    }
+  }, [mounted, currentPhase, nextSeasonYear, draftSessionActive, draftInitializing, draftInitError]);
 
   // Phase 1 Actions: Re-signing User Players
   const handleReSignPlayer = async (playerId: string, years: number, salary: number) => {
@@ -485,6 +521,8 @@ export default function OffseasonWizardPage() {
         if (sessionRes.success && sessionRes.picks) {
           setSessionPicks(sessionRes.picks);
         }
+        setDraftSessionActive(false);
+        setDraftInitError(null);
         setCurrentPhase(4);
         saveWizardState({ currentPhase: 4 });
       } else {
@@ -1660,9 +1698,60 @@ export default function OffseasonWizardPage() {
           {/* Draft Console */}
           <div className="space-y-6">
             <div className="bg-zinc-905 border border-zinc-900 rounded-3xl p-6 space-y-5 shadow-lg">
-              <h5 className="font-bold text-white text-sm border-b border-zinc-900 pb-2">Draft Console</h5>
+              <div className="flex justify-between items-center border-b border-zinc-900 pb-2">
+                <h5 className="font-bold text-white text-sm">Draft Console</h5>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-zinc-500 bg-zinc-950 px-2 py-0.5 rounded border border-zinc-900">
+                    Season {nextSeasonYear}
+                  </span>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${
+                    draftSessionActive 
+                      ? "text-green-400 bg-green-500/10 border-green-500/20" 
+                      : draftInitializing
+                      ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                      : draftInitError
+                      ? "text-red-400 bg-red-500/10 border-red-500/20"
+                      : "text-zinc-500 bg-zinc-950 border-zinc-900"
+                  }`}>
+                    {draftSessionActive ? "Active" : draftInitializing ? "Initializing..." : draftInitError ? "Error" : "Pending"}
+                  </span>
+                </div>
+              </div>
 
-              {currentPickIndex < 60 ? (
+              {/* Draft initialization states */}
+              {draftInitializing && (
+                <div className="bg-zinc-950 p-6 rounded-2xl border border-zinc-900 text-center space-y-3">
+                  <Loader2 className="w-8 h-8 text-orange-500 animate-spin mx-auto" />
+                  <div>
+                    <h6 className="font-bold text-white text-xs">Initializing Draft Session</h6>
+                    <p className="text-zinc-500 text-[10px] mt-1">
+                      Creating draft session and generating picks for season {nextSeasonYear}...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {draftInitError && (
+                <div className="bg-red-500/5 border border-red-500/20 p-5 rounded-2xl text-center space-y-3">
+                  <X className="w-8 h-8 text-red-400 mx-auto" />
+                  <div>
+                    <h6 className="font-bold text-white text-xs">Draft Initialization Failed</h6>
+                    <p className="text-red-400/80 text-[10px] mt-1">{draftInitError}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftInitError(null);
+                      setDraftSessionActive(false);
+                    }}
+                    className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Retry Initialization
+                  </button>
+                </div>
+              )}
+
+              {draftSessionActive && currentPickIndex < 60 ? (
                 <div className="space-y-4">
                   {/* Current pick display */}
                   <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-900 space-y-2">
@@ -1755,7 +1844,7 @@ export default function OffseasonWizardPage() {
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : draftSessionActive && currentPickIndex >= 60 ? (
                 <div className="bg-green-500/5 border border-green-500/25 p-5 rounded-2xl text-center space-y-3">
                   <CheckCircle className="w-10 h-10 text-green-400 mx-auto" />
                   <h6 className="font-extrabold text-white text-sm">Rookie Draft Complete</h6>
@@ -1770,7 +1859,7 @@ export default function OffseasonWizardPage() {
                     Proceed to Free Agency
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Your Draft Picks Card */}

@@ -133,3 +133,14 @@ export const draftPicks = pgTable('draft_picks', {
   isUsed: boolean('is_used').default(false).notNull(),
   isAvailable: boolean('is_available').default(false).notNull(),
 });
+
+export const draftSessions = pgTable("draft_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  seasonYear: integer("season_year").notNull().unique(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // 'pending' | 'active' | 'completed'
+  currentPickNumber: integer("current_pick_number").default(1).notNull(),
+  currentRound: integer("current_round").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
