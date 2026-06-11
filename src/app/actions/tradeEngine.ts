@@ -1,13 +1,15 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
-import { players, teams, transactions, games, draftPicks } from "@/db/schema";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { players, teams, transactions, games, draftPicks, tradeProposals } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 export type TradeAsset =
   | { type: "PLAYER"; playerId: string }
   | { type: "PICK"; pickId: string };
+
+const SALARY_CAP = 50000000;
 
 // Position Group helper
 function getPositionGroup(pos: string): "G" | "F" | "C" {
@@ -145,7 +147,6 @@ export async function getTradeOffersAction(userAssetId: string, assetType: "PLAY
       userAssetType: "PLAYER" | "PICK";
     }> = [];
 
-    const SALARY_CAP = 50000000;
 
     for (const cpuTeam of shuffledCpuTeams) {
       if (offers.length >= 3) break;
@@ -256,7 +257,7 @@ export async function executeUserTradeAction(
   cpuTeamId: string,
   cpuPlayerIds: string[],
   cpuPickIds: string[]
-) {
+): Promise<{ success: boolean; error?: string }> {
   try {
     return await db.transaction(async (tx) => {
       // 1. Fetch current season and game day from games table
@@ -412,5 +413,403 @@ export async function executeUserTradeAction(
   } catch (error: any) {
     console.error("Error executing trade from trade block:", error);
     return { success: false, error: error.message || "Failed to execute trade." };
+  }
+}
+
+/**
+ * Generates CPU-to-user trade proposals based on roster deficits and surpluses.
+ */
+export async function generateTradeProposalsAction(seasonYear: number, userTeamId: string) {
+  try {
+    const lastGame = await db
+      .select({ year: games.seasonYear, day: games.gameNumber })
+      .from(games)
+      .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+      .limit(1);
+    const currentDay = lastGame[0]?.day ?? 1;
+
+    if (currentDay > 50) {
+      // Trade deadline passed, expire all pending proposals
+      await db
+        .update(tradeProposals)
+        .set({ status: "Expired" })
+        .where(eq(tradeProposals.status, "Pending"));
+      return { success: true, count: 0 };
+    }
+
+    // Auto-expire proposals whose real-world time expiresAt < now
+    await db
+      .update(tradeProposals)
+      .set({ status: "Expired" })
+      .where(
+        and(
+          eq(tradeProposals.status, "Pending"),
+          sql`expires_at < ${new Date()}`
+        )
+      );
+
+    // Limit active proposals to 3
+    const activeProposals = await db
+      .select()
+      .from(tradeProposals)
+      .where(
+        and(
+          eq(tradeProposals.receiverTeamId, userTeamId),
+          eq(tradeProposals.status, "Pending")
+        )
+      );
+    
+    if (activeProposals.length >= 3) {
+      return { success: true, count: 0 };
+    }
+
+    // Load active players on user team and CPU teams
+    const activePlayers = await db
+      .select()
+      .from(players)
+      .where(eq(players.status, "Active"));
+
+    const userRoster = activePlayers.filter((p) => p.teamId === userTeamId);
+    if (userRoster.length === 0) return { success: true, count: 0 };
+
+    const cpuPlayers = activePlayers.filter((p) => p.teamId && p.teamId !== userTeamId);
+    
+    const rostersByCpuTeam = new Map<string, typeof players.$inferSelect[]>();
+    for (const p of cpuPlayers) {
+      if (p.teamId) {
+        if (!rostersByCpuTeam.has(p.teamId)) rostersByCpuTeam.set(p.teamId, []);
+        rostersByCpuTeam.get(p.teamId)!.push(p);
+      }
+    }
+
+    const allCpuTeams = await db.select().from(teams).where(sql`id != ${userTeamId}`);
+    const shuffledCpuTeams = [...allCpuTeams].sort(() => Math.random() - 0.5);
+
+    const userPosCounts = { G: 0, F: 0, C: 0 };
+    for (const p of userRoster) {
+      userPosCounts[getPositionGroup(p.position)]++;
+    }
+
+    const userDeficits: string[] = [];
+    const userSurpluses: string[] = [];
+    if (userPosCounts.G < 3) userDeficits.push("G");
+    if (userPosCounts.F < 3) userDeficits.push("F");
+    if (userPosCounts.C < 2) userDeficits.push("C");
+    if (userPosCounts.G > 5) userSurpluses.push("G");
+    if (userPosCounts.F > 5) userSurpluses.push("F");
+    if (userPosCounts.C > 3) userSurpluses.push("C");
+
+    const userSalaryTotal = userRoster.reduce((sum, p) => sum + p.salary, 0);
+
+    for (const cpuTeam of shuffledCpuTeams) {
+      const cpuRoster = rostersByCpuTeam.get(cpuTeam.id) || [];
+      if (cpuRoster.length === 0) continue;
+
+      const cpuPosCounts = { G: 0, F: 0, C: 0 };
+      for (const p of cpuRoster) {
+        cpuPosCounts[getPositionGroup(p.position)]++;
+      }
+
+      const cpuDeficits: string[] = [];
+      const cpuSurpluses: string[] = [];
+      if (cpuPosCounts.G < 3) cpuDeficits.push("G");
+      if (cpuPosCounts.F < 3) cpuDeficits.push("F");
+      if (cpuPosCounts.C < 2) cpuDeficits.push("C");
+      if (cpuPosCounts.G > 5) cpuSurpluses.push("G");
+      if (cpuPosCounts.F > 5) cpuSurpluses.push("F");
+      if (cpuPosCounts.C > 3) cpuSurpluses.push("C");
+
+      let matchingCpuPlayer: typeof players.$inferSelect | null = null;
+      let matchingUserPlayer: typeof players.$inferSelect | null = null;
+
+      // Option A: User deficit, CPU surplus
+      for (const userDef of userDeficits) {
+        if (cpuSurpluses.includes(userDef)) {
+          const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) === userDef);
+          const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) !== userDef);
+          if (cpuCandidates.length > 0 && userCandidates.length > 0) {
+            matchingCpuPlayer = cpuCandidates[Math.floor(Math.random() * cpuCandidates.length)];
+            matchingUserPlayer = userCandidates[Math.floor(Math.random() * userCandidates.length)];
+            break;
+          }
+        }
+      }
+
+      // Option B: CPU deficit, User surplus
+      if (!matchingCpuPlayer || !matchingUserPlayer) {
+        for (const cpuDef of cpuDeficits) {
+          if (userSurpluses.includes(cpuDef)) {
+            const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) === cpuDef);
+            const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) !== cpuDef);
+            if (userCandidates.length > 0 && cpuCandidates.length > 0) {
+              matchingUserPlayer = userCandidates[Math.floor(Math.random() * userCandidates.length)];
+              matchingCpuPlayer = cpuCandidates[Math.floor(Math.random() * cpuCandidates.length)];
+              break;
+            }
+          }
+        }
+      }
+
+      // Option C: General OVR swap
+      if (!matchingCpuPlayer || !matchingUserPlayer) {
+        for (const posGrp of ["G", "F", "C"]) {
+          const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) === posGrp);
+          const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) === posGrp);
+          if (userCandidates.length > 0 && cpuCandidates.length > 0) {
+            matchingUserPlayer = userCandidates[Math.floor(Math.random() * userCandidates.length)];
+            matchingCpuPlayer = cpuCandidates[Math.floor(Math.random() * cpuCandidates.length)];
+            break;
+          }
+        }
+      }
+
+      if (matchingCpuPlayer && matchingUserPlayer) {
+        const ovrDiff = Math.abs(matchingCpuPlayer.overall - matchingUserPlayer.overall);
+        const maxOvr = Math.max(matchingCpuPlayer.overall, matchingUserPlayer.overall);
+        if (ovrDiff > maxOvr * 0.15) continue;
+        if (matchingCpuPlayer.overall < 65 || matchingUserPlayer.overall < 65) continue;
+
+        const cpuSalaryTotal = cpuRoster.reduce((sum, p) => sum + p.salary, 0);
+        const newUserSalary = userSalaryTotal - matchingUserPlayer.salary + matchingCpuPlayer.salary;
+        const newCpuSalary = cpuSalaryTotal - matchingCpuPlayer.salary + matchingUserPlayer.salary;
+
+        if (newUserSalary > SALARY_CAP || newCpuSalary > SALARY_CAP) continue;
+
+        // Verify roster size limits (bounds remain identical for 1-for-1 swap)
+        if (userRoster.length < MIN_ROSTER_SIZE || userRoster.length > MAX_ROSTER_SIZE) continue;
+        if (cpuRoster.length < MIN_ROSTER_SIZE || cpuRoster.length > MAX_ROSTER_SIZE) continue;
+
+        const expiresAt = new Date(Date.now() + 24 * 3600 * 1000); // Expires in 24 hours of real time (or 3 simulation days)
+        
+        await db.insert(tradeProposals).values({
+          seasonYear,
+          proposerTeamId: cpuTeam.id,
+          receiverTeamId: userTeamId,
+          outgoingPlayerIds: [matchingCpuPlayer.id],
+          incomingPlayerIds: [matchingUserPlayer.id],
+          status: "Pending",
+          expiresAt,
+        });
+
+        console.log(`[CPU Trade Proposal] Generated proposal: ${cpuTeam.city} ${cpuTeam.name} offers ${matchingCpuPlayer.firstName} ${matchingCpuPlayer.lastName} for User's ${matchingUserPlayer.firstName} ${matchingUserPlayer.lastName}`);
+        return { success: true, count: 1 };
+      }
+    }
+
+    return { success: true, count: 0 };
+  } catch (error: any) {
+    console.error("Error generating trade proposals:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Fetches all pending trade proposals for a team.
+ */
+export async function getTradeProposalsAction(teamId: string) {
+  try {
+    // Auto-expire proposals
+    await db
+      .update(tradeProposals)
+      .set({ status: "Expired" })
+      .where(
+        and(
+          eq(tradeProposals.status, "Pending"),
+          sql`expires_at < ${new Date()}`
+        )
+      );
+
+    const proposalsList = await db
+      .select({
+        id: tradeProposals.id,
+        seasonYear: tradeProposals.seasonYear,
+        proposerTeamId: tradeProposals.proposerTeamId,
+        receiverTeamId: tradeProposals.receiverTeamId,
+        outgoingPlayerIds: tradeProposals.outgoingPlayerIds,
+        incomingPlayerIds: tradeProposals.incomingPlayerIds,
+        status: tradeProposals.status,
+        createdAt: tradeProposals.createdAt,
+        expiresAt: tradeProposals.expiresAt,
+        proposerName: teams.name,
+        proposerCity: teams.city,
+      })
+      .from(tradeProposals)
+      .innerJoin(teams, eq(tradeProposals.proposerTeamId, teams.id))
+      .where(
+        and(
+          eq(tradeProposals.receiverTeamId, teamId),
+          eq(tradeProposals.status, "Pending")
+        )
+      )
+      .orderBy(desc(tradeProposals.createdAt));
+
+    const results = [];
+    for (const prop of proposalsList) {
+      const outgoingPlayers = await db
+        .select()
+        .from(players)
+        .where(inArray(players.id, prop.outgoingPlayerIds));
+      
+      const incomingPlayers = await db
+        .select()
+        .from(players)
+        .where(inArray(players.id, prop.incomingPlayerIds));
+
+      results.push({
+        ...prop,
+        outgoingPlayers,
+        incomingPlayers,
+      });
+    }
+
+    return { success: true, proposals: results };
+  } catch (error: any) {
+    console.error("Error fetching trade proposals:", error);
+    return { success: false, proposals: [], error: error.message };
+  }
+}
+
+/**
+ * Accepts a pending trade proposal.
+ */
+export async function acceptTradeProposalAction(proposalId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [proposal] = await tx
+        .select()
+        .from(tradeProposals)
+        .where(eq(tradeProposals.id, proposalId))
+        .limit(1);
+
+      if (!proposal) throw new Error("Proposal not found.");
+      if (proposal.status !== "Pending") throw new Error("Proposal is no longer pending.");
+
+      const lastGame = await tx
+        .select({ year: games.seasonYear, day: games.gameNumber })
+        .from(games)
+        .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+        .limit(1);
+      const currentSeasonYear = lastGame[0]?.year ?? 2026;
+      const currentDay = lastGame[0]?.day ?? 1;
+
+      if (currentDay > 50) {
+        throw new Error("The trade deadline has passed.");
+      }
+
+      const [proposerTeam] = await tx.select().from(teams).where(eq(teams.id, proposal.proposerTeamId)).limit(1);
+      const [receiverTeam] = await tx.select().from(teams).where(eq(teams.id, proposal.receiverTeamId)).limit(1);
+
+      if (!proposerTeam || !receiverTeam) throw new Error("Teams not found.");
+
+      const outgoingPlayersList = await tx
+        .select()
+        .from(players)
+        .where(inArray(players.id, proposal.outgoingPlayerIds));
+      
+      const incomingPlayersList = await tx
+        .select()
+        .from(players)
+        .where(inArray(players.id, proposal.incomingPlayerIds));
+
+      if (outgoingPlayersList.length !== proposal.outgoingPlayerIds.length || incomingPlayersList.length !== proposal.incomingPlayerIds.length) {
+        throw new Error("One or more players in the trade proposal are no longer valid.");
+      }
+
+      const proposerRoster = await tx.select().from(players).where(and(eq(players.teamId, proposal.proposerTeamId), eq(players.status, "Active")));
+      const receiverRoster = await tx.select().from(players).where(and(eq(players.teamId, proposal.receiverTeamId), eq(players.status, "Active")));
+
+      const newProposerCount = proposerRoster.length - outgoingPlayersList.length + incomingPlayersList.length;
+      const newReceiverCount = receiverRoster.length - incomingPlayersList.length + outgoingPlayersList.length;
+
+      if (newProposerCount < 12 || newProposerCount > 18) {
+        throw new Error(`Opposing team roster limits violated after trade (${newProposerCount} players).`);
+      }
+      if (newReceiverCount < 12 || newReceiverCount > 18) {
+        throw new Error(`Your team roster limits violated after trade (${newReceiverCount} players).`);
+      }
+
+      const proposerSalary = proposerRoster.reduce((sum, p) => sum + p.salary, 0);
+      const receiverSalary = receiverRoster.reduce((sum, p) => sum + p.salary, 0);
+
+      const newProposerSalary = proposerSalary - outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0) + incomingPlayersList.reduce((sum, p) => sum + p.salary, 0);
+      const newReceiverSalary = receiverSalary - incomingPlayersList.reduce((sum, p) => sum + p.salary, 0) + outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0);
+
+      if (newProposerSalary > SALARY_CAP) {
+        throw new Error(`Opposing team exceeds the ₱50,000,000 salary cap.`);
+      }
+      if (newReceiverSalary > SALARY_CAP) {
+        throw new Error(`Your team exceeds the ₱50,000,050 salary cap.`);
+      }
+
+      // SWAP PLAYERS
+      for (const p of outgoingPlayersList) {
+        await tx
+          .update(players)
+          .set({ teamId: proposal.receiverTeamId, isOnTradeBlock: false })
+          .where(eq(players.id, p.id));
+      }
+
+      for (const p of incomingPlayersList) {
+        await tx
+          .update(players)
+          .set({ teamId: proposal.proposerTeamId, isOnTradeBlock: false })
+          .where(eq(players.id, p.id));
+      }
+
+      await tx
+        .update(tradeProposals)
+        .set({ status: "Accepted" })
+        .where(eq(tradeProposals.id, proposalId));
+
+      const allInvolvedPlayerIds = [...proposal.outgoingPlayerIds, ...proposal.incomingPlayerIds];
+      
+      const otherPending = await tx
+        .select()
+        .from(tradeProposals)
+        .where(and(eq(tradeProposals.status, "Pending"), sql`id != ${proposalId}`));
+
+      for (const other of otherPending) {
+        const hasOverlap = other.outgoingPlayerIds.some((id) => allInvolvedPlayerIds.includes(id)) ||
+                            other.incomingPlayerIds.some((id) => allInvolvedPlayerIds.includes(id));
+        if (hasOverlap) {
+          await tx
+            .update(tradeProposals)
+            .set({ status: "Expired" })
+            .where(eq(tradeProposals.id, other.id));
+        }
+      }
+
+      const outgoingDescs = outgoingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
+      const incomingDescs = incomingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
+      const descStr = `🤝 TRADE ACCEPTED: The ${receiverTeam.city} ${receiverTeam.name} accepted a CPU trade proposal from the ${proposerTeam.city} ${proposerTeam.name}. Received: ${outgoingDescs}. Traded away: ${incomingDescs}.`;
+
+      await tx.insert(transactions).values({
+        type: "Trade",
+        description: descStr,
+        seasonYear: currentSeasonYear,
+        gameDay: currentDay,
+      });
+
+      return { success: true };
+    });
+  } catch (error: any) {
+    console.error("Error accepting trade proposal:", error);
+    return { success: false, error: error.message || "Failed to accept trade proposal." };
+  }
+}
+
+/**
+ * Rejects a pending trade proposal.
+ */
+export async function rejectTradeProposalAction(proposalId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await db
+      .update(tradeProposals)
+      .set({ status: "Rejected" })
+      .where(eq(tradeProposals.id, proposalId));
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error rejecting trade proposal:", error);
+    return { success: false, error: error.message || "Failed to reject trade proposal." };
   }
 }

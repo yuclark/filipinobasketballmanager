@@ -14,12 +14,15 @@ export interface Prospect {
   hometown: string;
   isFilAm: boolean;
   overall: number;
+  salary: number;
   threePoint: number;
   insideScoring: number;
+  playmaking: number;
   perimeterDefense: number;
   interiorDefense: number;
   rebounding: number;
   speed: number;
+  stamina: number;
 }
 
 export async function getDraftProspectsAction(): Promise<{
@@ -38,12 +41,15 @@ export async function getDraftProspectsAction(): Promise<{
         hometown: players.hometown,
         isFilAm: players.isFilAm,
         overall: players.overall,
+        salary: players.salary,
         threePoint: players.threePoint,
         insideScoring: players.insideScoring,
+        playmaking: players.playmaking,
         perimeterDefense: players.perimeterDefense,
         interiorDefense: players.interiorDefense,
         rebounding: players.rebounding,
         speed: players.speed,
+        stamina: players.stamina,
       })
       .from(players)
       .where(eq(players.status, "DraftPool"));
@@ -70,12 +76,15 @@ export async function getDraftProspectsAction(): Promise<{
           hometown: players.hometown,
           isFilAm: players.isFilAm,
           overall: players.overall,
+          salary: players.salary,
           threePoint: players.threePoint,
           insideScoring: players.insideScoring,
+          playmaking: players.playmaking,
           perimeterDefense: players.perimeterDefense,
           interiorDefense: players.interiorDefense,
           rebounding: players.rebounding,
           speed: players.speed,
+          stamina: players.stamina,
         })
         .from(players)
         .where(eq(players.status, "DraftPool"));

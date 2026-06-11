@@ -144,3 +144,19 @@ export const draftSessions = pgTable("draft_sessions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const tradeProposals = pgTable("trade_proposals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  seasonYear: integer("season_year").notNull(),
+  proposerTeamId: uuid("proposer_team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+  receiverTeamId: uuid("receiver_team_id")
+    .references(() => teams.id, { onDelete: "cascade" })
+    .notNull(),
+  outgoingPlayerIds: text("outgoing_player_ids").array().notNull(),
+  incomingPlayerIds: text("incoming_player_ids").array().notNull(),
+  status: varchar("status", { length: 20 }).default("Pending").notNull(), // 'Pending' | 'Accepted' | 'Rejected' | 'Expired'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+

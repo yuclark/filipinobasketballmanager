@@ -114,38 +114,19 @@ export default function ProspectsPage() {
     );
   }
 
-  // Active Draft Redirect Notice
-  if (inDraftPhase) {
-    return (
-      <div className="max-w-xl mx-auto py-12 text-center">
-        <div className="bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-            <GraduationCap className="w-48 h-48" />
-          </div>
-          
-          <div className="w-16 h-16 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-orange-500/25">
-            <AlertCircle className="w-8 h-8" />
-          </div>
-
-          <h3 className="text-xl font-bold text-white mb-2">Draft actively in progress</h3>
-          <p className="text-zinc-400 text-sm font-medium leading-relaxed mb-8">
-            The FBM Rookie Draft is currently underway. Please head to the Offseason Hub to inspect the board and make selections.
-          </p>
-
-          <Link
-            href="/dashboard/offseason"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-xl shadow-lg hover:shadow-orange-500/10 transition-all text-sm"
-          >
-            <span>Go to Offseason Hub</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      {inDraftPhase && (
+        <div className="bg-orange-500/10 border border-orange-500/20 text-orange-400 p-5 rounded-2xl flex items-center gap-3 text-xs font-semibold">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <div>
+            <span className="font-extrabold block">Draft Actively in Progress</span>
+            <span className="opacity-80 block mt-0.5">
+              The FBM Rookie Draft is currently underway. Scouting and evaluations are locked. Please head to the Offseason Hub to manage picks.
+            </span>
+          </div>
+        </div>
+      )}
       {/* Header Panel */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 shadow-xl">
         <div className="flex items-center gap-4">

@@ -6,6 +6,7 @@ import { teams, players, games, playerGameStats, transactions } from "@/db/schem
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import { enforceLeagueRosterLimitsAction, runCpuDailyAiEngineAction } from "@/app/actions/cpuAiEngine";
+import { generateTradeProposalsAction } from "@/app/actions/tradeEngine";
 
 // Box-Muller transform for Gaussian/Normal distribution
 function randomNormal(mean = 0, stdDev = 1): number {
@@ -794,6 +795,10 @@ export async function simulateBatchDaysAction(
         localPlayers = aiResult.updatedPlayers;
         localTeams = aiResult.updatedTeams;
 
+        if (Math.random() < 0.10 && userTeamId) {
+          await generateTradeProposalsAction(seasonYear, userTeamId);
+        }
+
         // Refresh rosters mapping from local memory state
         const rostersByTeam = new Map<string, typeof players.$inferSelect[]>();
         for (const player of localPlayers) {
@@ -1080,6 +1085,10 @@ export async function simulateWeekChunkAction(
       const aiResult = await runCpuDailyAiEngineAction(localPlayers, localTeams, day, seasonYear, userTeamId);
       localPlayers = aiResult.updatedPlayers;
       localTeams = aiResult.updatedTeams;
+
+      if (Math.random() < 0.10 && userTeamId) {
+        await generateTradeProposalsAction(seasonYear, userTeamId);
+      }
 
       // Populate rosters from local memory array
       const rostersByTeam = new Map<string, typeof players.$inferSelect[]>();

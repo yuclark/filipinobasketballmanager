@@ -1,10 +1,10 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull, isNotNull } from "drizzle-orm";
 import { players, teams, games, transactions, draftPicks, draftSessions } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
-import { generateRookiePoolAction, replenishLeagueRostersAction, getOrCreateActiveDraftSessionBySeason } from "@/app/actions/offseasonEngine";
+import { generateRookiePoolAction, replenishLeagueRostersAction, getOrCreateActiveDraftSessionBySeason, initializeDraftSessionAction } from "@/app/actions/offseasonEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
 const SALARY_CAP = 50000000; // 50,000,000 PHP
@@ -411,5 +411,131 @@ export async function finalizeLotteryAction(draftOrderIds: string[], season: num
   } catch (error: any) {
     console.error("Failed to finalize lottery:", error);
     return { success: false, error: error.message || "Failed to finalize lottery." };
+  }
+}
+
+export async function getCurrentOffseasonStateAction(seasonYear: number, userTeamId?: string | null) {
+  try {
+    // 1. Check if draft pool has players
+    const draftPoolCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(players)
+      .where(eq(players.status, "DraftPool"));
+    let hasDraftPool = Number(draftPoolCount[0]?.count ?? 0) > 0;
+
+    if (!hasDraftPool) {
+      console.log(`[Offseason Wizard] Empty draft pool. Auto-generating 45 rookies for ${seasonYear}...`);
+      await generateRookiePoolAction(seasonYear, true, 45);
+      hasDraftPool = true;
+    }
+
+    // 2. Query draft session
+    let [session] = await db
+      .select()
+      .from(draftSessions)
+      .where(eq(draftSessions.seasonYear, seasonYear))
+      .limit(1);
+
+    // 3. Check if draft picks have pick numbers assigned (lottery run)
+    const picks = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(draftPicks)
+      .where(and(eq(draftPicks.season, seasonYear), isNotNull(draftPicks.pickNumber)));
+    const lotteryFinalized = Number(picks[0]?.count ?? 0) > 0;
+
+    // Auto-initialize draft session if missing but lottery is finalized
+    if (lotteryFinalized && !session) {
+      console.log(`[Offseason Wizard] Draft session missing but lottery is finalized. Auto-initializing draft session for ${seasonYear}...`);
+      await initializeDraftSessionAction(seasonYear);
+      [session] = await db
+        .select()
+        .from(draftSessions)
+        .where(eq(draftSessions.seasonYear, seasonYear))
+        .limit(1);
+    }
+
+    const draftSessionStatus = session ? (session.status as 'pending' | 'active' | 'completed') : null;
+    const draftSessionId = session ? session.id : null;
+    const hasActiveDraftSession = draftSessionStatus === 'active' || draftSessionStatus === 'pending';
+
+    // 4. Derive offseason phase
+    let offseasonPhase: 1 | 2 | 3 | 4 | 5 | 6 = 1;
+
+    if (draftSessionStatus === 'completed') {
+      // Phase 5 or 6. Check CPU roster sizes.
+      const allTeams = await db.select().from(teams);
+      const activePlayers = await db
+        .select()
+        .from(players)
+        .where(eq(players.status, "Active"));
+
+      const rosterCounts = new Map<string, number>();
+      for (const t of allTeams) {
+        rosterCounts.set(t.id, 0);
+      }
+      for (const p of activePlayers) {
+        if (p.teamId) {
+          rosterCounts.set(p.teamId, (rosterCounts.get(p.teamId) ?? 0) + 1);
+        }
+      }
+
+      const hasDepletedCpuTeam = allTeams.some((t) => t.id !== userTeamId && (rosterCounts.get(t.id) ?? 0) < 12);
+      if (hasDepletedCpuTeam) {
+        offseasonPhase = 5;
+      } else {
+        offseasonPhase = 6;
+      }
+    } else if (hasActiveDraftSession || lotteryFinalized) {
+      offseasonPhase = 4;
+    } else {
+      // Phase 1, 2, or 3.
+      // Let's query active players on teams with contractYearsRemaining = 1.
+      const expiringPlayers = await db
+        .select({ id: players.id, teamId: players.teamId })
+        .from(players)
+        .where(
+          and(
+            eq(players.contractYearsRemaining, 1),
+            eq(players.status, "Active"),
+            isNotNull(players.teamId)
+          )
+        );
+
+      if (expiringPlayers.length > 0) {
+        // If there are expiring players, are any of them on CPU teams?
+        const hasCpuExpiring = expiringPlayers.some((p) => p.teamId !== userTeamId);
+        if (hasCpuExpiring) {
+          offseasonPhase = 1; // CPU extensions haven't run yet
+        } else {
+          offseasonPhase = 2; // CPU extensions have run, but player evolution hasn't run yet
+        }
+      } else {
+        // No expiring players on teams. Either they walked (free agents) or were re-signed.
+        // This means player evolution has run, so we are in Phase 3 (Draft Lottery).
+        offseasonPhase = 3;
+      }
+    }
+
+    return {
+      success: true,
+      seasonYear,
+      offseasonPhase,
+      hasDraftPool,
+      hasActiveDraftSession,
+      draftSessionId,
+      draftSessionStatus
+    };
+  } catch (error: any) {
+    console.error("Failed to get current offseason state:", error);
+    return {
+      success: false,
+      seasonYear,
+      offseasonPhase: 1 as const,
+      hasDraftPool: false,
+      hasActiveDraftSession: false,
+      draftSessionId: null,
+      draftSessionStatus: null,
+      error: error.message || "Failed to get offseason state"
+    };
   }
 }

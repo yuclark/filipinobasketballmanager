@@ -51,7 +51,7 @@ const VISMIN_HOMETOWNS = [
   "Ormoc", "Dapitan", "Pagadian"
 ];
 
-export async function generateRookiePoolAction(seasonYear: number, forceRegenerate = false) {
+export async function generateRookiePoolAction(seasonYear: number, forceRegenerate = false, count = 75) {
   try {
     if (!forceRegenerate) {
       const existing = await db
@@ -70,7 +70,7 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
 
     const prospects: Array<typeof players.$inferInsert> = [];
 
-    for (let i = 0; i < 75; i++) {
+    for (let i = 0; i < count; i++) {
       const isFilAm = Math.random() < 0.2; // 20% Fil-Am
       const firstName = isFilAm
         ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
@@ -754,13 +754,34 @@ export async function advanceToNextSeasonAction() {
   }
 }
 
-export async function getDraftProspectsAction() {
+export async function getDraftProspectsAction(seasonYear?: number) {
   try {
-    const prospects = await db
+    let prospects = await db
       .select()
       .from(players)
       .where(eq(players.status, "DraftPool"))
       .orderBy(desc(players.overall));
+
+    if (prospects.length === 0) {
+      console.log("[Offseason Engine] Rookie pool is empty, generating...");
+      let targetYear = seasonYear;
+      if (!targetYear) {
+        const lastGame = await db
+          .select({ year: games.seasonYear })
+          .from(games)
+          .orderBy(desc(games.seasonYear))
+          .limit(1);
+        const currentYear = lastGame[0]?.year ?? 2026;
+        targetYear = currentYear + 1;
+      }
+      await generateRookiePoolAction(targetYear, true, 45);
+      prospects = await db
+        .select()
+        .from(players)
+        .where(eq(players.status, "DraftPool"))
+        .orderBy(desc(players.overall));
+    }
+
     return { success: true, prospects };
   } catch (error: any) {
     console.error("Failed to fetch draft prospects:", error);
@@ -1126,7 +1147,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     }
 
     // 1. Fetch all picks for the season ordered by pickNumber
-    const picks = await db
+    let picks = await db
       .select({
         id: draftPicks.id,
         ownerTeamId: draftPicks.ownerTeamId,
@@ -1140,14 +1161,39 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
       .where(eq(draftPicks.season, season))
       .orderBy(draftPicks.pickNumber);
 
+    // If picks are empty or some have pickNumber = null, let's recover!
+    if (picks.length === 0 || picks.some((p) => p.pickNumber === null)) {
+      console.log(`[Draft Recovery] simulateCpuPicksAction: Picks are unassigned or empty for season ${season}. Running lottery recovery...`);
+      const { getDraftLotteryPicksAction, finalizeLotteryAction } = await import("./offseasonWizard");
+      const lotteryRes = await getDraftLotteryPicksAction();
+      if (lotteryRes.success && lotteryRes.draftOrder) {
+        const orderIds = lotteryRes.draftOrder.map((t: any) => t.id);
+        const finalizeRes = await finalizeLotteryAction(orderIds, season);
+        if (!finalizeRes.success) {
+          return { success: false, status: "INVALID_PHASE" as const, message: "Failed to automatically finalize draft lottery during recovery: " + finalizeRes.error };
+        }
+        // Re-fetch picks
+        picks = await db
+          .select({
+            id: draftPicks.id,
+            ownerTeamId: draftPicks.ownerTeamId,
+            originalTeamId: draftPicks.originalTeamId,
+            season: draftPicks.season,
+            round: draftPicks.round,
+            pickNumber: draftPicks.pickNumber,
+            isUsed: draftPicks.isUsed,
+          })
+          .from(draftPicks)
+          .where(eq(draftPicks.season, season))
+          .orderBy(draftPicks.pickNumber);
+      } else {
+        return { success: false, status: "INVALID_PHASE" as const, message: "Draft lottery order could not be generated during recovery." };
+      }
+    }
+
     // Guard: NO_ACTIVE_DRAFT
     if (picks.length === 0) {
       return { success: false, status: "NO_ACTIVE_DRAFT" as const, message: "No active draft found." };
-    }
-
-    // Guard: INVALID_PHASE
-    if (picks.some((p) => p.pickNumber === null)) {
-      return { success: false, status: "INVALID_PHASE" as const, message: "Draft simulation is unavailable in the current offseason phase." };
     }
 
     const unusedPicks = picks.filter((p) => !p.isUsed);
@@ -1264,7 +1310,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     }
 
     // 1. Fetch all picks for the season ordered by pickNumber
-    const picks = await db
+    let picks = await db
       .select({
         id: draftPicks.id,
         ownerTeamId: draftPicks.ownerTeamId,
@@ -1278,14 +1324,39 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
       .where(eq(draftPicks.season, season))
       .orderBy(draftPicks.pickNumber);
 
+    // If picks are empty or some have pickNumber = null, let's recover!
+    if (picks.length === 0 || picks.some((p) => p.pickNumber === null)) {
+      console.log(`[Draft Recovery] autoCompleteDraftAction: Picks are unassigned or empty for season ${season}. Running lottery recovery...`);
+      const { getDraftLotteryPicksAction, finalizeLotteryAction } = await import("./offseasonWizard");
+      const lotteryRes = await getDraftLotteryPicksAction();
+      if (lotteryRes.success && lotteryRes.draftOrder) {
+        const orderIds = lotteryRes.draftOrder.map((t: any) => t.id);
+        const finalizeRes = await finalizeLotteryAction(orderIds, season);
+        if (!finalizeRes.success) {
+          return { success: false, status: "INVALID_PHASE" as const, message: "Failed to automatically finalize draft lottery during recovery: " + finalizeRes.error };
+        }
+        // Re-fetch picks
+        picks = await db
+          .select({
+            id: draftPicks.id,
+            ownerTeamId: draftPicks.ownerTeamId,
+            originalTeamId: draftPicks.originalTeamId,
+            season: draftPicks.season,
+            round: draftPicks.round,
+            pickNumber: draftPicks.pickNumber,
+            isUsed: draftPicks.isUsed,
+          })
+          .from(draftPicks)
+          .where(eq(draftPicks.season, season))
+          .orderBy(draftPicks.pickNumber);
+      } else {
+        return { success: false, status: "INVALID_PHASE" as const, message: "Draft lottery order could not be generated during recovery." };
+      }
+    }
+
     // Guard: NO_ACTIVE_DRAFT
     if (picks.length === 0) {
       return { success: false, status: "NO_ACTIVE_DRAFT" as const, message: "No active draft found." };
-    }
-
-    // Guard: INVALID_PHASE
-    if (picks.some((p) => p.pickNumber === null)) {
-      return { success: false, status: "INVALID_PHASE" as const, message: "Draft simulation is unavailable in the current offseason phase." };
     }
 
     const unusedPicks = picks.filter((p) => !p.isUsed);

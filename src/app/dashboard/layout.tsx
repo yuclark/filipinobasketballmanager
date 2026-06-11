@@ -4,6 +4,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getTeamRoster } from "@/app/actions";
+import { getTradeProposalsAction } from "@/app/actions/tradeEngine";
 import {
   Users,
   Calendar,
@@ -22,9 +23,8 @@ import {
   RefreshCw,
   Globe,
   BookOpen,
-  BarChart2,
-  GraduationCap,
   Sparkles,
+  GraduationCap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -44,6 +44,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [team, setTeamDetails] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingTradeCount, setPendingTradeCount] = useState<number>(0);
 
   useEffect(() => {
     setMounted(true);
@@ -59,9 +60,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     async function loadTeam() {
       try {
         setLoading(true);
-        const data = await getTeamRoster(userTeamId!);
+        const [data, propRes] = await Promise.all([
+          getTeamRoster(userTeamId!),
+          getTradeProposalsAction(userTeamId!),
+        ]);
         if (data) {
           setTeamDetails(data.team);
+        }
+        if (propRes.success && propRes.proposals) {
+          setPendingTradeCount(propRes.proposals.length);
         }
       } catch (err) {
         console.error(err);
@@ -134,27 +141,27 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <nav className="flex flex-col gap-1.5">
             {[
               {
-                title: "FRANCHISE MANAGEMENT",
+                title: "Franchise Management",
                 links: [
                   { name: "Active Roster", path: "/dashboard", icon: Users },
                   { name: "Team Schedule", path: "/dashboard/schedule", icon: Calendar },
                   { name: "Transactions Office", path: "/dashboard/trades", icon: ArrowLeftRight },
-                  { name: "Trade Block & Finder", path: "/dashboard/trade-block", icon: RefreshCw },
                   { name: "Free Agency Market", path: "/dashboard/free-agency", icon: Briefcase },
+                  { name: "Trade Proposals", path: "/dashboard/trade-proposals", icon: RefreshCw },
                 ],
               },
               {
-                title: "LEAGUE CORE HUB",
+                title: "League Core Hub",
                 links: [
                   { name: "Conference Standings", path: "/dashboard/standings", icon: BarChart3 },
                   { name: "Playoffs", path: "/dashboard/playoffs", icon: Trophy },
                   { name: "Statistical Leaders", path: "/dashboard/leaders", icon: TrendingUp },
                   { name: "League Directory", path: "/dashboard/teams", icon: Globe },
-                  { name: "Draft Prospects Board", path: "/dashboard/prospects", icon: GraduationCap },
+                  { name: "Draft Prospects", path: "/dashboard/prospects", icon: GraduationCap },
                 ],
               },
               {
-                title: "RECORDS & TIMELINES",
+                title: "Records & Timelines",
                 links: [
                   { name: "League History", path: "/dashboard/history", icon: BookOpen },
                   { name: "League News Feed", path: "/dashboard/transactions", icon: FileText },
@@ -169,6 +176,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 {group.links.map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.path;
+                  const hasBadge = item.name === "Trade Proposals" && pendingTradeCount > 0;
                   return (
                     <Link
                       key={item.name}
@@ -181,7 +189,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     >
                       <Icon className="w-4.5 h-4.5" />
                       <span>{item.name}</span>
-                      {isActive && <ChevronRight className="w-4 h-4 ml-auto" />}
+                      {hasBadge && (
+                        <span className="ml-auto px-2 py-0.5 text-[10px] font-bold bg-red-500 text-white rounded-full leading-none animate-pulse">
+                          {pendingTradeCount}
+                        </span>
+                      )}
+                      {isActive && !hasBadge && <ChevronRight className="w-4 h-4 ml-auto" />}
                     </Link>
                   );
                 })}
@@ -224,16 +237,22 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="flex md:hidden gap-1 text-[10px] sm:text-xs overflow-x-auto pb-1 max-w-full">
             <Link href="/dashboard" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Roster</Link>
             <Link href="/dashboard/schedule" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Games</Link>
+            <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
+            <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">FA</Link>
+            <Link href="/dashboard/trade-proposals" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap flex items-center gap-1">
+              <span>Proposals</span>
+              {pendingTradeCount > 0 && (
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+              )}
+            </Link>
             <Link href="/dashboard/standings" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Standings</Link>
             <Link href="/dashboard/playoffs" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Playoffs</Link>
-            <Link href="/dashboard/transactions" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">News</Link>
             <Link href="/dashboard/leaders" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Leaders</Link>
             <Link href="/dashboard/teams" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Teams</Link>
-            <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">FA</Link>
-            <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
-            <Link href="/dashboard/trade-block" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trade Block</Link>
             <Link href="/dashboard/prospects" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Prospects</Link>
             <Link href="/dashboard/history" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">History</Link>
+            <Link href="/dashboard/transactions" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">News</Link>
+            <Link href="/dashboard/offseason" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Offseason</Link>
           </div>
         </header>
 

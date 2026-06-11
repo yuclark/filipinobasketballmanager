@@ -24,6 +24,7 @@ import {
   getDraftLotteryPicksAction,
   finalizeOffseasonAction,
   finalizeLotteryAction,
+  getCurrentOffseasonStateAction,
 } from "@/app/actions/offseasonWizard";
 import {
   Trophy,
@@ -170,6 +171,7 @@ export default function OffseasonWizardPage() {
   // Save state to localStorage to prevent losing progress on refresh
   const saveWizardState = (updates: any = {}) => {
     const state = {
+      seasonYear: nextSeasonYear,
       currentPhase: updates.currentPhase ?? currentPhase,
       reSignedPlayerIds: updates.reSignedPlayerIds ?? reSignedPlayerIds,
       declinedPlayerIds: updates.declinedPlayerIds ?? declinedPlayerIds,
@@ -216,50 +218,66 @@ export default function OffseasonWizardPage() {
         return;
       }
 
+      // Check upcoming season year
+      let upcomingYear = 2027;
+      const standingsRes = await getStandingsDataAction();
+      if (standingsRes.success && standingsRes.completedGames && standingsRes.completedGames.length > 0) {
+        const yr = standingsRes.completedGames[0].seasonYear;
+        upcomingYear = yr + 1;
+      }
+      setNextSeasonYear(upcomingYear);
+
+      // Load server offseason state
+      const serverStateRes = await getCurrentOffseasonStateAction(upcomingYear, userTeamId);
+      let serverPhase = 1;
+      if (serverStateRes.success) {
+        serverPhase = serverStateRes.offseasonPhase;
+        setDraftSessionActive(serverStateRes.hasActiveDraftSession);
+      }
+
       // Load from localStorage if present
       const saved = localStorage.getItem("filipino-basketball-manager-offseason-wizard");
       let loadedState: any = {};
       if (saved) {
         try {
           loadedState = JSON.parse(saved);
-          if (loadedState.currentPhase) setCurrentPhase(loadedState.currentPhase);
-          if (loadedState.reSignedPlayerIds) setReSignedPlayerIds(loadedState.reSignedPlayerIds);
-          if (loadedState.declinedPlayerIds) setDeclinedPlayerIds(loadedState.declinedPlayerIds);
-          if (loadedState.cpuReSignLogs) setCpuReSignLogs(loadedState.cpuReSignLogs);
-          if (loadedState.cpuReSignSimulated) setCpuReSignSimulated(loadedState.cpuReSignSimulated);
-          if (loadedState.evolutionLogs) setEvolutionLogs(loadedState.evolutionLogs);
-          if (loadedState.evolutionSimulated) setEvolutionSimulated(loadedState.evolutionSimulated);
-          if (loadedState.draftOrder) setDraftOrder(loadedState.draftOrder);
-          if (loadedState.lotteryOddsList) setLotteryOddsList(loadedState.lotteryOddsList);
-          if (loadedState.lotteryDraws) setLotteryDraws(loadedState.lotteryDraws);
-          if (loadedState.lotteryRun) setLotteryRun(loadedState.lotteryRun);
-          if (loadedState.currentPickIndex !== undefined) setCurrentPickIndex(loadedState.currentPickIndex);
-          if (loadedState.pickHistory) setPickHistory(loadedState.pickHistory);
-          if (loadedState.freeAgencySimulated !== undefined) setFreeAgencySimulated(loadedState.freeAgencySimulated);
-          if (loadedState.freeAgencyLogs) setFreeAgencyLogs(loadedState.freeAgencyLogs);
-          if (loadedState.evolutionResults) setEvolutionResults(loadedState.evolutionResults);
+          if (loadedState.seasonYear !== upcomingYear) {
+            console.log("[Offseason] Stale season wizard state in localStorage. Resetting.");
+            localStorage.removeItem("filipino-basketball-manager-offseason-wizard");
+            loadedState = {};
+          }
         } catch (e) {
           console.error("Failed to parse saved wizard state:", e);
         }
       }
 
+      const resolvedPhase = serverStateRes.success ? serverPhase : (loadedState.currentPhase || 1);
+      setCurrentPhase(resolvedPhase);
+
+      if (loadedState.reSignedPlayerIds) setReSignedPlayerIds(loadedState.reSignedPlayerIds);
+      if (loadedState.declinedPlayerIds) setDeclinedPlayerIds(loadedState.declinedPlayerIds);
+      if (loadedState.cpuReSignLogs) setCpuReSignLogs(loadedState.cpuReSignLogs);
+      if (loadedState.cpuReSignSimulated) setCpuReSignSimulated(loadedState.cpuReSignSimulated);
+      if (loadedState.evolutionLogs) setEvolutionLogs(loadedState.evolutionLogs);
+      if (loadedState.evolutionSimulated) setEvolutionSimulated(loadedState.evolutionSimulated);
+      if (loadedState.draftOrder) setDraftOrder(loadedState.draftOrder);
+      if (loadedState.lotteryOddsList) setLotteryOddsList(loadedState.lotteryOddsList);
+      if (loadedState.lotteryDraws) setLotteryDraws(loadedState.lotteryDraws);
+      if (loadedState.lotteryRun) setLotteryRun(loadedState.lotteryRun);
+      if (loadedState.currentPickIndex !== undefined) setCurrentPickIndex(loadedState.currentPickIndex);
+      if (loadedState.pickHistory) setPickHistory(loadedState.pickHistory);
+      if (loadedState.freeAgencySimulated !== undefined) setFreeAgencySimulated(loadedState.freeAgencySimulated);
+      if (loadedState.freeAgencyLogs) setFreeAgencyLogs(loadedState.freeAgencyLogs);
+      if (loadedState.evolutionResults) setEvolutionResults(loadedState.evolutionResults);
+
+      // Database-derived state overrides
+      if (resolvedPhase >= 2) setCpuReSignSimulated(true);
+      if (resolvedPhase >= 3) setEvolutionSimulated(true);
+      if (resolvedPhase >= 4) setLotteryRun(true);
+      if (resolvedPhase >= 6) setFreeAgencySimulated(true);
+
       // 2. Load context based on active phase
       if (userTeamId) {
-        // Load team salary information
-        const standingsRes = await getStandingsDataAction();
-        if (standingsRes.success && standingsRes.teams) {
-          const myTeam = (standingsRes.teams as Team[]).find((t) => t.id === userTeamId);
-          if (myTeam) {
-            // Find current team salaries
-            const res = await getExpiringPlayersAction(userTeamId);
-            if (res.success && res.players) {
-              // Get all players on team to compute total salary
-              const response = await fetch(`/api/roster-salary-placeholder-check`); // local query
-              // Wait, we query database layer for all players on team
-            }
-          }
-        }
-
         // Fetch expiring players
         const expRes = await getExpiringPlayersAction(userTeamId);
         if (expRes.success && expRes.players) {
@@ -267,7 +285,7 @@ export default function OffseasonWizardPage() {
         }
 
         // Load prospects if we are on draft phase
-        const prospectsRes = await getDraftProspectsAction();
+        const prospectsRes = await getDraftProspectsAction(upcomingYear);
         if (prospectsRes.success && prospectsRes.prospects) {
           setProspects(prospectsRes.prospects as Prospect[]);
           if (prospectsRes.prospects.length > 0) {
@@ -280,15 +298,6 @@ export default function OffseasonWizardPage() {
         if (picksRes.success && picksRes.picks) {
           setUserDraftPicks(picksRes.picks);
         }
-      }
-
-      // Check upcoming season year
-      let upcomingYear = 2027;
-      const standingsRes = await getStandingsDataAction();
-      if (standingsRes.success && standingsRes.completedGames && standingsRes.completedGames.length > 0) {
-        const yr = standingsRes.completedGames[0].seasonYear;
-        upcomingYear = yr + 1;
-        setNextSeasonYear(upcomingYear);
       }
 
       // Fetch draft session picks
@@ -308,7 +317,7 @@ export default function OffseasonWizardPage() {
     if (mounted) {
       loadWizardState();
     }
-  }, [mounted, currentPhase]);
+  }, [mounted]);
 
   // Auto-initialize draft session when entering Phase 4
   useEffect(() => {
@@ -1740,9 +1749,27 @@ export default function OffseasonWizardPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setDraftInitError(null);
-                      setDraftSessionActive(false);
+                      setDraftInitializing(true);
+                      try {
+                        const res = await initializeDraftSessionAction(nextSeasonYear);
+                        if (res.success) {
+                          setDraftSessionActive(true);
+                          const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+                          if (sessionRes.success && sessionRes.picks) {
+                            setSessionPicks(sessionRes.picks);
+                            const usedPicks = sessionRes.picks.filter((p: any) => p.isUsed);
+                            setCurrentPickIndex(usedPicks.length);
+                          }
+                        } else {
+                          setDraftInitError("Draft session initialization failed. Please try again.");
+                        }
+                      } catch (err: any) {
+                        setDraftInitError(err.message || "Failed to initialize draft session.");
+                      } finally {
+                        setDraftInitializing(false);
+                      }
                     }}
                     className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   >
@@ -1751,7 +1778,47 @@ export default function OffseasonWizardPage() {
                 </div>
               )}
 
-              {draftSessionActive && currentPickIndex < 60 ? (
+              {!draftSessionActive && !draftInitializing && !draftInitError && (
+                <div className="bg-zinc-950 p-6 rounded-2xl border border-zinc-900 text-center space-y-4">
+                  <Shield className="w-10 h-10 text-orange-500/40 mx-auto" />
+                  <div>
+                    <h6 className="font-bold text-white text-xs">Draft Room Ready</h6>
+                    <p className="text-zinc-500 text-[10px] mt-1">
+                      The draft room has not been initialized for season {nextSeasonYear} yet.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setDraftInitializing(true);
+                      setDraftInitError(null);
+                      try {
+                        const res = await initializeDraftSessionAction(nextSeasonYear);
+                        if (res.success) {
+                          setDraftSessionActive(true);
+                          const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
+                          if (sessionRes.success && sessionRes.picks) {
+                            setSessionPicks(sessionRes.picks);
+                            const usedPicks = sessionRes.picks.filter((p: any) => p.isUsed);
+                            setCurrentPickIndex(usedPicks.length);
+                          }
+                        } else {
+                          setDraftInitError("Failed to initialize draft session.");
+                        }
+                      } catch (err: any) {
+                        setDraftInitError(err.message || "Failed to initialize draft session.");
+                      } finally {
+                        setDraftInitializing(false);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-bold text-xs shadow-md hover:scale-[1.02] transition-all cursor-pointer"
+                  >
+                    Initialize Draft Session
+                  </button>
+                </div>
+              )}
+
+              {draftSessionActive && currentPickIndex < 60 && !draftInitializing && !draftInitError && (
                 <div className="space-y-4">
                   {/* Current pick display */}
                   <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-900 space-y-2">
@@ -1844,7 +1911,9 @@ export default function OffseasonWizardPage() {
                     </div>
                   )}
                 </div>
-              ) : draftSessionActive && currentPickIndex >= 60 ? (
+              )}
+
+              {draftSessionActive && currentPickIndex >= 60 && !draftInitializing && !draftInitError && (
                 <div className="bg-green-500/5 border border-green-500/25 p-5 rounded-2xl text-center space-y-3">
                   <CheckCircle className="w-10 h-10 text-green-400 mx-auto" />
                   <h6 className="font-extrabold text-white text-sm">Rookie Draft Complete</h6>
@@ -1859,7 +1928,7 @@ export default function OffseasonWizardPage() {
                     Proceed to Free Agency
                   </button>
                 </div>
-              ) : null}
+              )}
             </div>
 
             {/* Your Draft Picks Card */}

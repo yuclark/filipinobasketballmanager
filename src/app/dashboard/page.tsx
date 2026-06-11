@@ -15,7 +15,12 @@ import {
   Sparkles,
   ArrowUpDown,
   UserMinus,
+  Coins,
+  Shield,
+  MapPin,
+  TrendingUp,
 } from "lucide-react";
+import React from "react";
 
 interface Player {
   id: string;
@@ -38,15 +43,29 @@ interface Player {
   stamina: number;
 }
 
-interface Team {
-  id: string;
-  name: string;
-  city: string;
-  conference: "Luzon" | "VisMin";
-  budget: number;
-}
-
-type SortKey = "name" | "age" | "hometown" | "overall" | "salary" | "position";
+type SortKey =
+  | "name"
+  | "position"
+  | "age"
+  | "hometown"
+  | "salary"
+  | "overall"
+  | "threePoint"
+  | "insideScoring"
+  | "defense"
+  | "rebounding"
+  | "per"
+  | "winShares"
+  | "gp"
+  | "mpg"
+  | "ppg"
+  | "rpg"
+  | "apg"
+  | "spg"
+  | "bpg"
+  | "fgPct"
+  | "fg3Pct"
+  | "ftPct";
 
 export default function RosterPage() {
   const router = useRouter();
@@ -187,6 +206,46 @@ export default function RosterPage() {
     }
   };
 
+  const activeStats = allStatsSplits
+    ? (statsTab === "regular"
+        ? allStatsSplits.regularSeason
+        : statsTab === "playoffs"
+        ? allStatsSplits.playoffs
+        : allStatsSplits.career)
+    : [];
+
+  const getSortValue = (player: Player, key: SortKey) => {
+    if (key === "name") return `${player.firstName} ${player.lastName}`.toLowerCase();
+    if (key === "position") return player.position;
+    if (key === "age") return player.age;
+    if (key === "hometown") return player.hometown.toLowerCase();
+    if (key === "salary") return player.salary;
+    if (key === "overall") return player.overall;
+    if (key === "threePoint") return player.threePoint;
+    if (key === "insideScoring") return player.insideScoring;
+    if (key === "rebounding") return player.rebounding;
+    if (key === "defense") return Math.round((player.perimeterDefense + player.interiorDefense) / 2);
+
+    // Stats
+    const pStats = activeStats.find((s) => s.playerId === player.id);
+    if (!pStats) return 0;
+
+    if (key === "per") return pStats.per ?? 0;
+    if (key === "winShares") return pStats.winShares ?? 0;
+    if (key === "gp") return pStats.gp ?? 0;
+    if (key === "mpg") return pStats.mpg ?? 0;
+    if (key === "ppg") return pStats.ppg ?? 0;
+    if (key === "rpg") return pStats.rpg ?? 0;
+    if (key === "apg") return pStats.apg ?? 0;
+    if (key === "spg") return pStats.spg ?? 0;
+    if (key === "bpg") return pStats.bpg ?? 0;
+    if (key === "fgPct") return pStats.fgPct ?? 0;
+    if (key === "fg3Pct") return pStats.fg3Pct ?? 0;
+    if (key === "ftPct") return pStats.ftPct ?? 0;
+
+    return 0;
+  };
+
   const filteredPlayers = playersList
     .filter((player) => {
       const fullName = `${player.firstName} ${player.lastName}`.toLowerCase();
@@ -196,41 +255,17 @@ export default function RosterPage() {
       return fullName.includes(query) || hometown.includes(query) || pos.includes(query);
     })
     .sort((a, b) => {
-      let valA: any = "";
-      let valB: any = "";
-
-      if (sortKey === "name") {
-        valA = `${a.firstName} ${a.lastName}`.toLowerCase();
-        valB = `${b.firstName} ${b.lastName}`.toLowerCase();
-      } else if (sortKey === "age") {
-        valA = a.age;
-        valB = b.age;
-      } else if (sortKey === "hometown") {
-        valA = a.hometown.toLowerCase();
-        valB = b.hometown.toLowerCase();
-      } else if (sortKey === "overall") {
-        valA = a.overall;
-        valB = b.overall;
-      } else if (sortKey === "salary") {
-        valA = a.salary;
-        valB = b.salary;
-      } else if (sortKey === "position") {
-        valA = a.position;
-        valB = b.position;
-      }
+      const valA = getSortValue(a, sortKey);
+      const valB = getSortValue(b, sortKey);
 
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ? 1 : -1;
       return 0;
     });
 
-  const activeStats = allStatsSplits
-    ? (statsTab === "regular"
-        ? allStatsSplits.regularSeason
-        : statsTab === "playoffs"
-        ? allStatsSplits.playoffs
-        : allStatsSplits.career)
-    : [];
+  const teamOvr = playersList.length > 0
+    ? Math.round(playersList.reduce((sum, p) => sum + p.overall, 0) / playersList.length)
+    : 0;
 
   return (
     <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm relative">
@@ -249,9 +284,15 @@ export default function RosterPage() {
 
       {/* Header Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h3 className="text-xl font-bold text-white mb-1">Roster Sheet</h3>
-          <p className="text-zinc-500 text-sm">Active squad of {MAX_ROSTER_SIZE} players. Manage positions, salaries, and releases.</p>
+        <div className="flex items-center gap-6">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-1">Roster Sheet</h3>
+            <p className="text-zinc-500 text-sm">Active squad of {playersList.length} players (limit 12-18). Manage ratings, contracts and stats.</p>
+          </div>
+          <div className="bg-zinc-950 px-4 py-2 rounded-2xl border border-zinc-900 flex flex-col justify-center min-w-[90px]">
+            <span className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest block">Team OVR</span>
+            <span className="text-xl font-black text-orange-500 block mt-0.5">{teamOvr}</span>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
@@ -392,23 +433,55 @@ export default function RosterPage() {
               </th>
               {viewMode === "attributes" ? (
                 <>
-                  <th className="py-4.5 px-4 text-center">3PT</th>
-                  <th className="py-4.5 px-4 text-center">INS</th>
-                  <th className="py-4.5 px-4 text-center">DEF</th>
-                  <th className="py-4.5 px-4 text-center">REB</th>
+                  <th onClick={() => handleSort("threePoint")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>3PT</span>
+                      <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort("insideScoring")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>INS</span>
+                      <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort("defense")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>DEF</span>
+                      <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort("rebounding")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>REB</span>
+                      <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort("per")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>PER</span>
+                      <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort("winShares")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>WS</span>
+                      <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                    </div>
+                  </th>
                 </>
               ) : (
                 <>
-                  <th className="py-4.5 px-4 text-center">GP</th>
-                  <th className="py-4.5 px-4 text-center">MIN</th>
-                  <th className="py-4.5 px-4 text-center">PPG</th>
-                  <th className="py-4.5 px-4 text-center">RPG</th>
-                  <th className="py-4.5 px-4 text-center">APG</th>
-                  <th className="py-4.5 px-4 text-center">SPG</th>
-                  <th className="py-4.5 px-4 text-center">BPG</th>
-                  <th className="py-4.5 px-4 text-center">FG%</th>
-                  <th className="py-4.5 px-4 text-center">3P%</th>
-                  <th className="py-4.5 px-4 text-center">FT%</th>
+                  <th onClick={() => handleSort("gp")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">GP</th>
+                  <th onClick={() => handleSort("mpg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">MIN</th>
+                  <th onClick={() => handleSort("ppg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors text-orange-400">PPG</th>
+                  <th onClick={() => handleSort("rpg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">RPG</th>
+                  <th onClick={() => handleSort("apg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">APG</th>
+                  <th onClick={() => handleSort("spg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">SPG</th>
+                  <th onClick={() => handleSort("bpg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">BPG</th>
+                  <th onClick={() => handleSort("fgPct")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">FG%</th>
+                  <th onClick={() => handleSort("fg3Pct")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">3P%</th>
+                  <th onClick={() => handleSort("ftPct")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">FT%</th>
                 </>
               )}
               <th className="py-4.5 px-6 text-center">Action</th>
@@ -418,6 +491,9 @@ export default function RosterPage() {
             {filteredPlayers.length > 0 ? (
               filteredPlayers.map((player) => {
                 const defScore = Math.round((player.perimeterDefense + player.interiorDefense) / 2);
+                const pStats = activeStats.find((s) => s.playerId === player.id);
+                const playerPer = pStats?.per ?? "0.0";
+                const playerWS = pStats?.winShares ?? "0.00";
 
                 const renderStatBar = (val: number) => {
                   let progressColor = "bg-zinc-700";
@@ -500,46 +576,45 @@ export default function RosterPage() {
                         <td className="py-4 px-4 text-center">{renderStatBar(player.insideScoring)}</td>
                         <td className="py-4 px-4 text-center">{renderStatBar(defScore)}</td>
                         <td className="py-4 px-4 text-center">{renderStatBar(player.rebounding)}</td>
+                        <td className="py-4 px-4 text-center font-extrabold text-red-400">{playerPer}</td>
+                        <td className="py-4 px-4 text-center font-extrabold text-green-400">{playerWS}</td>
                       </>
-                    ) : (() => {
-                      const pStats = activeStats.find((s) => s.playerId === player.id);
-                      return (
-                        <>
-                          <td className="py-4 px-4 text-center font-bold text-zinc-300">
-                            {pStats?.gp ?? 0}
-                          </td>
-                          <td className="py-4 px-4 text-center font-semibold text-zinc-300">
-                            {(pStats?.mpg ?? 0).toFixed(1)}
-                          </td>
-                          <td className="py-4 px-4 text-center font-bold text-orange-400">
-                            {(pStats?.ppg ?? 0).toFixed(1)}
-                          </td>
-                          <td className="py-4 px-4 text-center font-semibold text-zinc-300">
-                            {(pStats?.rpg ?? 0).toFixed(1)}
-                          </td>
-                          <td className="py-4 px-4 text-center font-semibold text-zinc-300">
-                            {(pStats?.apg ?? 0).toFixed(1)}
-                          </td>
-                          <td className="py-4 px-4 text-center text-zinc-400">
-                            {(pStats?.spg ?? 0).toFixed(1)}
-                          </td>
-                          <td className="py-4 px-4 text-center text-zinc-400">
-                            {(pStats?.bpg ?? 0).toFixed(1)}
-                          </td>
-                          <td className="py-4 px-4 text-center text-zinc-300 font-mono">
-                            {pStats?.fgPct ? `${pStats.fgPct}%` : "0%"}
-                          </td>
-                          <td className="py-4 px-4 text-center text-zinc-300 font-mono">
-                            {pStats?.fg3Pct ? `${pStats.fg3Pct}%` : "0%"}
-                          </td>
-                          <td className="py-4 px-4 text-center text-zinc-300 font-mono">
-                            {pStats?.ftPct ? `${pStats.ftPct}%` : "0%"}
-                          </td>
-                        </>
-                      );
-                    })()}
+                    ) : (
+                      <>
+                        <td className="py-4 px-3 text-center font-bold text-zinc-300">
+                          {pStats?.gp ?? 0}
+                        </td>
+                        <td className="py-4 px-3 text-center font-semibold text-zinc-300">
+                          {(pStats?.mpg ?? 0).toFixed(1)}
+                        </td>
+                        <td className="py-4 px-3 text-center font-bold text-orange-400">
+                          {(pStats?.ppg ?? 0).toFixed(1)}
+                        </td>
+                        <td className="py-4 px-3 text-center font-semibold text-zinc-300">
+                          {(pStats?.rpg ?? 0).toFixed(1)}
+                        </td>
+                        <td className="py-4 px-3 text-center font-semibold text-zinc-300">
+                          {(pStats?.apg ?? 0).toFixed(1)}
+                        </td>
+                        <td className="py-4 px-3 text-center text-zinc-400">
+                          {(pStats?.spg ?? 0).toFixed(1)}
+                        </td>
+                        <td className="py-4 px-3 text-center text-zinc-400">
+                          {(pStats?.bpg ?? 0).toFixed(1)}
+                        </td>
+                        <td className="py-4 px-3 text-center text-zinc-300 font-mono">
+                          {pStats?.fgPct ? `${pStats.fgPct}%` : "0%"}
+                        </td>
+                        <td className="py-4 px-3 text-center text-zinc-300 font-mono">
+                          {pStats?.fg3Pct ? `${pStats.fg3Pct}%` : "0%"}
+                        </td>
+                        <td className="py-4 px-3 text-center text-zinc-300 font-mono">
+                          {pStats?.ftPct ? `${pStats.ftPct}%` : "0%"}
+                        </td>
+                      </>
+                    )}
 
-                    {/* Release Button — two-step confirm, no browser dialog */}
+                    {/* Release Button */}
                     <td className="py-4 px-6 text-center">
                       {confirmReleaseId === player.id ? (
                         <div className="flex items-center gap-1.5 justify-center">
@@ -571,7 +646,7 @@ export default function RosterPage() {
               })
             ) : (
               <tr>
-                <td colSpan={viewMode === "attributes" ? 11 : 14} className="py-12 text-center text-zinc-500">
+                <td colSpan={viewMode === "attributes" ? 13 : 17} className="py-12 text-center text-zinc-500">
                   No active players found.
                 </td>
               </tr>
