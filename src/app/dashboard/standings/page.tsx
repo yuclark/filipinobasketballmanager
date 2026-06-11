@@ -50,6 +50,7 @@ export default function StandingsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<"pct" | "wins" | "losses">("pct");
 
   useEffect(() => {
     setMounted(true);
@@ -161,16 +162,24 @@ export default function StandingsPage() {
     };
   });
 
-  // Sort function: Win Percentage Descending, then Wins Descending, then alphabetical
+  // Sort function based on the selected sortBy mode
   const sortConference = (records: TeamRecord[]) => {
     return [...records].sort((a, b) => {
-      if (b.pct !== a.pct) {
-        return b.pct - a.pct;
+      if (sortBy === "pct") {
+        if (b.pct !== a.pct) return b.pct - a.pct;
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        return a.city.localeCompare(b.city);
+      } else if (sortBy === "wins") {
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        if (b.pct !== a.pct) return b.pct - a.pct;
+        return a.city.localeCompare(b.city);
+      } else { // "losses"
+        // Show team with highest losses first (rank 1)
+        if (b.losses !== a.losses) return b.losses - a.losses;
+        // Ties break by worse win percentage (lower win percentage first)
+        if (a.pct !== b.pct) return a.pct - b.pct;
+        return a.city.localeCompare(b.city);
       }
-      if (b.wins !== a.wins) {
-        return b.wins - a.wins;
-      }
-      return a.city.localeCompare(b.city);
     });
   };
 
@@ -207,6 +216,48 @@ export default function StandingsPage() {
           <span>Refresh Standings</span>
         </button>
       </div>
+
+      {/* Ranking Mode Selector Segmented Control */}
+      {!error && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/40 p-4 rounded-3xl border border-zinc-900/80 shadow-md">
+          <div className="text-zinc-400 text-xs font-bold uppercase tracking-wider select-none flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-orange-500" />
+            <span>Standing Sorting Mode</span>
+          </div>
+          <div className="flex bg-zinc-950 p-1.5 rounded-2xl border border-zinc-900 w-full sm:w-auto">
+            <button
+              onClick={() => setSortBy("pct")}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-extrabold tracking-wide transition-all duration-200 cursor-pointer ${
+                sortBy === "pct"
+                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Win Percentage
+            </button>
+            <button
+              onClick={() => setSortBy("wins")}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-extrabold tracking-wide transition-all duration-200 cursor-pointer ${
+                sortBy === "wins"
+                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Most Wins
+            </button>
+            <button
+              onClick={() => setSortBy("losses")}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-extrabold tracking-wide transition-all duration-200 cursor-pointer ${
+                sortBy === "losses"
+                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Most Losses
+            </button>
+          </div>
+        </div>
+      )}
 
       {error ? (
         <div className="text-center py-12 text-zinc-500">

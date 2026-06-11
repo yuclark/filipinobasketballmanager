@@ -25,6 +25,7 @@ import {
   finalizeOffseasonAction,
   finalizeLotteryAction,
   getCurrentOffseasonStateAction,
+  updateOffseasonPhaseAction,
 } from "@/app/actions/offseasonWizard";
 import {
   Trophy,
@@ -404,9 +405,22 @@ export default function OffseasonWizardPage() {
     }
   };
 
-  const proceedToPhase2 = () => {
-    setCurrentPhase(2);
-    saveWizardState({ currentPhase: 2 });
+  const proceedToPhase2 = async () => {
+    try {
+      setLoading(true);
+      const res = await updateOffseasonPhaseAction(nextSeasonYear, 2);
+      if (res.success) {
+        setCurrentPhase(2);
+        saveWizardState({ currentPhase: 2 });
+      } else {
+        setWizardError(res.error || "Failed to proceed to Phase 2 on server.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError("Error proceeding to Phase 2.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Phase 2 Actions: Progression & Retirements
@@ -452,9 +466,22 @@ export default function OffseasonWizardPage() {
     }
   };
 
-  const proceedToPhase3 = () => {
-    setCurrentPhase(3);
-    saveWizardState({ currentPhase: 3 });
+  const proceedToPhase3 = async () => {
+    try {
+      setLoading(true);
+      const res = await updateOffseasonPhaseAction(nextSeasonYear, 3);
+      if (res.success) {
+        setCurrentPhase(3);
+        saveWizardState({ currentPhase: 3 });
+      } else {
+        setWizardError(res.error || "Failed to proceed to Phase 3 on server.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError("Error proceeding to Phase 3.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Phase 3 Actions: Draft Lottery Draw
@@ -807,14 +834,40 @@ export default function OffseasonWizardPage() {
     }
   };
 
-  const proceedToPhase5 = () => {
-    setCurrentPhase(5);
-    saveWizardState({ currentPhase: 5 });
+  const proceedToPhase5 = async () => {
+    try {
+      setLoading(true);
+      const res = await updateOffseasonPhaseAction(nextSeasonYear, 5);
+      if (res.success) {
+        setCurrentPhase(5);
+        saveWizardState({ currentPhase: 5 });
+      } else {
+        setWizardError(res.error || "Failed to proceed to Phase 5 on server.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError("Error proceeding to Phase 5.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const proceedToPhase6 = () => {
-    setCurrentPhase(6);
-    saveWizardState({ currentPhase: 6 });
+  const proceedToPhase6 = async () => {
+    try {
+      setLoading(true);
+      const res = await updateOffseasonPhaseAction(nextSeasonYear, 6);
+      if (res.success) {
+        setCurrentPhase(6);
+        saveWizardState({ currentPhase: 6 });
+      } else {
+        setWizardError(res.error || "Failed to proceed to Phase 6 on server.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setWizardError("Error proceeding to Phase 6.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Phase 5 Actions: Free Agency Simulation

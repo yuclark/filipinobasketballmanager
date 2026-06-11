@@ -142,6 +142,7 @@ export const draftSessions = pgTable("draft_sessions", {
   currentRound: integer("current_round").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  offseasonPhase: integer("offseason_phase").default(1).notNull(),
 });
 
 export const tradeProposals = pgTable("trade_proposals", {

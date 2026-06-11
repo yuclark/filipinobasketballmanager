@@ -512,7 +512,7 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
     if (Number(remainingUnused[0]?.count ?? 0) === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", updatedAt: new Date() })
+        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.seasonYear, season));
       console.log(`[Draft] All draft picks used. Season ${season} draft session marked as completed.`);
     }
@@ -977,7 +977,7 @@ export async function getOrCreateActiveDraftSessionBySeason(seasonYear: number) 
     if (existingSession.status === "pending") {
       await db
         .update(draftSessions)
-        .set({ status: "active", updatedAt: new Date() })
+        .set({ status: "active", offseasonPhase: 4, updatedAt: new Date() })
         .where(eq(draftSessions.id, existingSession.id));
       existingSession.status = "active";
     }
@@ -991,6 +991,7 @@ export async function getOrCreateActiveDraftSessionBySeason(seasonYear: number) 
     .values({
       seasonYear,
       status: "active",
+      offseasonPhase: 4,
       currentPickNumber: 1,
       currentRound: 1,
     })
@@ -1013,7 +1014,7 @@ export async function initializeDraftSessionAction(seasonYear: number) {
       if (existingSession.status === "pending") {
         await db
           .update(draftSessions)
-          .set({ status: "active", updatedAt: new Date() })
+          .set({ status: "active", offseasonPhase: 4, updatedAt: new Date() })
           .where(eq(draftSessions.id, existingSession.id));
       }
       await createDraftPicksForSeason(seasonYear);
@@ -1032,6 +1033,7 @@ export async function initializeDraftSessionAction(seasonYear: number) {
       .values({
         seasonYear,
         status: "active",
+        offseasonPhase: 4,
         currentPickNumber: 1,
         currentRound: 1,
       })
@@ -1201,7 +1203,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     if (unusedPicks.length === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", updatedAt: new Date() })
+        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
       return { success: true, status: "COMPLETED" as const, picksSimulated: 0, selections: [] };
     }
@@ -1269,7 +1271,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     if (Number(remainingUnused[0]?.count ?? 0) === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", updatedAt: new Date() })
+        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
       return { success: true, status: "COMPLETED" as const, selections, picksSimulated };
     }
@@ -1364,7 +1366,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     if (unusedPicks.length === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", updatedAt: new Date() })
+        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
       return { success: true, status: "COMPLETED" as const, totalPicksSimulated: 0, selections: [] };
     }
@@ -1426,7 +1428,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     // Mark session as completed
     await db
       .update(draftSessions)
-      .set({ status: "completed", updatedAt: new Date() })
+      .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
       .where(eq(draftSessions.id, session.id));
 
     return { success: true, status: "COMPLETED" as const, selections, totalPicksSimulated };
