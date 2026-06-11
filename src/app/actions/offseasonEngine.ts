@@ -6,6 +6,7 @@ import { players, teams, games, transactions, draftPicks, draftSessions } from "
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
+import { revalidatePath } from "next/cache";
 
 // Name Pools
 const FIRST_NAMES = [
@@ -487,6 +488,18 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
         )
       );
 
+    // Update draft session pick number and round
+    const nextPickNum = pickNumber + 1;
+    const nextRound = nextPickNum > 30 ? 2 : 1;
+    await db
+      .update(draftSessions)
+      .set({
+        currentPickNumber: nextPickNum,
+        currentRound: nextRound,
+        updatedAt: new Date()
+      })
+      .where(eq(draftSessions.seasonYear, season));
+
     // Record transaction
     const lastGame = await db
       .select({ year: games.seasonYear })
@@ -495,7 +508,7 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
       .limit(1);
     const currentYear = lastGame[0]?.year ?? 2026;
 
-    const description = `DRAFT: ${team.city} ${team.name} selected prospect ${player.firstName} ${player.lastName} (${player.position}, OVR ${player.overall}) in the Rookie Draft.`;
+    const description = `DRAFT — With Pick ${pickNumber}, ${team.city} ${team.name} selected ${player.firstName} ${player.lastName} (${player.position}, OVR ${player.overall}).`;
     await db.insert(transactions).values({
       type: "Draft",
       description,
@@ -516,6 +529,8 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
         .where(eq(draftSessions.seasonYear, season));
       console.log(`[Draft] All draft picks used. Season ${season} draft session marked as completed.`);
     }
+
+    revalidatePath("/dashboard/offseason");
 
     return { success: true };
   } catch (error: any) {
@@ -1100,6 +1115,18 @@ async function processSingleDraftPick(
     .set({ isUsed: true })
     .where(eq(draftPicks.id, pickId));
 
+  // Update draft session pick number and round
+  const nextPickNum = pickNumber + 1;
+  const nextRound = nextPickNum > 30 ? 2 : 1;
+  await db
+    .update(draftSessions)
+    .set({
+      currentPickNumber: nextPickNum,
+      currentRound: nextRound,
+      updatedAt: new Date()
+    })
+    .where(eq(draftSessions.seasonYear, currentYear));
+
   // 4. Log the transaction
   const [team] = await db
     .select()
@@ -1141,6 +1168,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     }
 
     if (session.status === "completed") {
+      revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, picksSimulated: 0, selections: [] };
     }
 
@@ -1205,6 +1233,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
         .update(draftSessions)
         .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
+      revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, picksSimulated: 0, selections: [] };
     }
 
@@ -1216,6 +1245,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
       .orderBy(desc(players.overall));
 
     if (pool.length === 0) {
+      revalidatePath("/dashboard/offseason");
       return { success: false, status: "NO_PROSPECTS" as const, message: "No prospects remain in the draft pool." };
     }
 
@@ -1238,6 +1268,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     for (const pick of unusedPicks) {
       // If the owner is the user, STOP and let user pick
       if (pick.ownerTeamId === userTeamId) {
+        revalidatePath("/dashboard/offseason");
         return { success: true, status: "USER_ON_CLOCK" as const, selections, picksSimulated };
       }
 
@@ -1251,8 +1282,10 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
 
       if (!pickRes.success) {
         if (pickRes.status === "NO_PROSPECTS") {
+          revalidatePath("/dashboard/offseason");
           return { success: false, status: "NO_PROSPECTS" as const, message: "No prospects remain in the draft pool." };
         }
+        revalidatePath("/dashboard/offseason");
         return { success: false, error: pickRes.error || "Failed to process pick." };
       }
 
@@ -1273,6 +1306,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
         .update(draftSessions)
         .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
+      revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, selections, picksSimulated };
     }
 
@@ -1283,9 +1317,11 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
       .where(and(eq(draftPicks.season, season), eq(draftPicks.isUsed, false)));
     const firstUnused = unusedPicksDb.sort((a, b) => (a.pickNumber ?? 0) - (b.pickNumber ?? 0))[0];
     if (firstUnused && firstUnused.ownerTeamId === userTeamId) {
+      revalidatePath("/dashboard/offseason");
       return { success: true, status: "USER_ON_CLOCK" as const, selections, picksSimulated };
     }
 
+    revalidatePath("/dashboard/offseason");
     return { success: true, status: "NO_OP" as const, selections, picksSimulated };
   } catch (error: any) {
     console.error("simulateCpuPicksAction failed:", error);
@@ -1293,7 +1329,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
   }
 }
 
-export async function autoCompleteDraftAction(userTeamId: string, season: number, autoDraftUser: boolean) {
+export async function autoCompleteDraftAction(userTeamId: string, season: number, skipUserTeam: boolean = false) {
   try {
     const session = await getOrCreateActiveDraftSessionBySeason(season);
     if (!session) {
@@ -1304,6 +1340,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     console.log(`[Draft Auto] Using session ${session.id} for season ${season}`);
 
     if (session.status === "completed") {
+      revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, totalPicksSimulated: 0, selections: [] };
     }
 
@@ -1368,6 +1405,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
         .update(draftSessions)
         .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
+      revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, totalPicksSimulated: 0, selections: [] };
     }
 
@@ -1379,6 +1417,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
       .orderBy(desc(players.overall));
 
     if (pool.length === 0) {
+      revalidatePath("/dashboard/offseason");
       return { success: false, status: "NO_PROSPECTS" as const, message: "No prospects remain in the draft pool." };
     }
 
@@ -1399,8 +1438,9 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     let totalPicksSimulated = 0;
 
     for (const pick of unusedPicks) {
-      // If owner is user and we are NOT auto-drafting user, stop
-      if (pick.ownerTeamId === userTeamId && !autoDraftUser) {
+      // If owner is user and we want to skip user, stop
+      if (pick.ownerTeamId === userTeamId && skipUserTeam) {
+        revalidatePath("/dashboard/offseason");
         return { success: true, status: "USER_ON_CLOCK" as const, selections, totalPicksSimulated };
       }
 
@@ -1414,8 +1454,10 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
 
       if (!pickRes.success) {
         if (pickRes.status === "NO_PROSPECTS") {
+          revalidatePath("/dashboard/offseason");
           return { success: false, status: "NO_PROSPECTS" as const, message: "No prospects remain in the draft pool." };
         }
+        revalidatePath("/dashboard/offseason");
         return { success: false, error: pickRes.error || "Failed to process pick." };
       }
 
@@ -1431,9 +1473,70 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
       .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
       .where(eq(draftSessions.id, session.id));
 
+    revalidatePath("/dashboard/offseason");
+
     return { success: true, status: "COMPLETED" as const, selections, totalPicksSimulated };
   } catch (error: any) {
     console.error("autoCompleteDraftAction failed:", error);
     return { success: false, error: error.message || "Failed to auto-complete draft." };
+  }
+}
+
+export async function getDraftHistoryAction(season: number) {
+  try {
+    const draftTx = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.type, "Draft"), eq(transactions.seasonYear, season)))
+      .orderBy(transactions.createdAt);
+
+    const history = [];
+    for (const tx of draftTx) {
+      const descStr = tx.description;
+      // Format: DRAFT — With Pick 5, Manila Metros selected Junmar Reyes (PG, OVR 75).
+      const match = descStr.match(/DRAFT — With Pick (\d+), (.*) selected (.*) \((.*), OVR (\d+)\)/);
+      if (match) {
+        const pickNumber = parseInt(match[1]);
+        const teamNameStr = match[2].trim();
+        const playerNameStr = match[3].trim();
+        const position = match[4].trim();
+        const overall = parseInt(match[5]);
+
+        const spaceIdx = teamNameStr.indexOf(" ");
+        const teamCity = spaceIdx !== -1 ? teamNameStr.substring(0, spaceIdx) : teamNameStr;
+        const teamNameOnly = spaceIdx !== -1 ? teamNameStr.substring(spaceIdx + 1) : "";
+
+        const nameSpaceIdx = playerNameStr.indexOf(" ");
+        const firstName = nameSpaceIdx !== -1 ? playerNameStr.substring(0, nameSpaceIdx) : playerNameStr;
+        const lastName = nameSpaceIdx !== -1 ? playerNameStr.substring(nameSpaceIdx + 1) : "";
+
+        // Find team ID
+        const [t] = await db
+          .select({ id: teams.id })
+          .from(teams)
+          .where(and(eq(teams.city, teamCity), eq(teams.name, teamNameOnly)))
+          .limit(1);
+
+        history.push({
+          pickNumber,
+          team: {
+            id: t?.id || "",
+            city: teamCity,
+            name: teamNameOnly
+          },
+          player: {
+            firstName,
+            lastName,
+            position,
+            overall
+          }
+        });
+      }
+    }
+
+    return { success: true, history };
+  } catch (error: any) {
+    console.error("Failed to load draft history:", error);
+    return { success: false, history: [] };
   }
 }

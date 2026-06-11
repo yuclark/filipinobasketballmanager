@@ -16,6 +16,7 @@ import {
   simulateCpuPicksAction,
   autoCompleteDraftAction,
   initializeDraftSessionAction,
+  getDraftHistoryAction,
 } from "@/app/actions/offseasonEngine";
 import {
   getExpiringPlayersAction,
@@ -88,8 +89,8 @@ interface Prospect {
 }
 
 interface DraftPick {
-  team: Team;
-  player: Prospect;
+  team: { id: string; name: string; city: string; conference?: "Luzon" | "VisMin"; budget?: number };
+  player: { firstName: string; lastName: string; position: string; overall: number; id?: string };
   pickNumber: number;
 }
 
@@ -193,6 +194,58 @@ export default function OffseasonWizardPage() {
     localStorage.setItem("filipino-basketball-manager-offseason-wizard", JSON.stringify(state));
   };
 
+  const refreshDraftState = async (resolvedYear?: number) => {
+    const targetYear = resolvedYear ?? nextSeasonYear;
+    try {
+      // 1. Reload offseason state from server
+      const stateRes = await getCurrentOffseasonStateAction(targetYear, userTeamId);
+      if (stateRes.success) {
+        setCurrentPhase(stateRes.offseasonPhase);
+        setDraftSessionActive(stateRes.hasActiveDraftSession);
+      }
+
+      // 2. Reload prospects
+      const prospectsRes = await getDraftProspectsAction(targetYear);
+      if (prospectsRes.success && prospectsRes.prospects) {
+        setProspects(prospectsRes.prospects as Prospect[]);
+        if (prospectsRes.prospects.length > 0) {
+          setSelectedProspectId(prospectsRes.prospects[0].id);
+        }
+      }
+
+      // 3. Reload session picks
+      const sessionRes = await getDraftSessionPicksAction(targetYear);
+      if (sessionRes.success && sessionRes.picks) {
+        setSessionPicks(sessionRes.picks);
+        const usedPicks = sessionRes.picks.filter((p: any) => p.isUsed);
+        setCurrentPickIndex(usedPicks.length);
+      }
+
+      // 4. Reload draft history
+      const historyRes = await getDraftHistoryAction(targetYear);
+      if (historyRes.success && historyRes.history) {
+        setPickHistory(historyRes.history);
+        saveWizardState({
+          currentPickIndex: sessionPicks.filter((p: any) => p.isUsed).length,
+          pickHistory: historyRes.history
+        });
+      }
+
+      // 5. Reload user draft picks
+      if (userTeamId) {
+        const userPicksRes = await getUserDraftPicksAction(userTeamId);
+        if (userPicksRes.success && userPicksRes.picks) {
+          setUserDraftPicks(userPicksRes.picks);
+        }
+      }
+
+      // 6. Router refresh
+      router.refresh();
+    } catch (e) {
+      console.error("Failed to refresh draft state:", e);
+    }
+  };
+
   const loadWizardState = async () => {
     try {
       setLoading(true);
@@ -266,7 +319,6 @@ export default function OffseasonWizardPage() {
       if (loadedState.lotteryDraws) setLotteryDraws(loadedState.lotteryDraws);
       if (loadedState.lotteryRun) setLotteryRun(loadedState.lotteryRun);
       if (loadedState.currentPickIndex !== undefined) setCurrentPickIndex(loadedState.currentPickIndex);
-      if (loadedState.pickHistory) setPickHistory(loadedState.pickHistory);
       if (loadedState.freeAgencySimulated !== undefined) setFreeAgencySimulated(loadedState.freeAgencySimulated);
       if (loadedState.freeAgencyLogs) setFreeAgencyLogs(loadedState.freeAgencyLogs);
       if (loadedState.evolutionResults) setEvolutionResults(loadedState.evolutionResults);
@@ -305,6 +357,16 @@ export default function OffseasonWizardPage() {
       const sessionRes = await getDraftSessionPicksAction(upcomingYear);
       if (sessionRes.success && sessionRes.picks) {
         setSessionPicks(sessionRes.picks);
+        const usedPicks = sessionRes.picks.filter((p: any) => p.isUsed);
+        setCurrentPickIndex(usedPicks.length);
+      }
+
+      // Fetch draft history from database
+      const historyRes = await getDraftHistoryAction(upcomingYear);
+      if (historyRes.success && historyRes.history) {
+        setPickHistory(historyRes.history);
+      } else if (loadedState.pickHistory) {
+        setPickHistory(loadedState.pickHistory);
       }
     } catch (err: any) {
       console.error(err);
@@ -580,32 +642,8 @@ export default function OffseasonWizardPage() {
     setWizardSuccess(null);
     try {
       const res = (await simulateCpuPicksAction(userTeamId, nextSeasonYear)) as any;
-      if (res.success && res.selections) {
-        const newHistory = res.selections.map((sel: any) => ({
-          team: sel.team,
-          player: sel.player,
-          pickNumber: sel.pickNumber,
-        }));
-        const updatedHistory = [...pickHistory, ...newHistory];
-        setPickHistory(updatedHistory);
-        
-        const prospectsRes = await getDraftProspectsAction();
-        if (prospectsRes.success && prospectsRes.prospects) {
-          setProspects(prospectsRes.prospects as Prospect[]);
-          if (prospectsRes.prospects.length > 0) {
-            setSelectedProspectId(prospectsRes.prospects[0].id);
-          }
-        }
-        
-        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
-        if (sessionRes.success && sessionRes.picks) {
-          setSessionPicks(sessionRes.picks);
-        }
-
-        const usedPicks = sessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
-        setCurrentPickIndex(usedPicks.length);
-        saveWizardState({ currentPickIndex: usedPicks.length, pickHistory: updatedHistory });
-
+      if (res.success) {
+        await refreshDraftState();
         if (res.status === "USER_ON_CLOCK") {
           setWizardSuccess("Simulation paused — your team is now on the clock.");
         } else if (res.status === "COMPLETED") {
@@ -636,59 +674,12 @@ export default function OffseasonWizardPage() {
     try {
       const res = await executeDraftPickAction(userTeamId, bestPlayer.id, currentPick.pickNumber!, nextSeasonYear);
       if (res.success) {
-        const pickDetails: DraftPick = {
-          team: { id: userTeamId, name: currentPick.ownerName!, city: currentPick.ownerCity! } as any,
-          player: bestPlayer,
-          pickNumber: currentPickIndex + 1,
-        };
-        const updatedHistory = [...pickHistory, pickDetails];
-        setPickHistory(updatedHistory);
-
-        const remainingProspects = prospects.filter((p) => p.id !== bestPlayer.id);
-        setProspects(remainingProspects);
-        if (remainingProspects.length > 0) {
-          setSelectedProspectId(remainingProspects[0].id);
-        }
-
-        const nextIdx = currentPickIndex + 1;
-        setCurrentPickIndex(nextIdx);
-        saveWizardState({ currentPickIndex: nextIdx, pickHistory: updatedHistory });
-
-        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
-        if (sessionRes.success && sessionRes.picks) {
-          setSessionPicks(sessionRes.picks);
-        }
-
-        setDraftingActive(false);
+        await refreshDraftState();
 
         setDraftingActive(true);
         const cpuRes = (await simulateCpuPicksAction(userTeamId, nextSeasonYear)) as any;
-        if (cpuRes.success && cpuRes.selections) {
-          const newCpuHistory = cpuRes.selections.map((sel: any) => ({
-            team: sel.team,
-            player: sel.player,
-            pickNumber: sel.pickNumber,
-          }));
-          const finalHistory = [...updatedHistory, ...newCpuHistory];
-          setPickHistory(finalHistory);
-
-          const prospectsRes = await getDraftProspectsAction();
-          if (prospectsRes.success && prospectsRes.prospects) {
-            setProspects(prospectsRes.prospects as Prospect[]);
-            if (prospectsRes.prospects.length > 0) {
-              setSelectedProspectId(prospectsRes.prospects[0].id);
-            }
-          }
-
-          const finalSessionRes = await getDraftSessionPicksAction(nextSeasonYear);
-          if (finalSessionRes.success && finalSessionRes.picks) {
-            setSessionPicks(finalSessionRes.picks);
-          }
-
-          const finalUsedPicks = finalSessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
-          setCurrentPickIndex(finalUsedPicks.length);
-          saveWizardState({ currentPickIndex: finalUsedPicks.length, pickHistory: finalHistory });
-
+        if (cpuRes.success) {
+          await refreshDraftState();
           if (cpuRes.status === "USER_ON_CLOCK") {
             setWizardSuccess("Simulation paused — your team is now on the clock.");
           } else if (cpuRes.status === "COMPLETED") {
@@ -712,30 +703,9 @@ export default function OffseasonWizardPage() {
     setWizardError(null);
     setWizardSuccess(null);
     try {
-      const res = (await autoCompleteDraftAction(userTeamId, nextSeasonYear, true)) as any;
-      if (res.success && res.selections) {
-        const newHistory = res.selections.map((sel: any) => ({
-          team: sel.team,
-          player: sel.player,
-          pickNumber: sel.pickNumber,
-        }));
-        const updatedHistory = [...pickHistory, ...newHistory];
-        setPickHistory(updatedHistory);
-
-        const prospectsRes = await getDraftProspectsAction();
-        if (prospectsRes.success && prospectsRes.prospects) {
-          setProspects(prospectsRes.prospects as Prospect[]);
-        }
-
-        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
-        if (sessionRes.success && sessionRes.picks) {
-          setSessionPicks(sessionRes.picks);
-        }
-
-        const usedPicks = sessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
-        setCurrentPickIndex(usedPicks.length);
-        saveWizardState({ currentPickIndex: usedPicks.length, pickHistory: updatedHistory });
-
+      const res = (await autoCompleteDraftAction(userTeamId, nextSeasonYear, false)) as any;
+      if (res.success) {
+        await refreshDraftState();
         setWizardSuccess("Draft completed successfully.");
       } else {
         setWizardError(res.error || res.message || "Simulation failed.");
@@ -763,60 +733,12 @@ export default function OffseasonWizardPage() {
     try {
       const res = await executeDraftPickAction(userTeamId!, selectedProspectId, currentPick.pickNumber!, nextSeasonYear);
       if (res.success) {
-        const pickDetails: DraftPick = {
-          team: { id: userTeamId!, name: currentPick.ownerName!, city: currentPick.ownerCity! } as any,
-          player: selectedPlayer,
-          pickNumber: currentPickIndex + 1,
-        };
-
-        const updatedHistory = [...pickHistory, pickDetails];
-        setPickHistory(updatedHistory);
-
-        const remaining = prospects.filter((p) => p.id !== selectedProspectId);
-        setProspects(remaining);
-        if (remaining.length > 0) {
-          setSelectedProspectId(remaining[0].id);
-        }
-        
-        const nextIdx = currentPickIndex + 1;
-        setCurrentPickIndex(nextIdx);
-        saveWizardState({ currentPickIndex: nextIdx, pickHistory: updatedHistory });
-
-        const sessionRes = await getDraftSessionPicksAction(nextSeasonYear);
-        if (sessionRes.success && sessionRes.picks) {
-          setSessionPicks(sessionRes.picks);
-        }
-
-        setDraftingActive(false);
+        await refreshDraftState();
 
         setDraftingActive(true);
         const cpuRes = (await simulateCpuPicksAction(userTeamId!, nextSeasonYear)) as any;
-        if (cpuRes.success && cpuRes.selections) {
-          const newCpuHistory = cpuRes.selections.map((sel: any) => ({
-            team: sel.team,
-            player: sel.player,
-            pickNumber: sel.pickNumber,
-          }));
-          const finalHistory = [...updatedHistory, ...newCpuHistory];
-          setPickHistory(finalHistory);
-
-          const prospectsRes = await getDraftProspectsAction();
-          if (prospectsRes.success && prospectsRes.prospects) {
-            setProspects(prospectsRes.prospects as Prospect[]);
-            if (prospectsRes.prospects.length > 0) {
-              setSelectedProspectId(prospectsRes.prospects[0].id);
-            }
-          }
-
-          const finalSessionRes = await getDraftSessionPicksAction(nextSeasonYear);
-          if (finalSessionRes.success && finalSessionRes.picks) {
-            setSessionPicks(finalSessionRes.picks);
-          }
-
-          const finalUsedPicks = finalSessionRes.picks?.filter((p: any) => p.isUsed) ?? [];
-          setCurrentPickIndex(finalUsedPicks.length);
-          saveWizardState({ currentPickIndex: finalUsedPicks.length, pickHistory: finalHistory });
-
+        if (cpuRes.success) {
+          await refreshDraftState();
           if (cpuRes.status === "USER_ON_CLOCK") {
             setWizardSuccess("Simulation paused — your team is now on the clock.");
           } else if (cpuRes.status === "COMPLETED") {
