@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getSeasonAwardsAction } from "@/app/actions/awardsEngine";
-import { initializePlayoffsAction } from "@/app/actions/playoffEngine";
+import { initializePlayoffsAction, checkPlayoffsInitializedAction } from "@/app/actions/playoffEngine";
 import { Loader2, Award, Trophy, Users, Shield, Zap, Sparkles, ChevronRight } from "lucide-react";
 
 interface AwardItem {
@@ -77,6 +77,11 @@ export default function AwardsCeremonyPage() {
     setActionLoading(true);
     setActionError(null);
     try {
+      const alreadyInitialized = await checkPlayoffsInitializedAction();
+      if (alreadyInitialized) {
+        router.push("/dashboard/playoffs");
+        return;
+      }
       const res = await initializePlayoffsAction();
       if (res.success) {
         router.push("/dashboard/playoffs");

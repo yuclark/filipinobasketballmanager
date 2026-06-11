@@ -15,13 +15,29 @@ interface Team {
   budget: number;
 }
 
+// getCurrentSeasonYear retrieves the latest season year from the games table.
+async function getCurrentSeasonYear(): Promise<number> {
+  const lastGame = await db
+    .select({ year: games.seasonYear })
+    .from(games)
+    .orderBy(desc(games.seasonYear))
+    .limit(1);
+  return lastGame[0]?.year ?? 2026;
+}
+
 // 1. Helper to calculate final standings for seeding
-async function getFinalStandings() {
+async function getFinalStandings(seasonYear: number) {
   const allTeams = await db.select().from(teams);
   const completedRegularGames = await db
     .select()
     .from(games)
-    .where(and(eq(games.status, "Completed"), eq(games.stage, "Regular")));
+    .where(
+      and(
+        eq(games.status, "Completed"),
+        eq(games.stage, "Regular"),
+        eq(games.seasonYear, seasonYear)
+      )
+    );
 
   const calculatedRecords = allTeams.map((team) => {
     const teamGames = completedRegularGames.filter(
@@ -119,7 +135,8 @@ async function schedulePlayoffSeries(
   startDay: number,
   totalGames: number,
   round: "Quarterfinals" | "Semifinals" | "ConferenceFinals" | "GrandFinals",
-  conference: "Luzon" | "VisMin" | "Cross"
+  conference: "Luzon" | "VisMin" | "Cross",
+  seasonYear: number
 ) {
   const gamesToInsert = [];
   for (let i = 0; i < totalGames; i++) {
@@ -145,7 +162,7 @@ async function schedulePlayoffSeries(
     gamesToInsert.push({
       homeTeamId,
       awayTeamId,
-      seasonYear: 2026,
+      seasonYear,
       gameNumber,
       status: "Scheduled",
       stage: "Playoffs",
@@ -157,18 +174,52 @@ async function schedulePlayoffSeries(
   await db.insert(games).values(gamesToInsert);
 }
 
-// 4. Server Action: Verify regular season is complete
-export async function checkRegularSeasonCompleteAction() {
+// checkPlayoffsInitializedAction checks if playoffs have already been seeded for the current season.
+export async function checkPlayoffsInitializedAction(): Promise<boolean> {
   try {
+    const currentYear = await getCurrentSeasonYear();
+    const playoffGame = await db
+      .select({ id: games.id })
+      .from(games)
+      .where(
+        and(
+          eq(games.stage, "Playoffs"),
+          eq(games.seasonYear, currentYear)
+        )
+      )
+      .limit(1);
+
+    return playoffGame.length > 0;
+  } catch (err) {
+    console.error("Error in checkPlayoffsInitializedAction:", err);
+    return false;
+  }
+}
+
+// 4. Server Action: Verify regular season is complete
+export async function checkRegularSeasonCompleteAction(seasonYear?: number) {
+  try {
+    const targetYear = seasonYear ?? (await getCurrentSeasonYear());
     const regularGames = await db
       .select({ count: sql<number>`count(*)` })
       .from(games)
-      .where(and(eq(games.stage, "Regular"), eq(games.status, "Scheduled")));
+      .where(
+        and(
+          eq(games.stage, "Regular"),
+          eq(games.status, "Scheduled"),
+          eq(games.seasonYear, targetYear)
+        )
+      );
     
     const totalRegular = await db
       .select({ count: sql<number>`count(*)` })
       .from(games)
-      .where(eq(games.stage, "Regular"));
+      .where(
+        and(
+          eq(games.stage, "Regular"),
+          eq(games.seasonYear, targetYear)
+        )
+      );
 
     const totalCount = Number(totalRegular[0]?.count ?? 0);
     const scheduledCount = Number(regularGames[0]?.count ?? 0);
@@ -188,7 +239,15 @@ export async function checkRegularSeasonCompleteAction() {
 // 5. Server Action: Initialize playoffs
 export async function initializePlayoffsAction() {
   try {
-    const completeCheck = await checkRegularSeasonCompleteAction();
+    const currentYear = await getCurrentSeasonYear();
+
+    // Idempotency check: see if playoffs are already initialized for the current season
+    const alreadyInitialized = await checkPlayoffsInitializedAction();
+    if (alreadyInitialized) {
+      return { success: true, alreadyExisted: true, message: "Playoffs already initialized. Proceeding." };
+    }
+
+    const completeCheck = await checkRegularSeasonCompleteAction(currentYear);
     if (!completeCheck.success) {
       return { success: false, error: completeCheck.error };
     }
@@ -196,17 +255,7 @@ export async function initializePlayoffsAction() {
       return { success: false, error: "Regular season must be completed first." };
     }
 
-    const existingPlayoffGames = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(games)
-      .where(eq(games.stage, "Playoffs"))
-      .limit(1);
-
-    if (Number(existingPlayoffGames[0]?.count ?? 0) > 0) {
-      return { success: false, error: "Playoffs are already initialized." };
-    }
-
-    const { north, south } = await getFinalStandings();
+    const { north, south } = await getFinalStandings(currentYear);
     const topNorth = north.slice(0, 8);
     const topSouth = south.slice(0, 8);
 
@@ -229,7 +278,7 @@ export async function initializePlayoffsAction() {
       const teamA = topNorth[pair.seedA - 1];
       const teamB = topNorth[pair.seedB - 1];
       const seriesId = `Q_Luzon_${pair.seedA}v${pair.seedB}`;
-      await schedulePlayoffSeries(seriesId, teamA, teamB, startDay, 5, "Quarterfinals", "Luzon");
+      await schedulePlayoffSeries(seriesId, teamA, teamB, startDay, 5, "Quarterfinals", "Luzon", currentYear);
     }
 
     // Schedule VisMin Quarterfinals
@@ -237,7 +286,7 @@ export async function initializePlayoffsAction() {
       const teamA = topSouth[pair.seedA - 1];
       const teamB = topSouth[pair.seedB - 1];
       const seriesId = `Q_VisMin_${pair.seedA}v${pair.seedB}`;
-      await schedulePlayoffSeries(seriesId, teamA, teamB, startDay, 5, "Quarterfinals", "VisMin");
+      await schedulePlayoffSeries(seriesId, teamA, teamB, startDay, 5, "Quarterfinals", "VisMin", currentYear);
     }
 
     return { success: true };
@@ -248,12 +297,18 @@ export async function initializePlayoffsAction() {
 }
 
 // 6. Server Action: Fetch visual bracket structure
-export async function getPlayoffBracketAction() {
+export async function getPlayoffBracketAction(seasonYear?: number) {
   try {
+    const targetYear = seasonYear ?? (await getCurrentSeasonYear());
     const playoffGames = await db
       .select()
       .from(games)
-      .where(eq(games.stage, "Playoffs"));
+      .where(
+        and(
+          eq(games.stage, "Playoffs"),
+          eq(games.seasonYear, targetYear)
+        )
+      );
 
     if (playoffGames.length === 0) {
       return { success: true, bracket: [] };
@@ -262,7 +317,7 @@ export async function getPlayoffBracketAction() {
     const allTeams = await db.select().from(teams);
     const teamMap = new Map(allTeams.map((t) => [t.id, t]));
 
-    const { north, south } = await getFinalStandings();
+    const { north, south } = await getFinalStandings(targetYear);
     const seedMap = new Map<string, number>();
     north.forEach((t, i) => seedMap.set(t.id, i + 1));
     south.forEach((t, i) => seedMap.set(t.id, i + 1));
@@ -361,23 +416,38 @@ export async function getPlayoffBracketAction() {
   }
 }
 
+
+
 // 7. Server Action: Simulate all matches scheduled for the current playoff day
 export async function simulatePlayoffDayAction() {
   try {
-    // Find next active scheduled playoff day
+    const currentYear = await getCurrentSeasonYear();
+
+    // Find next active scheduled playoff day for the current season
     const nextPlayoffGame = await db
       .select({ day: games.gameNumber })
       .from(games)
-      .where(and(eq(games.stage, "Playoffs"), eq(games.status, "Scheduled")))
+      .where(
+        and(
+          eq(games.stage, "Playoffs"),
+          eq(games.status, "Scheduled"),
+          eq(games.seasonYear, currentYear)
+        )
+      )
       .orderBy(games.gameNumber)
       .limit(1);
 
     if (nextPlayoffGame.length === 0) {
-      // Check if Grand Finals is clinched
+      // Check if Grand Finals is clinched for the current season
       const gfGames = await db
         .select()
         .from(games)
-        .where(eq(games.seriesId, "GF_GrandFinals"));
+        .where(
+          and(
+            eq(games.seriesId, "GF_GrandFinals"),
+            eq(games.seasonYear, currentYear)
+          )
+        );
 
       if (gfGames.length > 0) {
         const team1Id = gfGames[0].homeTeamId;
@@ -406,11 +476,14 @@ export async function simulatePlayoffDayAction() {
     const dayGames = await db
       .select()
       .from(games)
-      .where(and(
-        eq(games.stage, "Playoffs"),
-        eq(games.gameNumber, currentPlayoffDay),
-        eq(games.status, "Scheduled")
-      ));
+      .where(
+        and(
+          eq(games.stage, "Playoffs"),
+          eq(games.gameNumber, currentPlayoffDay),
+          eq(games.status, "Scheduled"),
+          eq(games.seasonYear, currentYear)
+        )
+      );
 
     const simulatedCount = dayGames.length;
     for (const game of dayGames) {
@@ -423,7 +496,12 @@ export async function simulatePlayoffDayAction() {
       const seriesGames = await db
         .select()
         .from(games)
-        .where(eq(games.seriesId, seriesId));
+        .where(
+          and(
+            eq(games.seriesId, seriesId),
+            eq(games.seasonYear, currentYear)
+          )
+        );
 
       if (seriesGames.length === 0) continue;
 
@@ -447,7 +525,13 @@ export async function simulatePlayoffDayAction() {
       if (w1 >= targetWins || w2 >= targetWins) {
         await db
           .delete(games)
-          .where(and(eq(games.seriesId, seriesId), eq(games.status, "Scheduled")));
+          .where(
+            and(
+              eq(games.seriesId, seriesId),
+              eq(games.status, "Scheduled"),
+              eq(games.seasonYear, currentYear)
+            )
+          );
       }
     }
 
@@ -457,10 +541,13 @@ export async function simulatePlayoffDayAction() {
     const remainingRoundGames = await db
       .select({ count: sql<number>`count(*)` })
       .from(games)
-      .where(and(
-        eq(games.playoffRound, currentRound),
-        eq(games.status, "Scheduled")
-      ));
+      .where(
+        and(
+          eq(games.playoffRound, currentRound),
+          eq(games.status, "Scheduled"),
+          eq(games.seasonYear, currentYear)
+        )
+      );
 
     const scheduledRemaining = Number(remainingRoundGames[0]?.count ?? 0);
 
@@ -469,11 +556,16 @@ export async function simulatePlayoffDayAction() {
       const allRoundGames = await db
         .select()
         .from(games)
-        .where(eq(games.playoffRound, currentRound));
+        .where(
+          and(
+            eq(games.playoffRound, currentRound),
+            eq(games.seasonYear, currentYear)
+          )
+        );
 
       const startDay = Math.max(...allRoundGames.map((g) => g.gameNumber)) + 1;
       const allTeams = await db.select().from(teams);
-      const { north, south } = await getFinalStandings();
+      const { north, south } = await getFinalStandings(currentYear);
       const seedMap = new Map<string, number>();
       north.forEach((t, i) => seedMap.set(t.id, i + 1));
       south.forEach((t, i) => seedMap.set(t.id, i + 1));
@@ -494,22 +586,22 @@ export async function simulatePlayoffDayAction() {
           // Luzon Bracket Semis 1 (Winner 1v8 vs Winner 4v5)
           const lSemis1A = wLuzon1v8.seed < wLuzon4v5.seed ? wLuzon1v8 : wLuzon4v5;
           const lSemis1B = wLuzon1v8.seed < wLuzon4v5.seed ? wLuzon4v5 : wLuzon1v8;
-          await schedulePlayoffSeries("S_Luzon_1v8_vs_4v5", lSemis1A, lSemis1B, startDay, 5, "Semifinals", "Luzon");
+          await schedulePlayoffSeries("S_Luzon_1v8_vs_4v5", lSemis1A, lSemis1B, startDay, 5, "Semifinals", "Luzon", currentYear);
 
           // Luzon Bracket Semis 2 (Winner 2v7 vs Winner 3v6)
           const lSemis2A = wLuzon2v7.seed < wLuzon3v6.seed ? wLuzon2v7 : wLuzon3v6;
           const lSemis2B = wLuzon2v7.seed < wLuzon3v6.seed ? wLuzon3v6 : wLuzon2v7;
-          await schedulePlayoffSeries("S_Luzon_2v7_vs_3v6", lSemis2A, lSemis2B, startDay, 5, "Semifinals", "Luzon");
+          await schedulePlayoffSeries("S_Luzon_2v7_vs_3v6", lSemis2A, lSemis2B, startDay, 5, "Semifinals", "Luzon", currentYear);
 
           // VisMin Bracket Semis 1 (Winner 1v8 vs Winner 4v5)
           const vSemis1A = wVisMin1v8.seed < wVisMin4v5.seed ? wVisMin1v8 : wVisMin4v5;
           const vSemis1B = wVisMin1v8.seed < wVisMin4v5.seed ? wVisMin4v5 : wVisMin1v8;
-          await schedulePlayoffSeries("S_VisMin_1v8_vs_4v5", vSemis1A, vSemis1B, startDay, 5, "Semifinals", "VisMin");
+          await schedulePlayoffSeries("S_VisMin_1v8_vs_4v5", vSemis1A, vSemis1B, startDay, 5, "Semifinals", "VisMin", currentYear);
 
           // VisMin Bracket Semis 2 (Winner 2v7 vs Winner 3v6)
           const vSemis2A = wVisMin2v7.seed < wVisMin3v6.seed ? wVisMin2v7 : wVisMin3v6;
           const vSemis2B = wVisMin2v7.seed < wVisMin3v6.seed ? wVisMin3v6 : wVisMin2v7;
-          await schedulePlayoffSeries("S_VisMin_2v7_vs_3v6", vSemis2A, vSemis2B, startDay, 5, "Semifinals", "VisMin");
+          await schedulePlayoffSeries("S_VisMin_2v7_vs_3v6", vSemis2A, vSemis2B, startDay, 5, "Semifinals", "VisMin", currentYear);
         }
       } else if (currentRound === "Semifinals") {
         // Match Conference Finals
@@ -521,11 +613,11 @@ export async function simulatePlayoffDayAction() {
         if (wLuzon1 && wLuzon2 && wVisMin1 && wVisMin2) {
           const lCfA = wLuzon1.seed < wLuzon2.seed ? wLuzon1 : wLuzon2;
           const lCfB = wLuzon1.seed < wLuzon2.seed ? wLuzon2 : wLuzon1;
-          await schedulePlayoffSeries("CF_Luzon", lCfA, lCfB, startDay, 5, "ConferenceFinals", "Luzon");
+          await schedulePlayoffSeries("CF_Luzon", lCfA, lCfB, startDay, 5, "ConferenceFinals", "Luzon", currentYear);
 
           const vCfA = wVisMin1.seed < wVisMin2.seed ? wVisMin1 : wVisMin2;
           const vCfB = wVisMin1.seed < wVisMin2.seed ? wVisMin2 : wVisMin1;
-          await schedulePlayoffSeries("CF_VisMin", vCfA, vCfB, startDay, 5, "ConferenceFinals", "VisMin");
+          await schedulePlayoffSeries("CF_VisMin", vCfA, vCfB, startDay, 5, "ConferenceFinals", "VisMin", currentYear);
         }
       } else if (currentRound === "ConferenceFinals") {
         // Match Grand Finals (Best of 7)
@@ -533,7 +625,7 @@ export async function simulatePlayoffDayAction() {
         const vChamp = getWinnerOfSeries("CF_VisMin", allRoundGames, allTeams, seedMap);
 
         if (lChamp && vChamp) {
-          await schedulePlayoffSeries("GF_GrandFinals", lChamp, vChamp, startDay, 7, "GrandFinals", "Cross");
+          await schedulePlayoffSeries("GF_GrandFinals", lChamp, vChamp, startDay, 7, "GrandFinals", "Cross", currentYear);
         }
       } else if (currentRound === "GrandFinals") {
         // Grand Finals concluded — determine champion and Finals MVP
@@ -551,18 +643,11 @@ export async function simulatePlayoffDayAction() {
         const championTeamId = w1 >= 4 ? team1Id : team2Id;
         const runnerUpTeamId = w1 >= 4 ? team2Id : team1Id;
         const seriesScoreStr = `${Math.max(w1, w2)}-${Math.min(w1, w2)}`;
-        // Force direct database query against the games table to fetch the absolute ground-truth current season year
-        const lastGame = await db
-          .select({ year: games.seasonYear })
-          .from(games)
-          .orderBy(desc(games.seasonYear))
-          .limit(1);
-        const currentSeasonYear = lastGame[0]?.year ?? 2026;
 
-        console.log(`[Playoff Engine] Grand Finals complete! Champion: ${championTeamId}, Series: ${seriesScoreStr}, Season: ${currentSeasonYear}`);
+        console.log(`[Playoff Engine] Grand Finals complete! Champion: ${championTeamId}, Series: ${seriesScoreStr}, Season: ${currentYear}`);
         
         // Run Finals MVP calculation sequentially directly on flat db
-        await calculateFinalsMvpAction(currentSeasonYear, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) => {
+        await calculateFinalsMvpAction(currentYear, championTeamId, runnerUpTeamId, seriesScoreStr).catch((err) => {
           console.error("[Playoff Engine] Finals MVP calculation failed:", err);
         });
       }
@@ -578,6 +663,7 @@ export async function simulatePlayoffDayAction() {
 
 export async function getSeriesGamesAction(seriesId: string) {
   try {
+    const currentYear = await getCurrentSeasonYear();
     const seriesGames = await db
       .select({
         id: games.id,
@@ -590,7 +676,12 @@ export async function getSeriesGamesAction(seriesId: string) {
         seasonYear: games.seasonYear,
       })
       .from(games)
-      .where(eq(games.seriesId, seriesId))
+      .where(
+        and(
+          eq(games.seriesId, seriesId),
+          eq(games.seasonYear, currentYear)
+        )
+      )
       .orderBy(games.gameNumber);
 
     const allTeams = await db.select().from(teams);
@@ -717,12 +808,18 @@ function getWinnerOfSeriesInMemory(
 export async function simulateUntilGrandFinalsAction() {
   try {
     console.log("[Playoff Engine] Starting fast-forward simulation until Grand Finals...");
+    const currentYear = await getCurrentSeasonYear();
 
-    // 1. Fetch active playoff games
+    // 1. Fetch active playoff games for the current season
     const dbPlayoffGames = await db
       .select()
       .from(games)
-      .where(eq(games.stage, "Playoffs"));
+      .where(
+        and(
+          eq(games.stage, "Playoffs"),
+          eq(games.seasonYear, currentYear)
+        )
+      );
 
     const inMemoryGames: InMemoryGame[] = dbPlayoffGames.map((g) => ({
       id: g.id,
@@ -748,7 +845,7 @@ export async function simulateUntilGrandFinalsAction() {
       .where(eq(players.status, "Active"));
 
     // Pre-calculate final standings seeds
-    const { north, south } = await getFinalStandings();
+    const { north, south } = await getFinalStandings(currentYear);
     const seedMap = new Map<string, number>();
     north.forEach((t, i) => seedMap.set(t.id, i + 1));
     south.forEach((t, i) => seedMap.set(t.id, i + 1));
