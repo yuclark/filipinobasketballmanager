@@ -984,6 +984,88 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
       }
     }
 
+    // Pass 3: Upgrade rosters by replacing low-rated players with higher-rated free agents (clear upgrades)
+    for (const team of shuffledCpuTeams) {
+      let upgradesDone = 0;
+      const maxUpgrades = 2; // limit upgrades per team to prevent excessive turnover
+
+      while (upgradesDone < maxUpgrades) {
+        // Query the team's current roster
+        const teamPlayers = await db
+          .select()
+          .from(players)
+          .where(and(eq(players.teamId, team.id), eq(players.status, "Active")));
+
+        if (teamPlayers.length < 12) break; // Minimum roster limit check
+
+        // Find the worst player on the roster
+        teamPlayers.sort((a, b) => a.overall - b.overall);
+        const worstPlayer = teamPlayers[0];
+
+        if (!worstPlayer) break;
+
+        const currentPayroll = teamPlayers.reduce((sum, p) => sum + p.salary, 0);
+
+        // Find a free agent who is an upgrade (OVR >= worstPlayer.overall + 5)
+        let selectedFaIndex = -1;
+        for (let j = 0; j < freeAgents.length; j++) {
+          const fa = freeAgents[j];
+          if (fa.overall >= worstPlayer.overall + 5) {
+            const projectedPayroll = currentPayroll - worstPlayer.salary + fa.salary;
+            if (projectedPayroll <= SALARY_CAP) {
+              selectedFaIndex = j;
+              break;
+            }
+          }
+        }
+
+        if (selectedFaIndex !== -1) {
+          const fa = freeAgents[selectedFaIndex];
+          freeAgents.splice(selectedFaIndex, 1);
+
+          // 1. Release the worst player
+          await db
+            .update(players)
+            .set({
+              teamId: null,
+              contractYearsRemaining: 1,
+            })
+            .where(eq(players.id, worstPlayer.id));
+
+          // 2. Sign the upgrade free agent
+          const contractYears = Math.floor(Math.random() * 2) + 2; // 2-3 years
+          await db
+            .update(players)
+            .set({
+              teamId: team.id,
+              contractYearsRemaining: contractYears,
+              salary: fa.salary,
+            })
+            .where(eq(players.id, fa.id));
+
+          const msg = `🔄 [Upgrade] [${team.city} ${team.name}] released ${worstPlayer.firstName} ${worstPlayer.lastName} (OVR ${worstPlayer.overall}) and signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) for ₱${fa.salary.toLocaleString("en-PH")}/yr to upgrade their roster.`;
+          logs.push(msg);
+
+          await db.insert(transactions).values({
+            type: "Signing",
+            description: msg,
+            seasonYear: currentYear,
+            gameDay: 82,
+          });
+
+          // Update lists and counts
+          worstPlayer.teamId = null;
+          worstPlayer.contractYearsRemaining = 1;
+          freeAgents.push(worstPlayer as any);
+          freeAgents.sort((a, b) => b.overall - a.overall);
+
+          upgradesDone++;
+        } else {
+          break;
+        }
+      }
+    }
+
     // Run the safety net sweep to enforce all rules (waive excess, minimum signings if any left)
     await enforceLeagueRosterLimitsAction();
 
