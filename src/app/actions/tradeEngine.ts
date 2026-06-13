@@ -56,10 +56,16 @@ export async function togglePickTradeBlockAction(pickId: string, isAvailable: bo
  */
 export async function getTradeOffersAction(userAssetId: string, assetType: "PLAYER" | "PICK") {
   try {
-    const lastGame = await db
+    const lastCompleted = await db
       .select({ year: games.seasonYear, day: games.gameNumber })
       .from(games)
+      .where(eq(games.status, "Completed"))
       .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+      .limit(1);
+    const lastGame = lastCompleted.length > 0 ? lastCompleted : await db
+      .select({ year: games.seasonYear, day: games.gameNumber })
+      .from(games)
+      .orderBy(desc(games.seasonYear), games.gameNumber)
       .limit(1);
     const currentSeasonYear = lastGame[0]?.year ?? 2026;
 
@@ -261,10 +267,16 @@ export async function executeUserTradeAction(
   try {
     return await db.transaction(async (tx) => {
       // 1. Fetch current season and game day from games table
-      const lastGame = await tx
+      const lastCompleted = await tx
         .select({ year: games.seasonYear, day: games.gameNumber })
         .from(games)
+        .where(eq(games.status, "Completed"))
         .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+        .limit(1);
+      const lastGame = lastCompleted.length > 0 ? lastCompleted : await tx
+        .select({ year: games.seasonYear, day: games.gameNumber })
+        .from(games)
+        .orderBy(desc(games.seasonYear), games.gameNumber)
         .limit(1);
       const currentSeasonYear = lastGame[0]?.year ?? 2026;
       const currentDay = lastGame[0]?.day ?? 1;
@@ -421,10 +433,16 @@ export async function executeUserTradeAction(
  */
 export async function generateTradeProposalsAction(seasonYear: number, userTeamId: string) {
   try {
-    const lastGame = await db
+    const lastCompleted = await db
       .select({ year: games.seasonYear, day: games.gameNumber })
       .from(games)
+      .where(eq(games.status, "Completed"))
       .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+      .limit(1);
+    const lastGame = lastCompleted.length > 0 ? lastCompleted : await db
+      .select({ year: games.seasonYear, day: games.gameNumber })
+      .from(games)
+      .orderBy(desc(games.seasonYear), games.gameNumber)
       .limit(1);
     const currentDay = lastGame[0]?.day ?? 1;
 
@@ -684,10 +702,16 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
       if (!proposal) throw new Error("Proposal not found.");
       if (proposal.status !== "Pending") throw new Error("Proposal is no longer pending.");
 
-      const lastGame = await tx
+      const lastCompleted = await tx
         .select({ year: games.seasonYear, day: games.gameNumber })
         .from(games)
+        .where(eq(games.status, "Completed"))
         .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+        .limit(1);
+      const lastGame = lastCompleted.length > 0 ? lastCompleted : await tx
+        .select({ year: games.seasonYear, day: games.gameNumber })
+        .from(games)
+        .orderBy(desc(games.seasonYear), games.gameNumber)
         .limit(1);
       const currentSeasonYear = lastGame[0]?.year ?? 2026;
       const currentDay = lastGame[0]?.day ?? 1;
