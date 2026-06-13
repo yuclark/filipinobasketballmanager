@@ -500,19 +500,11 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
       })
       .where(eq(draftSessions.seasonYear, season));
 
-    // Record transaction
-    const lastGame = await db
-      .select({ year: games.seasonYear })
-      .from(games)
-      .orderBy(desc(games.seasonYear))
-      .limit(1);
-    const currentYear = lastGame[0]?.year ?? 2026;
-
     const description = `DRAFT — With Pick ${pickNumber}, ${team.city} ${team.name} selected ${player.firstName} ${player.lastName} (${player.position}, OVR ${player.overall}).`;
     await db.insert(transactions).values({
       type: "Draft",
       description,
-      seasonYear: currentYear,
+      seasonYear: season,
       gameDay: 82,
     });
 
@@ -1329,14 +1321,6 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
       return { success: false, status: "NO_PROSPECTS" as const, message: "No prospects remain in the draft pool." };
     }
 
-    // Get the last game for transaction logging year
-    const lastGame = await db
-      .select({ year: games.seasonYear })
-      .from(games)
-      .orderBy(desc(games.seasonYear))
-      .limit(1);
-    const currentYear = lastGame[0]?.year ?? 2026;
-
     const selections: Array<{
       team: { id: string; name: string; city: string };
       player: { id: string; firstName: string; lastName: string; position: string; overall: number };
@@ -1357,7 +1341,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
         pick.id,
         pick.ownerTeamId!,
         pick.pickNumber!,
-        currentYear
+        season
       );
 
       if (!pickRes.success) {
@@ -1501,14 +1485,6 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
       return { success: false, status: "NO_PROSPECTS" as const, message: "No prospects remain in the draft pool." };
     }
 
-    // Get the last game for transaction logging year
-    const lastGame = await db
-      .select({ year: games.seasonYear })
-      .from(games)
-      .orderBy(desc(games.seasonYear))
-      .limit(1);
-    const currentYear = lastGame[0]?.year ?? 2026;
-
     const selections: Array<{
       team: { id: string; name: string; city: string };
       player: { id: string; firstName: string; lastName: string; position: string; overall: number };
@@ -1529,7 +1505,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
         pick.id,
         pick.ownerTeamId!,
         pick.pickNumber!,
-        currentYear
+        season
       );
 
       if (!pickRes.success) {
