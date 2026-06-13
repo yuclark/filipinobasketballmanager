@@ -110,6 +110,7 @@ export default function OffseasonWizardPage() {
 
   // 5-Phase Wizard State
   const [currentPhase, setCurrentPhase] = useState<number>(1);
+  const [draftSessionId, setDraftSessionId] = useState<string | null>(null);
 
   // Phase 1: Re-Signings State
   const [expiringPlayers, setExpiringPlayers] = useState<Player[]>([]);
@@ -174,6 +175,7 @@ export default function OffseasonWizardPage() {
   const saveWizardState = (updates: any = {}) => {
     const state = {
       seasonYear: nextSeasonYear,
+      draftSessionId: updates.draftSessionId !== undefined ? updates.draftSessionId : draftSessionId,
       currentPhase: updates.currentPhase ?? currentPhase,
       reSignedPlayerIds: updates.reSignedPlayerIds ?? reSignedPlayerIds,
       declinedPlayerIds: updates.declinedPlayerIds ?? declinedPlayerIds,
@@ -199,9 +201,14 @@ export default function OffseasonWizardPage() {
     try {
       // 1. Reload offseason state from server
       const stateRes = await getCurrentOffseasonStateAction(targetYear, userTeamId);
+      let serverSessionId: string | null = null;
       if (stateRes.success) {
         setCurrentPhase(stateRes.offseasonPhase);
         setDraftSessionActive(stateRes.hasActiveDraftSession);
+        if (stateRes.draftSessionId) {
+          setDraftSessionId(stateRes.draftSessionId);
+          serverSessionId = stateRes.draftSessionId;
+        }
       }
 
       // 2. Reload prospects
@@ -227,7 +234,8 @@ export default function OffseasonWizardPage() {
         setPickHistory(historyRes.history);
         saveWizardState({
           currentPickIndex: sessionPicks.filter((p: any) => p.isUsed).length,
-          pickHistory: historyRes.history
+          pickHistory: historyRes.history,
+          draftSessionId: serverSessionId ?? undefined
         });
       }
 
@@ -284,8 +292,10 @@ export default function OffseasonWizardPage() {
       // Load server offseason state
       const serverStateRes = await getCurrentOffseasonStateAction(upcomingYear, userTeamId);
       let serverPhase = 1;
+      let serverSessionId: string | null = null;
       if (serverStateRes.success) {
         serverPhase = serverStateRes.offseasonPhase;
+        serverSessionId = serverStateRes.draftSessionId || null;
         setDraftSessionActive(serverStateRes.hasActiveDraftSession);
       }
 
@@ -295,10 +305,31 @@ export default function OffseasonWizardPage() {
       if (saved) {
         try {
           loadedState = JSON.parse(saved);
-          if (loadedState.seasonYear !== upcomingYear) {
-            console.log("[Offseason] Stale season wizard state in localStorage. Resetting.");
+          
+          const isStaleSession = serverSessionId && loadedState.draftSessionId && loadedState.draftSessionId !== serverSessionId;
+          const isStaleYear = loadedState.seasonYear !== upcomingYear;
+          
+          if (isStaleYear || isStaleSession) {
+            console.log(`[Offseason] Stale season/session wizard state in localStorage. Resetting. (isStaleYear: ${isStaleYear}, isStaleSession: ${isStaleSession})`);
             localStorage.removeItem("filipino-basketball-manager-offseason-wizard");
             loadedState = {};
+            
+            // Reset React state variables to default values
+            setCpuReSignSimulated(false);
+            setCpuReSignLogs([]);
+            setEvolutionSimulated(false);
+            setEvolutionLogs([]);
+            setLotteryRun(false);
+            setFreeAgencySimulated(false);
+            setFreeAgencyLogs([]);
+            setReSignedPlayerIds([]);
+            setDeclinedPlayerIds([]);
+            setEvolutionResults(null);
+            setLotteryDraws([]);
+            setDraftOrder([]);
+            setLotteryOddsList([]);
+            setCurrentPickIndex(0);
+            setPickHistory([]);
           }
         } catch (e) {
           console.error("Failed to parse saved wizard state:", e);
@@ -307,6 +338,12 @@ export default function OffseasonWizardPage() {
 
       const resolvedPhase = serverStateRes.success ? serverPhase : (loadedState.currentPhase || 1);
       setCurrentPhase(resolvedPhase);
+
+      if (serverSessionId) {
+        setDraftSessionId(serverSessionId);
+      } else if (loadedState.draftSessionId) {
+        setDraftSessionId(loadedState.draftSessionId);
+      }
 
       if (loadedState.reSignedPlayerIds) setReSignedPlayerIds(loadedState.reSignedPlayerIds);
       if (loadedState.declinedPlayerIds) setDeclinedPlayerIds(loadedState.declinedPlayerIds);
@@ -363,11 +400,35 @@ export default function OffseasonWizardPage() {
 
       // Fetch draft history from database
       const historyRes = await getDraftHistoryAction(upcomingYear);
+      let resolvedHistory = [];
       if (historyRes.success && historyRes.history) {
         setPickHistory(historyRes.history);
+        resolvedHistory = historyRes.history;
       } else if (loadedState.pickHistory) {
         setPickHistory(loadedState.pickHistory);
+        resolvedHistory = loadedState.pickHistory;
       }
+
+      // Sync state back to localStorage immediately
+      saveWizardState({
+        draftSessionId: serverSessionId,
+        currentPhase: resolvedPhase,
+        reSignedPlayerIds: loadedState.reSignedPlayerIds || [],
+        declinedPlayerIds: loadedState.declinedPlayerIds || [],
+        cpuReSignLogs: loadedState.cpuReSignLogs || [],
+        cpuReSignSimulated: loadedState.cpuReSignSimulated || false,
+        evolutionLogs: loadedState.evolutionLogs || [],
+        evolutionSimulated: loadedState.evolutionSimulated || false,
+        draftOrder: loadedState.draftOrder || [],
+        lotteryOddsList: loadedState.lotteryOddsList || [],
+        lotteryDraws: loadedState.lotteryDraws || [],
+        lotteryRun: loadedState.lotteryRun || false,
+        currentPickIndex: loadedState.currentPickIndex !== undefined ? loadedState.currentPickIndex : 0,
+        freeAgencySimulated: loadedState.freeAgencySimulated !== undefined ? loadedState.freeAgencySimulated : false,
+        freeAgencyLogs: loadedState.freeAgencyLogs || [],
+        evolutionResults: loadedState.evolutionResults || null,
+        pickHistory: resolvedHistory
+      });
     } catch (err: any) {
       console.error(err);
       setError("Failed to load offseason wizard context.");
