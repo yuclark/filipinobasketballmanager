@@ -234,7 +234,7 @@ export default function SchedulePage() {
   const handleSimulateRestOfDay = async () => {
     setSimulating(true);
     try {
-      const res = await simulateRemainingDayGames(currentLeagueDay);
+      const res = await simulateRemainingDayGames(currentLeagueDay, userTeamId);
       if (res.success) {
         if (res.status === "REGULAR_SEASON_COMPLETE") {
           router.push("/dashboard/awards");

@@ -128,6 +128,12 @@ async function main() {
     await db.delete(schema.draftPicks);
     console.log(" - Truncated draft_picks");
 
+    await db.delete(schema.draftSessions);
+    console.log(" - Truncated draft_sessions");
+
+    await db.delete(schema.tradeProposals);
+    console.log(" - Truncated trade_proposals");
+
     console.log("Truncating core players and teams tables...");
 
     await db.delete(schema.players);

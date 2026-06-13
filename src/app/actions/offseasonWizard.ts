@@ -430,8 +430,8 @@ export async function getCurrentOffseasonStateAction(seasonYear: number, userTea
     let hasDraftPool = Number(draftPoolCount[0]?.count ?? 0) > 0;
 
     if (!hasDraftPool) {
-      console.log(`[Offseason Wizard] Empty draft pool. Auto-generating 45 rookies for ${seasonYear}...`);
-      await generateRookiePoolAction(seasonYear, true, 45);
+      console.log(`[Offseason Wizard] Empty draft pool. Auto-generating 75 rookies for ${seasonYear}...`);
+      await generateRookiePoolAction(seasonYear, true, 75);
       hasDraftPool = true;
     }
 

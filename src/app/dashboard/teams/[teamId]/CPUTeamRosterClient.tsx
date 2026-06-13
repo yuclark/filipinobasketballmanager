@@ -52,7 +52,29 @@ interface CPUTeamRosterClientProps {
   } | null;
 }
 
-type SortKey = "name" | "age" | "hometown" | "overall" | "salary" | "position";
+type SortKey =
+  | "name"
+  | "position"
+  | "age"
+  | "hometown"
+  | "salary"
+  | "overall"
+  | "threePoint"
+  | "insideScoring"
+  | "defense"
+  | "rebounding"
+  | "per"
+  | "winShares"
+  | "gp"
+  | "mpg"
+  | "ppg"
+  | "rpg"
+  | "apg"
+  | "spg"
+  | "bpg"
+  | "fgPct"
+  | "fg3Pct"
+  | "ftPct";
 
 export default function CPUTeamRosterClient({
   team,
@@ -92,6 +114,46 @@ export default function CPUTeamRosterClient({
     }
   };
 
+  const activeStats = stats
+    ? statsTab === "regular"
+      ? stats.regularSeason
+      : statsTab === "playoffs"
+      ? stats.playoffs
+      : stats.career
+    : [];
+
+  const getSortValue = (player: Player, key: SortKey) => {
+    if (key === "name") return `${player.firstName} ${player.lastName}`.toLowerCase();
+    if (key === "position") return player.position;
+    if (key === "age") return player.age;
+    if (key === "hometown") return player.hometown.toLowerCase();
+    if (key === "salary") return player.salary;
+    if (key === "overall") return player.overall;
+    if (key === "threePoint") return player.threePoint;
+    if (key === "insideScoring") return player.insideScoring;
+    if (key === "rebounding") return player.rebounding;
+    if (key === "defense") return Math.round((player.perimeterDefense + player.interiorDefense) / 2);
+
+    // Stats
+    const pStats = activeStats.find((s) => s.playerId === player.id);
+    if (!pStats) return 0;
+
+    if (key === "per") return pStats.per ?? 0;
+    if (key === "winShares") return pStats.winShares ?? 0;
+    if (key === "gp") return pStats.gp ?? 0;
+    if (key === "mpg") return pStats.mpg ?? 0;
+    if (key === "ppg") return pStats.ppg ?? 0;
+    if (key === "rpg") return pStats.rpg ?? 0;
+    if (key === "apg") return pStats.apg ?? 0;
+    if (key === "spg") return pStats.spg ?? 0;
+    if (key === "bpg") return pStats.bpg ?? 0;
+    if (key === "fgPct") return pStats.fgPct ?? 0;
+    if (key === "fg3Pct") return pStats.fg3Pct ?? 0;
+    if (key === "ftPct") return pStats.ftPct ?? 0;
+
+    return 0;
+  };
+
   const filteredPlayers = [...players]
     .filter((player) => {
       const fullName = `${player.firstName} ${player.lastName}`.toLowerCase();
@@ -101,41 +163,13 @@ export default function CPUTeamRosterClient({
       return fullName.includes(query) || hometown.includes(query) || pos.includes(query);
     })
     .sort((a, b) => {
-      let valA: any = "";
-      let valB: any = "";
-
-      if (sortKey === "name") {
-        valA = `${a.firstName} ${a.lastName}`.toLowerCase();
-        valB = `${b.firstName} ${b.lastName}`.toLowerCase();
-      } else if (sortKey === "age") {
-        valA = a.age;
-        valB = b.age;
-      } else if (sortKey === "hometown") {
-        valA = a.hometown.toLowerCase();
-        valB = b.hometown.toLowerCase();
-      } else if (sortKey === "overall") {
-        valA = a.overall;
-        valB = b.overall;
-      } else if (sortKey === "salary") {
-        valA = a.salary;
-        valB = b.salary;
-      } else if (sortKey === "position") {
-        valA = a.position;
-        valB = b.position;
-      }
+      const valA = getSortValue(a, sortKey);
+      const valB = getSortValue(b, sortKey);
 
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ? 1 : -1;
       return 0;
     });
-
-  const activeStats = stats
-    ? statsTab === "regular"
-      ? stats.regularSeason
-      : statsTab === "playoffs"
-      ? stats.playoffs
-      : stats.career
-    : [];
 
   return (
     <div className="space-y-8">
@@ -346,23 +380,55 @@ export default function CPUTeamRosterClient({
                 </th>
                 {viewMode === "attributes" ? (
                   <>
-                    <th className="py-4.5 px-4 text-center">3PT</th>
-                    <th className="py-4.5 px-4 text-center">INS</th>
-                    <th className="py-4.5 px-4 text-center">DEF</th>
-                    <th className="py-4.5 px-4 text-center">REB</th>
+                    <th onClick={() => handleSort("threePoint")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>3PT</span>
+                        <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("insideScoring")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>INS</span>
+                        <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("defense")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>DEF</span>
+                        <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("rebounding")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>REB</span>
+                        <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("per")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>PER</span>
+                        <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                      </div>
+                    </th>
+                    <th onClick={() => handleSort("winShares")} className="py-4.5 px-4 text-center cursor-pointer hover:bg-zinc-900 transition-colors">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>WS</span>
+                        <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                      </div>
+                    </th>
                   </>
                 ) : (
                   <>
-                    <th className="py-4.5 px-4 text-center">GP</th>
-                    <th className="py-4.5 px-4 text-center">MIN</th>
-                    <th className="py-4.5 px-4 text-center">PPG</th>
-                    <th className="py-4.5 px-4 text-center">RPG</th>
-                    <th className="py-4.5 px-4 text-center">APG</th>
-                    <th className="py-4.5 px-4 text-center">SPG</th>
-                    <th className="py-4.5 px-4 text-center">BPG</th>
-                    <th className="py-4.5 px-4 text-center">FG%</th>
-                    <th className="py-4.5 px-4 text-center">3P%</th>
-                    <th className="py-4.5 px-4 text-center">FT%</th>
+                    <th onClick={() => handleSort("gp")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">GP</th>
+                    <th onClick={() => handleSort("mpg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">MIN</th>
+                    <th onClick={() => handleSort("ppg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors text-orange-400">PPG</th>
+                    <th onClick={() => handleSort("rpg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">RPG</th>
+                    <th onClick={() => handleSort("apg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">APG</th>
+                    <th onClick={() => handleSort("spg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">SPG</th>
+                    <th onClick={() => handleSort("bpg")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">BPG</th>
+                    <th onClick={() => handleSort("fgPct")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">FG%</th>
+                    <th onClick={() => handleSort("fg3Pct")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">3P%</th>
+                    <th onClick={() => handleSort("ftPct")} className="py-4.5 px-3 text-center cursor-pointer hover:bg-zinc-900 transition-colors">FT%</th>
                   </>
                 )}
               </tr>
@@ -447,16 +513,21 @@ export default function CPUTeamRosterClient({
                       </td>
 
                       {/* Performance attributes or Season Stats */}
-                      {viewMode === "attributes" ? (
-                        <>
-                          <td className="py-4 px-4 text-center">{renderStatBar(player.threePoint)}</td>
-                          <td className="py-4 px-4 text-center">{renderStatBar(player.insideScoring)}</td>
-                          <td className="py-4 px-4 text-center">{renderStatBar(defScore)}</td>
-                          <td className="py-4 px-4 text-center">{renderStatBar(player.rebounding)}</td>
-                        </>
-                      ) : (() => {
+                      {(() => {
                         const pStats = activeStats.find((s: any) => s.playerId === player.id);
-                        return (
+                        const playerPer = pStats?.per ?? "0.0";
+                        const playerWS = pStats?.winShares ?? "0.00";
+
+                        return viewMode === "attributes" ? (
+                          <>
+                            <td className="py-4 px-4 text-center">{renderStatBar(player.threePoint)}</td>
+                            <td className="py-4 px-4 text-center">{renderStatBar(player.insideScoring)}</td>
+                            <td className="py-4 px-4 text-center">{renderStatBar(defScore)}</td>
+                            <td className="py-4 px-4 text-center">{renderStatBar(player.rebounding)}</td>
+                            <td className="py-4 px-4 text-center font-extrabold text-red-400">{playerPer}</td>
+                            <td className="py-4 px-4 text-center font-extrabold text-green-400">{playerWS}</td>
+                          </>
+                        ) : (
                           <>
                             <td className="py-4 px-4 text-center font-bold text-zinc-300">
                               {pStats?.gp ?? 0}
@@ -496,7 +567,7 @@ export default function CPUTeamRosterClient({
                 })
               ) : (
                 <tr>
-                  <td colSpan={viewMode === "attributes" ? 10 : 16} className="py-12 text-center text-zinc-500">
+                  <td colSpan={viewMode === "attributes" ? 12 : 16} className="py-12 text-center text-zinc-500">
                     No active rostered players found.
                   </td>
                 </tr>

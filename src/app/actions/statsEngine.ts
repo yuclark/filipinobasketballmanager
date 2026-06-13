@@ -11,6 +11,44 @@ export async function getPlayerStatsAction(playerId: string) {
       return { success: false, error: "Player ID is required." };
     }
 
+    // Fetch current season year from games table
+    const lastGame = await db
+      .select({ year: games.seasonYear })
+      .from(games)
+      .orderBy(desc(games.seasonYear))
+      .limit(1);
+    const currentSeasonYear = lastGame[0]?.year ?? 2026;
+
+    // Fetch player overall rating and teamId
+    const [player] = await db
+      .select()
+      .from(players)
+      .where(eq(players.id, playerId))
+      .limit(1);
+
+    // Fetch team wins for winShares calculation
+    let teamWins = 0;
+    if (player && player.teamId) {
+      const teamGames = await db
+        .select({
+          homeTeamId: games.homeTeamId,
+          awayTeamId: games.awayTeamId,
+          homeScore: games.homeScore,
+          awayScore: games.awayScore,
+          status: games.status,
+        })
+        .from(games)
+        .where(and(eq(games.stage, "Regular"), eq(games.seasonYear, currentSeasonYear)));
+
+      for (const g of teamGames) {
+        if (g.status !== "Completed") continue;
+        const isHome = g.homeTeamId === player.teamId;
+        const myScore = isHome ? g.homeScore : g.awayScore;
+        const oppScore = isHome ? g.awayScore : g.homeScore;
+        if (myScore > oppScore) teamWins++;
+      }
+    }
+
     const logs = await db
       .select({
         stage: games.stage,
@@ -35,7 +73,7 @@ export async function getPlayerStatsAction(playerId: string) {
     const computeAverages = (gameLogs: typeof logs) => {
       const gp = gameLogs.length;
       if (gp === 0) {
-        return { gp: 0, min: 0, ppg: 0, rpg: 0, apg: 0, spg: 0, bpg: 0, fgPct: 0, fg3Pct: 0, ftPct: 0 };
+        return { gp: 0, min: 0, ppg: 0, rpg: 0, apg: 0, spg: 0, bpg: 0, fgPct: 0, fg3Pct: 0, ftPct: 0, per: 0, winShares: 0 };
       }
 
       const totalMin = gameLogs.reduce((sum, l) => sum + l.minutes, 0);
@@ -44,6 +82,7 @@ export async function getPlayerStatsAction(playerId: string) {
       const totalAst = gameLogs.reduce((sum, l) => sum + l.assists, 0);
       const totalStl = gameLogs.reduce((sum, l) => sum + l.steals, 0);
       const totalBlk = gameLogs.reduce((sum, l) => sum + l.blocks, 0);
+      const totalTov = gameLogs.reduce((sum, l) => sum + l.turnovers, 0);
 
       const totalFgm = gameLogs.reduce((sum, l) => sum + l.fgm, 0);
       const totalFga = gameLogs.reduce((sum, l) => sum + l.fga, 0);
@@ -51,6 +90,19 @@ export async function getPlayerStatsAction(playerId: string) {
       const totalFg3a = gameLogs.reduce((sum, l) => sum + l.fg3a, 0);
       const totalFtm = gameLogs.reduce((sum, l) => sum + l.ftm, 0);
       const totalFta = gameLogs.reduce((sum, l) => sum + l.fta, 0);
+
+      const avgMin = totalMin / gp;
+      let rawPer = 0;
+      if (totalMin > 0) {
+        rawPer = ((totalPts + totalReb * 1.2 + totalAst * 1.5 + totalStl * 2.0 + totalBlk * 2.0 - totalTov * 1.5 - (totalFga - totalFgm) * 0.8 - (totalFta - totalFtm) * 0.4) / totalMin) * 15;
+      }
+      
+      let per = rawPer;
+      if (player && avgMin < 5) {
+        per = (rawPer * avgMin + player.overall * (5 - avgMin)) / 5;
+      }
+
+      const winShares = (totalPts * 0.03 + totalReb * 0.05 + totalAst * 0.04 + totalStl * 0.1 + totalBlk * 0.1 - totalTov * 0.08) * (teamWins / 82) * 4.5;
 
       return {
         gp,
@@ -63,6 +115,8 @@ export async function getPlayerStatsAction(playerId: string) {
         fgPct: totalFga > 0 ? Number(((totalFgm / totalFga) * 100).toFixed(1)) : 0,
         fg3Pct: totalFg3a > 0 ? Number(((totalFg3m / totalFg3a) * 100).toFixed(1)) : 0,
         ftPct: totalFta > 0 ? Number(((totalFtm / totalFta) * 100).toFixed(1)) : 0,
+        per: Number(per.toFixed(1)),
+        winShares: Number(winShares.toFixed(2)),
       };
     };
 

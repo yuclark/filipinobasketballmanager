@@ -678,12 +678,22 @@ export async function simulateGameAction(gameId: string) {
   }
 }
 
-export async function simulateRemainingDayGames(day: number) {
+export async function simulateRemainingDayGames(day: number, userTeamId?: string | null) {
   try {
     const scheduledGames = await db
       .select()
       .from(games)
       .where(and(eq(games.gameNumber, day), eq(games.status, "Scheduled")));
+
+    if (scheduledGames.length === 0) {
+      return {
+        success: true,
+        count: 0,
+        status: "SUCCESS"
+      };
+    }
+
+    const seasonYear = scheduledGames[0].seasonYear;
 
     const results = [];
     let isComplete = false;
@@ -694,6 +704,12 @@ export async function simulateRemainingDayGames(day: number) {
         isComplete = true;
       }
     }
+
+    // Trigger trade proposal generation during single-day simulation
+    if (Math.random() < 0.15 && userTeamId) {
+      await generateTradeProposalsAction(seasonYear, userTeamId);
+    }
+
     return {
       success: true,
       count: results.length,
@@ -711,7 +727,7 @@ export async function getStandingsDataAction() {
     const completedGames = await db
       .select()
       .from(games)
-      .where(eq(games.status, "Completed"));
+      .where(and(eq(games.status, "Completed"), eq(games.stage, "Regular")));
 
     return { success: true, teams: allTeams, completedGames };
   } catch (error: any) {

@@ -789,7 +789,7 @@ export async function getDraftProspectsAction(seasonYear?: number) {
         const currentYear = lastGame[0]?.year ?? 2026;
         targetYear = currentYear + 1;
       }
-      await generateRookiePoolAction(targetYear, true, 45);
+      await generateRookiePoolAction(targetYear, true, 75);
       prospects = await db
         .select()
         .from(players)
@@ -861,17 +861,32 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
     const logs: string[] = [];
     const SALARY_CAP = 50000000;
 
-    // CPU teams sign players if they have less than 12 players
-    for (const team of cpuTeams) {
-      const roster = rosters[team.id] || [];
-      let currentPayroll = roster.reduce((sum, p) => sum + p.salary, 0);
-      let rosterSize = roster.length;
+    // Fetch current year once at the beginning
+    const lastGame = await db
+      .select({ year: games.seasonYear })
+      .from(games)
+      .orderBy(desc(games.seasonYear))
+      .limit(1);
+    const currentYear = lastGame[0]?.year ?? 2026;
 
-      if (rosterSize < 12) {
-        const slotsNeeded = 12 - rosterSize;
+    // Track CPU team payroll and roster size in memory
+    const teamState: Record<string, { payroll: number; size: number }> = {};
+    for (const team of allTeams) {
+      const roster = rosters[team.id] || [];
+      teamState[team.id] = {
+        payroll: roster.reduce((sum, p) => sum + p.salary, 0),
+        size: roster.length,
+      };
+    }
+
+    // Pass 1: CPU teams sign players to enforce minimum roster size of 12
+    for (const team of cpuTeams) {
+      const state = teamState[team.id];
+      if (state.size < 12) {
+        const slotsNeeded = 12 - state.size;
 
         for (let i = 0; i < slotsNeeded; i++) {
-          const capRemaining = SALARY_CAP - currentPayroll;
+          const capRemaining = SALARY_CAP - state.payroll;
           // Find the best FA we can afford, or sign at min salary if cap space is less than 500k
           let selectedFaIndex = -1;
           for (let j = 0; j < freeAgents.length; j++) {
@@ -904,12 +919,60 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
             const msg = `✍️ [${team.city} ${team.name}] signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) for ₱${signingSalary.toLocaleString("en-PH")}/yr.`;
             logs.push(msg);
 
-            const lastGame = await db
-              .select({ year: games.seasonYear })
-              .from(games)
-              .orderBy(desc(games.seasonYear))
-              .limit(1);
-            const currentYear = lastGame[0]?.year ?? 2026;
+            await db.insert(transactions).values({
+              type: "Signing",
+              description: msg,
+              seasonYear: currentYear,
+              gameDay: 82,
+            });
+
+            state.payroll += signingSalary;
+            state.size++;
+          }
+        }
+      }
+    }
+
+    // Pass 2: Allow CPU teams to sign quality free agents (OVR >= 65) up to 14 players
+    // Shuffle CPU teams for a fairer distribution
+    const shuffledCpuTeams = [...cpuTeams].sort(() => Math.random() - 0.5);
+
+    let signedInRound = true;
+    while (signedInRound) {
+      signedInRound = false;
+      for (const team of shuffledCpuTeams) {
+        const state = teamState[team.id];
+        if (state.size < 14) {
+          const capRemaining = SALARY_CAP - state.payroll;
+          // Maintain a ₱1,000,000 cap buffer to leave breathing room for trades/emergency signings
+          let selectedFaIndex = -1;
+          for (let j = 0; j < freeAgents.length; j++) {
+            const fa = freeAgents[j];
+            if (fa.overall >= 65 && fa.salary <= capRemaining - 1000000) {
+              selectedFaIndex = j;
+              break;
+            }
+          }
+
+          if (selectedFaIndex !== -1) {
+            const fa = freeAgents[selectedFaIndex];
+            freeAgents.splice(selectedFaIndex, 1);
+
+            const contractYears = Math.floor(Math.random() * 2) + 2; // 2-3 years
+            const signingSalary = fa.salary;
+
+            await db
+              .update(players)
+              .set({
+                teamId: team.id,
+                contractYearsRemaining: contractYears,
+                salary: signingSalary,
+              })
+              .where(eq(players.id, fa.id));
+
+            // Log it
+            const msg = `✍️ [Competitive] [${team.city} ${team.name}] signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) for ₱${signingSalary.toLocaleString("en-PH")}/yr to bolster depth.`;
+            logs.push(msg);
 
             await db.insert(transactions).values({
               type: "Signing",
@@ -918,8 +981,9 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
               gameDay: 82,
             });
 
-            currentPayroll += signingSalary;
-            rosterSize++;
+            state.payroll += signingSalary;
+            state.size++;
+            signedInRound = true;
           }
         }
       }
@@ -1088,12 +1152,25 @@ async function processSingleDraftPick(
   currentYear: number
 ): Promise<SingleDraftPickResult> {
   // 1. Fetch best available prospect
-  const [prospect] = await db
+  let [prospect] = await db
     .select()
     .from(players)
     .where(eq(players.status, "DraftPool"))
     .orderBy(desc(players.overall))
     .limit(1);
+
+  if (!prospect) {
+    console.log(`[Draft Engine] Emergency rookie pool replenishment triggered for season ${currentYear}...`);
+    const regenRes = await generateRookiePoolAction(currentYear, true, 30);
+    if (regenRes.success) {
+      [prospect] = await db
+        .select()
+        .from(players)
+        .where(eq(players.status, "DraftPool"))
+        .orderBy(desc(players.overall))
+        .limit(1);
+    }
+  }
 
   if (!prospect) {
     return { success: false, status: "NO_PROSPECTS", error: "No prospects remaining in the draft pool." };
