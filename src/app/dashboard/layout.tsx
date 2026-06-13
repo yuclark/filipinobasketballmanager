@@ -214,7 +214,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main Panel */}
-      <main className="ml-0 md:ml-60 flex-1 flex flex-col min-h-screen relative z-10 overflow-y-auto">
+      <main className="ml-0 md:ml-60 flex-1 flex flex-col min-h-screen relative z-10 overflow-y-auto min-w-0">
         {/* Top Header */}
         <header className="border-b border-zinc-900 bg-zinc-950/50 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4 md:hidden">
@@ -257,7 +257,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Inner Content Area */}
-        <div className="flex-1 p-6 md:p-8">
+        <div className="flex-1 p-6 md:p-8 min-w-0">
           {/* Roster Top Info Banner */}
           <div className="bg-gradient-to-r from-zinc-900 to-zinc-900/30 border border-zinc-900 rounded-3xl p-6 md:p-8 mb-8 relative overflow-hidden shadow-xl">
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
