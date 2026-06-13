@@ -32,6 +32,7 @@ interface Player {
   rebounding: number;
   speed: number;
   stamina: number;
+  isRookie?: boolean;
 }
 
 interface Team {
@@ -469,12 +470,20 @@ export default function CPUTeamRosterClient({
                             <span className="font-bold text-zinc-100 group-hover:text-white block transition-colors">
                               {player.firstName} {player.lastName}
                             </span>
-                            {player.isFilAm && (
-                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">
-                                <Sparkles className="w-2.5 h-2.5" />
-                                Fil-Am
-                              </span>
-                            )}
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {player.isFilAm && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  Fil-Am
+                                </span>
+                              )}
+                              {player.isRookie && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-orange-500/10 text-orange-400 border border-orange-500/20 tracking-wider">
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  Rookie
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
