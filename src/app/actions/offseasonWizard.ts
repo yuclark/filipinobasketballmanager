@@ -324,6 +324,9 @@ export async function finalizeOffseasonAction() {
     // 3. Clear schedule games and stats (will cascade delete playerGameStats)
     await db.delete(games);
 
+    // Clear old transactions (league news feed) for the new season
+    await db.delete(transactions);
+
     // 4. Generate new schedule for the next year
     const scheduleRes = await generateScheduleAction(nextYear);
     if (!scheduleRes.success) {

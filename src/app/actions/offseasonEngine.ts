@@ -525,7 +525,7 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
     if (Number(remainingUnused[0]?.count ?? 0) === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
+        .set({ status: "completed", updatedAt: new Date() })
         .where(eq(draftSessions.seasonYear, season));
       console.log(`[Draft] All draft picks used. Season ${season} draft session marked as completed.`);
     }
@@ -721,6 +721,9 @@ export async function advanceToNextSeasonAction() {
 
     // 2. Wipe completed season schedule
     await db.delete(games); // Cascade deletes playerGameStats
+
+    // Clear old transactions (league news feed) for the new season
+    await db.delete(transactions);
 
     // 3. Generate new schedule for the next year
     const scheduleRes = await generateScheduleAction(nextYear);
@@ -1308,7 +1311,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     if (unusedPicks.length === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
+        .set({ status: "completed", updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
       revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, picksSimulated: 0, selections: [] };
@@ -1381,7 +1384,7 @@ export async function simulateCpuPicksAction(userTeamId: string, season: number)
     if (Number(remainingUnused[0]?.count ?? 0) === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
+        .set({ status: "completed", updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
       revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, selections, picksSimulated };
@@ -1480,7 +1483,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     if (unusedPicks.length === 0) {
       await db
         .update(draftSessions)
-        .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
+        .set({ status: "completed", updatedAt: new Date() })
         .where(eq(draftSessions.id, session.id));
       revalidatePath("/dashboard/offseason");
       return { success: true, status: "COMPLETED" as const, totalPicksSimulated: 0, selections: [] };
@@ -1547,7 +1550,7 @@ export async function autoCompleteDraftAction(userTeamId: string, season: number
     // Mark session as completed
     await db
       .update(draftSessions)
-      .set({ status: "completed", offseasonPhase: 5, updatedAt: new Date() })
+      .set({ status: "completed", updatedAt: new Date() })
       .where(eq(draftSessions.id, session.id));
 
     revalidatePath("/dashboard/offseason");
