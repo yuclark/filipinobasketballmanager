@@ -706,7 +706,7 @@ export async function simulateRemainingDayGames(day: number, userTeamId?: string
     }
 
     // Trigger trade proposal generation during single-day simulation
-    if (Math.random() < 0.15 && userTeamId) {
+    if (userTeamId) {
       await generateTradeProposalsAction(seasonYear, userTeamId);
     }
 
@@ -811,7 +811,7 @@ export async function simulateBatchDaysAction(
         localPlayers = aiResult.updatedPlayers;
         localTeams = aiResult.updatedTeams;
 
-        if (Math.random() < 0.10 && userTeamId) {
+        if (userTeamId) {
           await generateTradeProposalsAction(seasonYear, userTeamId);
         }
 
@@ -1102,7 +1102,7 @@ export async function simulateWeekChunkAction(
       localPlayers = aiResult.updatedPlayers;
       localTeams = aiResult.updatedTeams;
 
-      if (Math.random() < 0.10 && userTeamId) {
+      if (userTeamId) {
         await generateTradeProposalsAction(seasonYear, userTeamId);
       }
 

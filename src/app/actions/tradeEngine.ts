@@ -56,18 +56,12 @@ export async function togglePickTradeBlockAction(pickId: string, isAvailable: bo
  */
 export async function getTradeOffersAction(userAssetId: string, assetType: "PLAYER" | "PICK") {
   try {
-    const lastCompleted = await db
-      .select({ year: games.seasonYear, day: games.gameNumber })
+    const maxSeasonGame = await db
+      .select({ year: games.seasonYear })
       .from(games)
-      .where(eq(games.status, "Completed"))
-      .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+      .orderBy(desc(games.seasonYear))
       .limit(1);
-    const lastGame = lastCompleted.length > 0 ? lastCompleted : await db
-      .select({ year: games.seasonYear, day: games.gameNumber })
-      .from(games)
-      .orderBy(desc(games.seasonYear), games.gameNumber)
-      .limit(1);
-    const currentSeasonYear = lastGame[0]?.year ?? 2026;
+    const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
 
     let userTeamId = "";
     let userAssetValue = 0;
@@ -267,19 +261,24 @@ export async function executeUserTradeAction(
   try {
     return await db.transaction(async (tx) => {
       // 1. Fetch current season and game day from games table
-      const lastCompleted = await tx
-        .select({ year: games.seasonYear, day: games.gameNumber })
+      const maxSeasonGame = await tx
+        .select({ year: games.seasonYear })
         .from(games)
-        .where(eq(games.status, "Completed"))
-        .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+        .orderBy(desc(games.seasonYear))
         .limit(1);
-      const lastGame = lastCompleted.length > 0 ? lastCompleted : await tx
-        .select({ year: games.seasonYear, day: games.gameNumber })
+      const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
+
+      const nextScheduled = await tx
+        .select({ day: games.gameNumber })
         .from(games)
-        .orderBy(desc(games.seasonYear), games.gameNumber)
+        .where(and(
+          eq(games.seasonYear, currentSeasonYear),
+          eq(games.status, "Scheduled"),
+          eq(games.stage, "Regular")
+        ))
+        .orderBy(games.gameNumber)
         .limit(1);
-      const currentSeasonYear = lastGame[0]?.year ?? 2026;
-      const currentDay = lastGame[0]?.day ?? 1;
+      const currentDay = nextScheduled[0]?.day ?? 82;
 
       if (currentDay > 50) {
         throw new Error("The trade deadline has passed. Roster adjustments are locked until the offseason.");
@@ -431,20 +430,43 @@ export async function executeUserTradeAction(
 /**
  * Generates CPU-to-user trade proposals based on roster deficits and surpluses.
  */
+function checkTradeViability(
+  userPlayer: typeof players.$inferSelect,
+  cpuPlayer: typeof players.$inferSelect,
+  userSalaryTotal: number,
+  cpuRoster: typeof players.$inferSelect[]
+): boolean {
+  if (userPlayer.overall < 65 || cpuPlayer.overall < 65) return false;
+
+  const ovrDiff = Math.abs(cpuPlayer.overall - userPlayer.overall);
+  const maxOvr = Math.max(cpuPlayer.overall, userPlayer.overall);
+  if (ovrDiff > maxOvr * 0.15) return false;
+
+  const cpuSalaryTotal = cpuRoster.reduce((sum, p) => sum + p.salary, 0);
+  const newUserSalary = userSalaryTotal - userPlayer.salary + cpuPlayer.salary;
+  const newCpuSalary = cpuSalaryTotal - cpuPlayer.salary + userPlayer.salary;
+
+  if (newUserSalary > SALARY_CAP || newCpuSalary > SALARY_CAP) return false;
+
+  return true;
+}
+
+/**
+ * Generates CPU-to-user trade proposals based on roster deficits and surpluses.
+ */
 export async function generateTradeProposalsAction(seasonYear: number, userTeamId: string) {
   try {
-    const lastCompleted = await db
-      .select({ year: games.seasonYear, day: games.gameNumber })
+    const nextScheduled = await db
+      .select({ day: games.gameNumber })
       .from(games)
-      .where(eq(games.status, "Completed"))
-      .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+      .where(and(
+        eq(games.seasonYear, seasonYear),
+        eq(games.status, "Scheduled"),
+        eq(games.stage, "Regular")
+      ))
+      .orderBy(games.gameNumber)
       .limit(1);
-    const lastGame = lastCompleted.length > 0 ? lastCompleted : await db
-      .select({ year: games.seasonYear, day: games.gameNumber })
-      .from(games)
-      .orderBy(desc(games.seasonYear), games.gameNumber)
-      .limit(1);
-    const currentDay = lastGame[0]?.day ?? 1;
+    const currentDay = nextScheduled[0]?.day ?? 82;
 
     if (currentDay > 50) {
       // Trade deadline passed, expire all pending proposals
@@ -537,66 +559,64 @@ export async function generateTradeProposalsAction(seasonYear: number, userTeamI
       if (cpuPosCounts.F > 5) cpuSurpluses.push("F");
       if (cpuPosCounts.C > 3) cpuSurpluses.push("C");
 
-      let matchingCpuPlayer: typeof players.$inferSelect | null = null;
-      let matchingUserPlayer: typeof players.$inferSelect | null = null;
+      // Verify roster size limits (bounds remain identical for 1-for-1 swap)
+      if (userRoster.length < MIN_ROSTER_SIZE || userRoster.length > MAX_ROSTER_SIZE) continue;
+      if (cpuRoster.length < MIN_ROSTER_SIZE || cpuRoster.length > MAX_ROSTER_SIZE) continue;
+
+      let validPairs: Array<[typeof players.$inferSelect, typeof players.$inferSelect]> = [];
 
       // Option A: User deficit, CPU surplus
       for (const userDef of userDeficits) {
         if (cpuSurpluses.includes(userDef)) {
           const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) === userDef);
           const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) !== userDef);
-          if (cpuCandidates.length > 0 && userCandidates.length > 0) {
-            matchingCpuPlayer = cpuCandidates[Math.floor(Math.random() * cpuCandidates.length)];
-            matchingUserPlayer = userCandidates[Math.floor(Math.random() * userCandidates.length)];
-            break;
+          for (const u of userCandidates) {
+            for (const c of cpuCandidates) {
+              if (checkTradeViability(u, c, userSalaryTotal, cpuRoster)) {
+                validPairs.push([c, u]);
+              }
+            }
           }
+          if (validPairs.length > 0) break;
         }
       }
 
       // Option B: CPU deficit, User surplus
-      if (!matchingCpuPlayer || !matchingUserPlayer) {
+      if (validPairs.length === 0) {
         for (const cpuDef of cpuDeficits) {
           if (userSurpluses.includes(cpuDef)) {
             const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) === cpuDef);
             const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) !== cpuDef);
-            if (userCandidates.length > 0 && cpuCandidates.length > 0) {
-              matchingUserPlayer = userCandidates[Math.floor(Math.random() * userCandidates.length)];
-              matchingCpuPlayer = cpuCandidates[Math.floor(Math.random() * cpuCandidates.length)];
-              break;
+            for (const u of userCandidates) {
+              for (const c of cpuCandidates) {
+                if (checkTradeViability(u, c, userSalaryTotal, cpuRoster)) {
+                  validPairs.push([c, u]);
+                }
+              }
             }
+            if (validPairs.length > 0) break;
           }
         }
       }
 
       // Option C: General OVR swap
-      if (!matchingCpuPlayer || !matchingUserPlayer) {
+      if (validPairs.length === 0) {
         for (const posGrp of ["G", "F", "C"]) {
           const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) === posGrp);
           const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) === posGrp);
-          if (userCandidates.length > 0 && cpuCandidates.length > 0) {
-            matchingUserPlayer = userCandidates[Math.floor(Math.random() * userCandidates.length)];
-            matchingCpuPlayer = cpuCandidates[Math.floor(Math.random() * cpuCandidates.length)];
-            break;
+          for (const u of userCandidates) {
+            for (const c of cpuCandidates) {
+              if (checkTradeViability(u, c, userSalaryTotal, cpuRoster)) {
+                validPairs.push([c, u]);
+              }
+            }
           }
+          if (validPairs.length > 0) break;
         }
       }
 
-      if (matchingCpuPlayer && matchingUserPlayer) {
-        const ovrDiff = Math.abs(matchingCpuPlayer.overall - matchingUserPlayer.overall);
-        const maxOvr = Math.max(matchingCpuPlayer.overall, matchingUserPlayer.overall);
-        if (ovrDiff > maxOvr * 0.15) continue;
-        if (matchingCpuPlayer.overall < 65 || matchingUserPlayer.overall < 65) continue;
-
-        const cpuSalaryTotal = cpuRoster.reduce((sum, p) => sum + p.salary, 0);
-        const newUserSalary = userSalaryTotal - matchingUserPlayer.salary + matchingCpuPlayer.salary;
-        const newCpuSalary = cpuSalaryTotal - matchingCpuPlayer.salary + matchingUserPlayer.salary;
-
-        if (newUserSalary > SALARY_CAP || newCpuSalary > SALARY_CAP) continue;
-
-        // Verify roster size limits (bounds remain identical for 1-for-1 swap)
-        if (userRoster.length < MIN_ROSTER_SIZE || userRoster.length > MAX_ROSTER_SIZE) continue;
-        if (cpuRoster.length < MIN_ROSTER_SIZE || cpuRoster.length > MAX_ROSTER_SIZE) continue;
-
+      if (validPairs.length > 0) {
+        const [matchingCpuPlayer, matchingUserPlayer] = validPairs[Math.floor(Math.random() * validPairs.length)];
         const expiresAt = new Date(Date.now() + 24 * 3600 * 1000); // Expires in 24 hours of real time (or 3 simulation days)
         
         await db.insert(tradeProposals).values({
@@ -702,19 +722,24 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
       if (!proposal) throw new Error("Proposal not found.");
       if (proposal.status !== "Pending") throw new Error("Proposal is no longer pending.");
 
-      const lastCompleted = await tx
-        .select({ year: games.seasonYear, day: games.gameNumber })
+      const maxSeasonGame = await tx
+        .select({ year: games.seasonYear })
         .from(games)
-        .where(eq(games.status, "Completed"))
-        .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+        .orderBy(desc(games.seasonYear))
         .limit(1);
-      const lastGame = lastCompleted.length > 0 ? lastCompleted : await tx
-        .select({ year: games.seasonYear, day: games.gameNumber })
+      const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
+
+      const nextScheduled = await tx
+        .select({ day: games.gameNumber })
         .from(games)
-        .orderBy(desc(games.seasonYear), games.gameNumber)
+        .where(and(
+          eq(games.seasonYear, currentSeasonYear),
+          eq(games.status, "Scheduled"),
+          eq(games.stage, "Regular")
+        ))
+        .orderBy(games.gameNumber)
         .limit(1);
-      const currentSeasonYear = lastGame[0]?.year ?? 2026;
-      const currentDay = lastGame[0]?.day ?? 1;
+      const currentDay = nextScheduled[0]?.day ?? 82;
 
       if (currentDay > 50) {
         throw new Error("The trade deadline has passed.");

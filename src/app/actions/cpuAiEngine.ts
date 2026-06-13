@@ -56,19 +56,24 @@ export async function enforceLeagueRosterLimitsAction() {
     const allTeams = await db.select().from(teams);
 
     // Fetch current season/day to log transaction correctly
-    const lastCompleted = await db
-      .select({ year: games.seasonYear, day: games.gameNumber })
+    const maxSeasonGame = await db
+      .select({ year: games.seasonYear })
       .from(games)
-      .where(eq(games.status, "Completed"))
-      .orderBy(desc(games.seasonYear), desc(games.gameNumber))
+      .orderBy(desc(games.seasonYear))
       .limit(1);
-    const lastGame = lastCompleted.length > 0 ? lastCompleted : await db
-      .select({ year: games.seasonYear, day: games.gameNumber })
+    const currentYear = maxSeasonGame[0]?.year ?? 2026;
+
+    const nextScheduled = await db
+      .select({ day: games.gameNumber })
       .from(games)
-      .orderBy(desc(games.seasonYear), games.gameNumber)
+      .where(and(
+        eq(games.seasonYear, currentYear),
+        eq(games.status, "Scheduled"),
+        eq(games.stage, "Regular")
+      ))
+      .orderBy(games.gameNumber)
       .limit(1);
-    const currentYear = lastGame[0]?.year ?? 2026;
-    const currentDay = lastGame[0]?.day ?? 1;
+    const currentDay = nextScheduled[0]?.day ?? 82;
 
     // Strict sequential loop over all teams (avoiding forEach to prevent race conditions)
     for (const team of allTeams) {
