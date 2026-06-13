@@ -306,7 +306,7 @@ export default function OffseasonWizardPage() {
         try {
           loadedState = JSON.parse(saved);
           
-          const isStaleSession = serverSessionId && loadedState.draftSessionId && loadedState.draftSessionId !== serverSessionId;
+          const isStaleSession = serverSessionId && (!loadedState.draftSessionId || loadedState.draftSessionId !== serverSessionId);
           const isStaleYear = loadedState.seasonYear !== upcomingYear;
           
           if (isStaleYear || isStaleSession) {
