@@ -199,7 +199,12 @@ async function main() {
       const numFilAms = getRandomNumber(1, 3);
       const teamPlayers: Array<Omit<typeof schema.players.$inferInsert, "salary">> = [];
 
+      // Select 2 random distinct indices per team to be designated as rookies
+      const firstRookieIndex = getRandomNumber(0, 7);
+      const secondRookieIndex = getRandomNumber(8, 14);
+
       for (let i = 0; i < 15; i++) {
+        const isRookie = (i === firstRookieIndex || i === secondRookieIndex);
         const isFilAm = i < numFilAms;
         const firstName = isFilAm
           ? getRandomElement(FILAM_FIRST_NAMES)
@@ -208,7 +213,7 @@ async function main() {
           ? getRandomElement(FILAM_SURNAMES)
           : getRandomElement(FILIPINO_SURNAMES);
 
-        const age = getRandomNumber(21, 36);
+        const age = isRookie ? getRandomNumber(19, 22) : getRandomNumber(23, 36);
         const hometown =
           team.conference === "Luzon"
             ? getRandomElement(LUZON_HOMETOWNS)
@@ -259,7 +264,7 @@ async function main() {
           stamina,
           contractYearsRemaining,
           status: "Active",
-          isRookie: false,
+          isRookie,
           injuryDaysRemaining: 0,
           injuryType: null,
         });
