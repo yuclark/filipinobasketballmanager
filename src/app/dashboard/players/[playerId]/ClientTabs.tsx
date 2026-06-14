@@ -116,7 +116,7 @@ export default function ClientTabs({
           </div>
 
           {/* Stats Grid Table */}
-          <div className="overflow-x-auto rounded-xl border border-zinc-900">
+          <div className="w-full overflow-x-auto rounded-xl border border-zinc-900">
             <table className="w-full min-w-[1200px] text-left border-collapse text-xs select-none">
               <thead>
                 <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-550 font-bold uppercase tracking-wider text-[10px]">
@@ -284,7 +284,7 @@ export default function ClientTabs({
               No games simulated in the current calendar season yet.
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-zinc-900">
+            <div className="w-full overflow-x-auto rounded-xl border border-zinc-900">
               <table className="w-full min-w-[900px] text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-550 font-bold uppercase tracking-wider text-[10px]">

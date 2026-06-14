@@ -775,7 +775,7 @@ export async function getPlayerProfileAction(playerId: string) {
     const dbPlayoffsSplit = computeAverages(dbLogs.filter(l => l.stage === "Playoffs" && l.status === "Completed"), "Playoffs");
 
     const yearsInLeague = playerData.age - (playerData.isRookie ? playerData.age : 21);
-    const startYear = currentSeasonYear - Math.max(0, yearsInLeague);
+    const startYear = Math.max(2026, currentSeasonYear - Math.max(0, yearsInLeague));
 
     const simulatedSeasons: any[] = [];
     const simulatedPlayoffs: any[] = [];

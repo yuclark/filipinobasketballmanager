@@ -375,7 +375,7 @@ export default function RosterPage() {
       </div>
 
       {/* Roster Data Table */}
-      <div className="overflow-x-auto rounded-xl border border-zinc-900">
+      <div className="w-full overflow-x-auto rounded-xl border border-zinc-900">
         <table className="w-full min-w-[1000px] text-left border-collapse">
           <thead>
             <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-400 font-bold text-xs uppercase tracking-wider select-none">

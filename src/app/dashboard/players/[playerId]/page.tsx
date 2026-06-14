@@ -252,7 +252,7 @@ export default async function PlayerProfilePage({ params }: PageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Side: Dynamic Tabs Content */}
-        <div className="lg:col-span-9 space-y-6">
+        <div className="lg:col-span-9 space-y-6 min-w-0">
           <ClientTabs
             player={player}
             regularSeason={regularSeasonHistory}
