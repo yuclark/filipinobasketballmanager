@@ -14,34 +14,12 @@ if (!process.env.DATABASE_URL) {
 const sql = neon(process.env.DATABASE_URL);
 const db = drizzle(sql, { schema });
 
-// Culturally authentic name pools
-const FILIPINO_FIRST_NAMES = [
-  "Junmar", "Kiefer", "Jayson", "Thirdy", "Aldrin", "Calvin", "CJ", "Gabe",
-  "Paul", "Robert", "Marc", "LA", "Chris", "Stanley", "Japeth", "Raymond",
-  "Terrence", "Beau", "Alex", "Scottie", "Arwind", "Roger", "Baser", "Jio",
-  "Matthew", "Von", "Kevin", "Jericho", "Shaun", "Rey", "Mark", "Vic",
-  "Poy", "Troy", "Jerick", "Allein", "Mac", "Ramon", "Nonoy", "Mike"
-];
-
-const FILIPINO_SURNAMES = [
-  "Reyes", "Santos", "Garcia", "Fajardo", "De Leon", "Castro", "Ravena", "Pogoy",
-  "Erram", "Tenorio", "Aguilar", "Barroca", "Lassiter", "Cabagnot", "Standhardinger",
-  "Thompson", "Norwood", "Yap", "Pingris", "Almazan", "Lee", "Pringle", "Wright",
-  "Abueva", "Cruz", "Banchero", "Newsome", "Belo", "Tolentino", "Rosario", "Malonzo",
-  "Oftana", "Perez", "Sangalang", "Jalalon", "David", "Pascual", "Guanzon"
-];
-
-const FILAM_FIRST_NAMES = [
-  "Jordan", "Christian", "Green", "Washington", "Clarkson", "Gabe", "Matthew",
-  "Chris", "Alex", "Bobby", "Moala", "Sean", "Maverick", "Cliff", "Taylor",
-  "DeAndre", "Tyler", "Justin", "Brandon", "Ethan", "Jeremy", "Zachary"
-];
-
-const FILAM_SURNAMES = [
-  "Clarkson", "Washington", "Standhardinger", "Banchero", "Newsome", "Wright",
-  "Lassiter", "Pringle", "Holt", "Perkins", "Hodge", "Adams", "Croft", "Moore",
-  "Green", "Tautuaa", "Ellis", "Harris", "Parks", "Williams", "Smith", "Johnson"
-];
+import {
+  FILIPINO_FIRST_NAMES,
+  FILIPINO_SURNAMES,
+  FILAM_FIRST_NAMES,
+  FILAM_SURNAMES
+} from "../lib/names";
 
 // Region-specific Hometowns
 const LUZON_HOMETOWNS = [
@@ -206,7 +184,8 @@ async function main() {
       for (let i = 0; i < 15; i++) {
         const isRookie = (i === firstRookieIndex || i === secondRookieIndex);
         const isFilAm = i < numFilAms;
-        const firstName = isFilAm
+        const useFilAmFirst = isFilAm || (Math.random() < 0.3);
+        const firstName = useFilAmFirst
           ? getRandomElement(FILAM_FIRST_NAMES)
           : getRandomElement(FILIPINO_FIRST_NAMES);
         const lastName = isFilAm
@@ -300,8 +279,9 @@ async function main() {
     console.log("Generating 50 free agents...");
     const FA_POSITIONS = ["PG", "SG", "SF", "PF", "C"];
     for (let i = 0; i < 50; i++) {
-      const isFilAm = Math.random() < 0.2; // 20% Fil-Ams
-      const firstName = isFilAm
+      const isFilAm = Math.random() < 0.2;
+      const useFilAmFirst = isFilAm || (Math.random() < 0.3);
+      const firstName = useFilAmFirst
         ? getRandomElement(FILAM_FIRST_NAMES)
         : getRandomElement(FILIPINO_FIRST_NAMES);
       const lastName = isFilAm
