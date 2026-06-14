@@ -270,7 +270,7 @@ export default function RosterPage() {
     : 0;
 
   return (
-    <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm relative">
+    <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl backdrop-blur-sm relative w-full max-w-full overflow-hidden">
       {reloading && (
         <div className="absolute inset-0 bg-zinc-950/40 rounded-3xl flex items-center justify-center z-30 backdrop-blur-xs">
           <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />

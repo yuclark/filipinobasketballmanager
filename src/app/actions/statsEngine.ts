@@ -268,7 +268,6 @@ export async function getTeamSeasonStatsAction(teamId: string) {
       const logs = (playerLogsMap[p.id] || []).filter((l) => l.stage === "Playoffs");
       return computePlayerAveragesForLogs(p.id, logs);
     });
-
     const career = teamPlayers.map((p) => {
       const logs = playerLogsMap[p.id] || [];
       return computePlayerAveragesForLogs(p.id, logs);
@@ -286,10 +285,13 @@ export async function getTeamSeasonStatsAction(teamId: string) {
   }
 }
 
+
+
 export async function getGameBoxScoreAction(gameId: string) {
   try {
     const stats = await db
       .select({
+        playerId: players.id,
         name: sql<string>`${players.firstName} || ' ' || ${players.lastName}`,
         position: players.position,
         isFilAm: players.isFilAm,

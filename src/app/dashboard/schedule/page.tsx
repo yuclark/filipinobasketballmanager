@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useGameStore } from "@/store/useGameStore";
 import {
   generateScheduleAction,
@@ -979,7 +980,7 @@ function BoxScoreTable({ teamName, players, isWinner }: {
   isWinner: boolean;
 }) {
   return (
-    <div>
+    <div className="w-full overflow-hidden">
       {/* Team header row */}
       <div className="flex items-center gap-2 mb-2">
         <p className="text-[11px] font-bold tracking-[0.12em] uppercase text-[var(--color-text-muted)]">
@@ -992,46 +993,45 @@ function BoxScoreTable({ teamName, players, isWinner }: {
         )}
       </div>
 
-      <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-                {[
-                  { label: 'Player', wide: true },
-                  { label: 'POS' }, { label: 'MIN' },
-                  { label: 'PTS', highlight: true },
-                  { label: 'REB' }, { label: 'AST' },
-                  { label: 'STL' }, { label: 'BLK' }, { label: 'TO' },
-                  { label: 'FGM/A' }, { label: '3PM/A' }, { label: 'FTM/A' },
-                ].map(col => (
-                  <th
-                    key={col.label}
-                    className={`
-                      px-3 py-2 text-[10px] font-semibold tracking-[0.1em] uppercase whitespace-nowrap
-                      ${col.highlight ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-faint)]'}
-                      ${col.wide ? 'min-w-[140px]' : 'text-right min-w-[48px]'}
-                    `}
-                  >
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {players && players.length > 0 ? players.map((p, i) => {
-                const isTopScorer = p.points === Math.max(...players.map(x => x.points ?? 0));
-                return (
-                  <tr
-                    key={i}
-                    className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)] transition-colors duration-75"
-                  >
-                    {/* Player name */}
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-[13px] font-semibold ${isTopScorer ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>
-                          {p.name}
-                        </span>
+      <div className="w-full overflow-x-auto rounded-lg border border-[var(--color-border)]">
+        <table className="w-full min-w-[750px] text-left">
+          <thead>
+            <tr className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+              {[
+                { label: 'Player', wide: true },
+                { label: 'POS' }, { label: 'MIN' },
+                { label: 'PTS', highlight: true },
+                { label: 'REB' }, { label: 'AST' },
+                { label: 'STL' }, { label: 'BLK' }, { label: 'TO' },
+                { label: 'FGM/A' }, { label: '3PM/A' }, { label: 'FTM/A' },
+              ].map(col => (
+                <th
+                  key={col.label}
+                  className={`
+                    px-3 py-2 text-[10px] font-semibold tracking-[0.1em] uppercase whitespace-nowrap
+                    ${col.highlight ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-faint)]'}
+                    ${col.wide ? 'min-w-[140px]' : 'text-right min-w-[48px]'}
+                  `}
+                >
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {players && players.length > 0 ? players.map((p, i) => {
+              const isTopScorer = p.points === Math.max(...players.map(x => x.points ?? 0));
+              return (
+                <tr
+                  key={i}
+                  className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)] transition-colors duration-75"
+                >
+                  {/* Player name */}
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Link href={`/dashboard/players/${p.playerId}`} className={`text-[13px] font-semibold hover:text-orange-400 transition-colors ${isTopScorer ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>
+                        {p.name}
+                      </Link>
                         {p.isFilAm && (
                           <span className="text-[9px] font-bold tracking-wider uppercase px-1 py-0.5 rounded bg-[var(--color-gold-dim)] text-[var(--color-gold)]">
                             FIL-AM
@@ -1114,7 +1114,6 @@ function BoxScoreTable({ teamName, players, isWinner }: {
           </table>
         </div>
       </div>
-    </div>
   );
 }
 

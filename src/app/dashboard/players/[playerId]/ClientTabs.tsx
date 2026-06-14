@@ -42,7 +42,7 @@ export default function ClientTabs({
   const activeCareer = splitTab === "regular" ? careerRegular : careerPlayoffs;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full overflow-hidden">
       
       {/* Tabs Switcher Header */}
       <div className="flex border-b border-zinc-900 pb-px">
