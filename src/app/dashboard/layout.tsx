@@ -67,6 +67,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     message: "",
   });
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
   const triggerAlert = (title: string, message: string) => {
     setAlertModal({
       isOpen: true,
@@ -173,8 +187,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }
 
   const handleLogout = () => {
-    setTeam("");
-    router.push("/");
+    setConfirmModal({
+      isOpen: true,
+      title: "Exit to Main Menu",
+      message: "Are you sure you want to exit to the main menu? Make sure you have saved your progress, as unsaved progress will be lost.",
+      confirmText: "Exit Game",
+      cancelText: "Stay",
+      onConfirm: () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        setTeam("");
+        router.push("/");
+      },
+    });
   };
 
   const formatPHP = (amount: number) => {
@@ -284,7 +308,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-zinc-500 hover:text-red-400 hover:bg-red-500/5 rounded-xl transition-all cursor-pointer"
         >
           <LogOut className="w-4.5 h-4.5" />
-          <span>Change Franchise</span>
+          <span>Exit to Main Menu</span>
         </button>
       </aside>
 
@@ -503,6 +527,40 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-xl transition-all shadow-md cursor-pointer text-sm"
                 >
                   Acknowledge
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Confirm Modal */}
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 bg-zinc-955/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 md:p-8 relative shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 blur-3xl rounded-full pointer-events-none" />
+              
+              <div className="flex items-start gap-4 mb-6">
+                <div className="p-3 rounded-2xl bg-orange-500/10 text-orange-500">
+                  <LogOut className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-2">{confirmModal.title}</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">{confirmModal.message}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="px-5 py-2.5 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all cursor-pointer text-sm"
+                >
+                  {confirmModal.cancelText || "Cancel"}
+                </button>
+                <button
+                  onClick={confirmModal.onConfirm}
+                  className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-xl transition-all shadow-md cursor-pointer text-sm"
+                >
+                  {confirmModal.confirmText || "Confirm"}
                 </button>
               </div>
             </div>
