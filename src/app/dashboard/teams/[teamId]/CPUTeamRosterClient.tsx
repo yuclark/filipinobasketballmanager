@@ -467,9 +467,9 @@ export default function CPUTeamRosterClient({
                             <Users className="w-4.5 h-4.5 text-zinc-400 group-hover:text-orange-500 transition-colors" />
                           </div>
                           <div>
-                            <span className="font-bold text-zinc-100 group-hover:text-white block transition-colors">
+                            <Link href={`/dashboard/players/${player.id}`} className="font-bold text-zinc-100 hover:text-orange-400 block transition-colors">
                               {player.firstName} {player.lastName}
-                            </span>
+                            </Link>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {player.isFilAm && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">

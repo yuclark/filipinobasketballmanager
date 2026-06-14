@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useGameStore } from "@/store/useGameStore";
 import {
   checkRegularSeasonCompleteAction,
@@ -870,7 +871,9 @@ export default function PlayoffsPage() {
                               .map((stat) => (
                                 <tr key={stat.id} className="hover:bg-zinc-800/40">
                                   <td className="py-3 px-4 font-bold text-zinc-200">
-                                    {stat.player.firstName} {stat.player.lastName}
+                                    <Link href={`/dashboard/players/${stat.player.id}`} className="hover:text-orange-400 hover:underline">
+                                      {stat.player.firstName} {stat.player.lastName}
+                                    </Link>
                                     {stat.player.isFilAm && (
                                       <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold bg-cyan-500/10 text-cyan-400">
                                         Fil-Am
@@ -930,7 +933,9 @@ export default function PlayoffsPage() {
                               .map((stat) => (
                                 <tr key={stat.id} className="hover:bg-zinc-800/40">
                                   <td className="py-3 px-4 font-bold text-zinc-200">
-                                    {stat.player.firstName} {stat.player.lastName}
+                                    <Link href={`/dashboard/players/${stat.player.id}`} className="hover:text-orange-400 hover:underline">
+                                      {stat.player.firstName} {stat.player.lastName}
+                                    </Link>
                                     {stat.player.isFilAm && (
                                       <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold bg-cyan-500/10 text-cyan-400">
                                         Fil-Am

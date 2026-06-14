@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useGameStore } from "@/store/useGameStore";
 import { getFreeAgents, getTeamSalarySpace, sendOfferAction } from "@/app/actions/transactions";
 import { MAX_ROSTER_SIZE } from "@/lib/constants";
@@ -287,7 +288,9 @@ export default function FreeAgencyPage() {
                       {/* Name */}
                       <td className="py-4 px-6">
                         <div>
-                          <span className="font-bold text-zinc-100 block">{player.firstName} {player.lastName}</span>
+                          <Link href={`/dashboard/players/${player.id}`} className="font-bold text-zinc-100 hover:text-orange-400 block transition-colors">
+                            {player.firstName} {player.lastName}
+                          </Link>
                           {player.isFilAm && (
                             <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">
                               <Sparkles className="w-2.5 h-2.5" />

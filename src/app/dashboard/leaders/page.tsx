@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getLeagueLeadersAction, LeaderCategory } from "@/app/actions/leadersEngine";
 import { useGameStore } from "@/store/useGameStore";
 import { BarChart2, Loader2, Award, Sparkles, Shield, Users } from "lucide-react";
@@ -211,9 +212,9 @@ export default function LeadersPage() {
                               <div className="min-w-0 leading-tight">
                                 {viewMode === "players" ? (
                                   <>
-                                    <span className="font-bold text-xs text-zinc-100 block truncate hover:text-white">
+                                    <Link href={`/dashboard/players/${entry.playerId}`} className="font-bold text-xs text-zinc-100 hover:text-orange-400 block truncate transition-colors">
                                       {entry.playerName}
-                                    </span>
+                                    </Link>
                                     <span className="text-[9px] text-zinc-550 font-semibold block truncate">
                                       {entry.teamName}
                                     </span>

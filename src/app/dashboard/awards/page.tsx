@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useGameStore } from "@/store/useGameStore";
 import { getSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import { initializePlayoffsAction, checkPlayoffsInitializedAction } from "@/app/actions/playoffEngine";
@@ -185,7 +186,9 @@ export default function AwardsCeremonyPage() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-lg font-black text-white group-hover:text-orange-400 transition-colors leading-tight">
-                  {mvp.playerName}
+                  <Link href={`/dashboard/players/${mvp.playerId}`} className="hover:underline">
+                    {mvp.playerName}
+                  </Link>
                 </h3>
                 <p className="text-zinc-500 text-xs mt-1 font-semibold">{mvp.teamName}</p>
               </div>
@@ -215,7 +218,9 @@ export default function AwardsCeremonyPage() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-lg font-black text-white group-hover:text-purple-400 transition-colors leading-tight">
-                  {roy.playerName}
+                  <Link href={`/dashboard/players/${roy.playerId}`} className="hover:underline">
+                    {roy.playerName}
+                  </Link>
                 </h3>
                 <p className="text-zinc-500 text-xs mt-1 font-semibold">{roy.teamName}</p>
               </div>
@@ -245,7 +250,9 @@ export default function AwardsCeremonyPage() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-lg font-black text-white group-hover:text-emerald-400 transition-colors leading-tight">
-                  {dpoy.playerName}
+                  <Link href={`/dashboard/players/${dpoy.playerId}`} className="hover:underline">
+                    {dpoy.playerName}
+                  </Link>
                 </h3>
                 <p className="text-zinc-500 text-xs mt-1 font-semibold">{dpoy.teamName}</p>
               </div>
@@ -275,7 +282,9 @@ export default function AwardsCeremonyPage() {
             <div className="space-y-4">
               <div>
                 <h3 className="text-lg font-black text-white group-hover:text-blue-400 transition-colors leading-tight">
-                  {sixman.playerName}
+                  <Link href={`/dashboard/players/${sixman.playerId}`} className="hover:underline">
+                    {sixman.playerName}
+                  </Link>
                 </h3>
                 <p className="text-zinc-500 text-xs mt-1 font-semibold">{sixman.teamName}</p>
               </div>
@@ -312,7 +321,11 @@ export default function AwardsCeremonyPage() {
               {firstTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
                   <div>
-                    <h4 className="font-bold text-zinc-100 text-sm">{m.playerName}</h4>
+                    <h4 className="font-bold text-zinc-100 text-sm hover:text-orange-400 transition-colors">
+                      <Link href={`/dashboard/players/${m.playerId}`}>
+                        {m.playerName}
+                      </Link>
+                    </h4>
                     <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -338,7 +351,11 @@ export default function AwardsCeremonyPage() {
               {secondTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
                   <div>
-                    <h4 className="font-bold text-zinc-200 text-sm">{m.playerName}</h4>
+                    <h4 className="font-bold text-zinc-200 text-sm hover:text-orange-400 transition-colors">
+                      <Link href={`/dashboard/players/${m.playerId}`}>
+                        {m.playerName}
+                      </Link>
+                    </h4>
                     <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -364,7 +381,11 @@ export default function AwardsCeremonyPage() {
               {thirdTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
                   <div>
-                    <h4 className="font-bold text-zinc-300 text-sm">{m.playerName}</h4>
+                    <h4 className="font-bold text-zinc-300 text-sm hover:text-orange-400 transition-colors">
+                      <Link href={`/dashboard/players/${m.playerId}`}>
+                        {m.playerName}
+                      </Link>
+                    </h4>
                     <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -390,7 +411,11 @@ export default function AwardsCeremonyPage() {
               {defensiveTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
                   <div>
-                    <h4 className="font-bold text-zinc-100 text-sm">{m.playerName}</h4>
+                    <h4 className="font-bold text-zinc-100 text-sm hover:text-orange-400 transition-colors">
+                      <Link href={`/dashboard/players/${m.playerId}`}>
+                        {m.playerName}
+                      </Link>
+                    </h4>
                     <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
                   </div>
                   <div className="flex items-center gap-3">

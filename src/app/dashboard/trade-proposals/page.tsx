@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useGameStore } from "@/store/useGameStore";
 import {
   getTradeProposalsAction,
@@ -297,9 +298,9 @@ export default function TradeProposalsPage() {
                             <span className="text-xs font-extrabold text-zinc-300">
                               {player.position}
                             </span>
-                            <h5 className="font-bold text-white text-sm mt-1">
+                            <Link href={`/dashboard/players/${player.id}`} className="font-bold text-white text-sm mt-1 hover:text-orange-400 block transition-colors">
                               {player.firstName} {player.lastName}
-                            </h5>
+                            </Link>
                             <span className="text-[10px] text-zinc-500 font-semibold block mt-0.5">
                               Age {player.age}
                             </span>
@@ -331,9 +332,9 @@ export default function TradeProposalsPage() {
                             <span className="text-xs font-extrabold text-zinc-300">
                               {player.position}
                             </span>
-                            <h5 className="font-bold text-white text-sm mt-1">
+                            <Link href={`/dashboard/players/${player.id}`} className="font-bold text-white text-sm mt-1 hover:text-orange-400 block transition-colors">
                               {player.firstName} {player.lastName}
-                            </h5>
+                            </Link>
                             <span className="text-[10px] text-zinc-500 font-semibold block mt-0.5">
                               Age {player.age}
                             </span>
