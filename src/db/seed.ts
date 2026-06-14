@@ -2,18 +2,6 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
 import * as dotenv from "dotenv";
-
-// Load environment variables from .env.local
-dotenv.config({ path: ".env.local" });
-
-if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL environment variable is missing in .env.local");
-  process.exit(1);
-}
-
-const sql = neon(process.env.DATABASE_URL);
-const db = drizzle(sql, { schema });
-
 import {
   FILIPINO_FIRST_NAMES,
   FILIPINO_SECOND_NAMES,
@@ -80,7 +68,7 @@ function getRandomNumber(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-async function main() {
+export async function seedDatabase(db: any) {
   console.log("Starting sequential database seeding process...");
 
   try {
@@ -368,8 +356,26 @@ async function main() {
     console.log("Database seeding completed successfully! All tables ready.");
   } catch (error) {
     console.error("Database seeding process failed:", error);
-    process.exit(1);
+    throw error;
   }
 }
 
-main();
+// Support CLI execution
+if (process.argv[1] && (process.argv[1].endsWith("seed.ts") || process.argv[1].endsWith("seed.js"))) {
+  dotenv.config({ path: ".env.local" });
+  if (!process.env.DATABASE_URL) {
+    console.error("DATABASE_URL environment variable is missing in .env.local");
+    process.exit(1);
+  }
+  const sql = neon(process.env.DATABASE_URL);
+  const localDb = drizzle(sql, { schema });
+  seedDatabase(localDb)
+    .then(() => {
+      console.log("CLI seeding finished.");
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error("CLI seeding failed:", err);
+      process.exit(1);
+    });
+}

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getTeamRoster } from "@/app/actions";
 import { getTradeProposalsAction } from "@/app/actions/tradeEngine";
+import { getSaveSlotsAction, saveGameAction } from "@/app/actions/saveEngine";
 import {
   Users,
   Calendar,
@@ -25,6 +26,8 @@ import {
   BookOpen,
   Sparkles,
   GraduationCap,
+  Save,
+  CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -39,12 +42,56 @@ interface Team {
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { userTeamId, setTeam } = useGameStore();
+  const { userTeamId, setTeam, currentLeagueDay } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [team, setTeamDetails] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingTradeCount, setPendingTradeCount] = useState<number>(0);
+
+  // Save/Load Modal States
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [saveSlotsList, setSaveSlotsList] = useState<any[]>([]);
+  const [newSaveName, setNewSaveName] = useState("");
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleOpenSaveModal = async () => {
+    setIsSaveModalOpen(true);
+    setSaveSuccess(false);
+    if (team) {
+      setNewSaveName(`${team.city} ${team.name} Save`);
+    }
+    try {
+      const res = await getSaveSlotsAction();
+      if (res.success && res.slots) {
+        setSaveSlotsList(res.slots);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveGame = async (slotId?: string, customName?: string) => {
+    const nameToUse = customName || newSaveName || `${team?.city} ${team?.name} Save`;
+    try {
+      setSaveLoading(true);
+      const res = await saveGameAction(nameToUse, userTeamId, currentLeagueDay, slotId);
+      if (res.success) {
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setIsSaveModalOpen(false);
+          setSaveSuccess(false);
+        }, 1200);
+      } else {
+        alert("Failed to save game: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error saving game: " + err.message);
+    } finally {
+      setSaveLoading(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -203,6 +250,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </nav>
         </div>
 
+        {/* Save Game Button */}
+        <button
+          onClick={handleOpenSaveModal}
+          className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-zinc-400 hover:text-orange-400 hover:bg-orange-500/5 rounded-xl transition-all cursor-pointer mb-2"
+        >
+          <Save className="w-4.5 h-4.5" />
+          <span>Save Game Slot</span>
+        </button>
+
         {/* Change Team Button */}
         <button
           onClick={handleLogout}
@@ -231,6 +287,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <span>Franchise Mode</span>
             <ChevronRight className="w-4 h-4 text-zinc-600" />
             <span className="text-zinc-200 font-medium">{team.city} {team.name}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleOpenSaveModal}
+              className="hidden md:flex items-center gap-2 px-4 py-2 bg-orange-500/10 border border-orange-500/25 text-orange-400 hover:bg-orange-500 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Save Progress</span>
+            </button>
           </div>
 
           {/* Quick links for mobile */}
@@ -307,6 +373,95 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
           {children}
         </div>
+
+        {/* Save Game Modal */}
+        {isSaveModalOpen && (
+          <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-lg p-6 md:p-8 relative shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 blur-3xl rounded-full pointer-events-none" />
+
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Save className="w-5 h-5 text-orange-500" />
+                  <span>Save Game Progress</span>
+                </h3>
+                <button
+                  onClick={() => setIsSaveModalOpen(false)}
+                  className="text-zinc-500 hover:text-zinc-300 font-bold transition-all text-sm px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 hover:border-zinc-700 cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+
+              {saveSuccess ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center animate-in zoom-in duration-305">
+                  <CheckCircle className="w-16 h-16 text-emerald-500 mb-4 animate-bounce" />
+                  <h4 className="text-lg font-bold text-white mb-2">Game Saved Successfully!</h4>
+                  <p className="text-zinc-400 text-sm">Rosters, stats, and records are secured in the slot.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col gap-1 text-sm text-zinc-300">
+                    <div className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Current Game Status</div>
+                    <div>Managed Team: <span className="text-white font-bold">{team.city} {team.name}</span></div>
+                    <div>Timeline: <span className="text-orange-400 font-bold">Day {currentLeagueDay}</span></div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="save-name" className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Save Slot Name</label>
+                    <div className="flex gap-2">
+                      <input
+                        id="save-name"
+                        type="text"
+                        value={newSaveName}
+                        onChange={(e) => setNewSaveName(e.target.value)}
+                        placeholder="e.g. My Franchise Run"
+                        className="flex-1 px-4 py-2.5 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl text-sm focus:outline-none text-zinc-100 placeholder-zinc-650"
+                      />
+                      <button
+                        onClick={() => handleSaveGame()}
+                        disabled={saveLoading || !newSaveName.trim()}
+                        className="px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                      >
+                        {saveLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <span>Save New</span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {saveSlotsList.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <div className="text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1">Or Overwrite Existing Slot:</div>
+                      <div className="max-h-48 overflow-y-auto border border-zinc-800/60 rounded-2xl bg-zinc-950/40 divide-y divide-zinc-800/60">
+                        {saveSlotsList.map((slot) => (
+                          <div
+                            key={slot.id}
+                            onClick={() => handleSaveGame(slot.id, slot.name)}
+                            className="flex items-center justify-between p-3.5 hover:bg-zinc-900/60 cursor-pointer transition-all group/item"
+                          >
+                            <div>
+                              <div className="text-sm font-bold text-zinc-200 group-hover/item:text-orange-400 transition-colors">{slot.name}</div>
+                              <div className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider mt-0.5">
+                                {slot.managedTeamCity} {slot.managedTeamName} • Day {slot.currentLeagueDay}
+                              </div>
+                            </div>
+                            <div className="text-xs font-bold text-orange-500 opacity-0 group-hover/item:opacity-100 transition-all flex items-center gap-1">
+                              <span>Overwrite</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

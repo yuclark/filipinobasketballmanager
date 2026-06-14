@@ -56,6 +56,12 @@ Simulating long chunks is controlled client-side using an interruptible loop:
 - **Thread-Safe Cancellation**: A React `useRef` reference tracks the `isSimulating` status. 
 - **Immediate Interruption**: If the user clicks `🛑 Stop Simulating`, the tick loop intercepts the next iteration immediately, halts the scheduler, and leaves the database in a consistent, fully compiled state without crashing or causing half-day writes.
 
+### 5. Multi-Slot Save/Load Architecture
+Instead of storing persistent state identifiers on every row in the database and modifying hundreds of SELECT/UPDATE queries, the app implements a single-table state serialization approach:
+- **Save Operation**: The server action queries all active table records (players, teams, games, stats, awards, etc.) and serializes them into a single gzip-like JSON string, storing it in the `save_slots` table alongside metadata (team, timeline, name).
+- **Load Operation**: The load action truncates the active database tables sequentially in reverse-dependency order, parses the JSON payload, and imports the records in batches of 200 using a chunked insert pattern to bypass serverless payload constraints.
+- **Benefits**: Simplifies active development, allows instantaneous state swaps, and guarantees database relationship consistency with no schema bloat.
+
 ---
 
 ## 📂 Project Module Tree
@@ -73,6 +79,7 @@ filipinobasketballmanager/
     │   │   ├── offseasonEngine.ts   # Draft pool generation & roster resets
     │   │   ├── offseasonWizard.ts   # Contract renewals & player retirement audits
     │   │   ├── playoffEngine.ts     # Playoff bracket scheduling & fast-forward sims
+    │   │   ├── saveEngine.ts        # Database-backed save/load system
     │   │   ├── statsEngine.ts       # League stats aggregates & history logs
     │   │   └── tradeEngine.ts       # Trade Block Finder counter-offers & executions
     │   ├── api/               # API endpoints
@@ -112,7 +119,7 @@ npm install
 Initialize tables and seed the database with 30 culturally authentic teams and 450 initial players:
 ```bash
 npx drizzle-kit push
-npm run db:seed  # Or run the seeder script: npx tsx src/db/seed.ts
+npm run db:seed
 ```
 
 ### 5. Start the Development Server

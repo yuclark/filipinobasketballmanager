@@ -161,3 +161,16 @@ export const tradeProposals = pgTable("trade_proposals", {
   expiresAt: timestamp("expires_at").notNull(),
 });
 
+export const saveSlots = pgTable("save_slots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  userTeamId: uuid("user_team_id"),
+  managedTeamName: varchar("managed_team_name", { length: 50 }),
+  managedTeamCity: varchar("managed_team_city", { length: 50 }),
+  currentLeagueDay: integer("current_league_day").default(1).notNull(),
+  currentSeasonYear: integer("current_season_year").default(2026).notNull(),
+  gameStateJson: text("game_state_json").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
