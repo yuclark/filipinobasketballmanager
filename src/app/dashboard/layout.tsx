@@ -301,15 +301,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <Save className="w-4.5 h-4.5" />
           <span>Save Game Slot</span>
         </button>
-
-        {/* Change Team Button */}
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-zinc-500 hover:text-red-400 hover:bg-red-500/5 rounded-xl transition-all cursor-pointer"
-        >
-          <LogOut className="w-4.5 h-4.5" />
-          <span>Exit to Main Menu</span>
-        </button>
       </aside>
 
       {/* Main Panel */}
@@ -339,6 +330,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             >
               <Save className="w-3.5 h-3.5" />
               <span>Save Progress</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="hidden md:flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/25 text-red-400 hover:bg-red-500 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Exit to Main Menu</span>
             </button>
           </div>
 
