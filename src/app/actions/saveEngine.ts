@@ -223,8 +223,15 @@ export async function deleteSaveSlotAction(slotId: string) {
 export async function resetActiveGameAction() {
   try {
     // Runs seeder to restore fresh 2026 state programmatically
-    await seedDatabase(db);
-    return { success: true };
+    const insertedTeams = await seedDatabase(db);
+    return {
+      success: true,
+      teams: insertedTeams.map((t: any) => ({
+        id: t.id,
+        city: t.city,
+        name: t.name
+      }))
+    };
   } catch (error: any) {
     console.error("Failed to reset database:", error);
     return { success: false, error: error.message };

@@ -136,6 +136,9 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
   }, []);
 
   const handleSelectTeam = async (teamId: string) => {
+    const selectedTeam = teams.find((t) => t.id === teamId);
+    if (!selectedTeam) return;
+
     triggerConfirm({
       title: "Start New Franchise",
       message: "Starting a new game will reset the active league state. Any unsaved active progress will be overwritten. Do you want to proceed?",
@@ -146,8 +149,15 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
         try {
           setActionLoading(true);
           const res = await resetActiveGameAction();
-          if (res.success) {
-            setTeam(teamId);
+          if (res.success && res.teams) {
+            const newTeam = res.teams.find(
+              (t: any) => t.city === selectedTeam.city && t.name === selectedTeam.name
+            );
+            if (newTeam) {
+              setTeam(newTeam.id);
+            } else {
+              setTeam(teamId);
+            }
             // Reset client Zustand store states back to day 1 fresh game
             useGameStore.setState({
               currentLeagueDay: 1,
@@ -156,7 +166,7 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
             });
             router.push("/dashboard");
           } else {
-            triggerAlert("Seeding Failed", "Failed to initialize new game: " + res.error);
+            triggerAlert("Seeding Failed", "Failed to initialize new game: " + (res.error || "No teams returned"));
           }
         } catch (err: any) {
           triggerAlert("System Error", "Error starting new game: " + err.message);

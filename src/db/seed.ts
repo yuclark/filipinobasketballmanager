@@ -354,6 +354,7 @@ export async function seedDatabase(db: any) {
     }
 
     console.log("Database seeding completed successfully! All tables ready.");
+    return insertedTeams;
   } catch (error) {
     console.error("Database seeding process failed:", error);
     throw error;
