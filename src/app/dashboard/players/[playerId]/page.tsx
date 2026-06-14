@@ -44,7 +44,7 @@ export default async function PlayerProfilePage({ params }: PageProps) {
     );
   }
 
-  const { player, regularSeasonHistory, playoffHistory, careerRegular, careerPlayoffs, logs, awards } = profileRes;
+  const { player, regularSeasonHistory, playoffHistory, careerRegular, careerPlayoffs, logs, awards, currentSeasonYear } = profileRes;
 
   const getOverallBadgeClass = (overall: number) => {
     if (overall >= 90) return "bg-orange-500/10 text-orange-400 border border-orange-500/30 shadow-lg shadow-orange-500/10";
@@ -260,6 +260,7 @@ export default async function PlayerProfilePage({ params }: PageProps) {
             careerRegular={careerRegular}
             careerPlayoffs={careerPlayoffs}
             logs={logs}
+            currentSeasonYear={currentSeasonYear ?? 2026}
           />
         </div>
 

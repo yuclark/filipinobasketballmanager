@@ -10,6 +10,7 @@ interface ClientTabsProps {
   careerRegular: any;
   careerPlayoffs: any;
   logs: any[];
+  currentSeasonYear: number;
 }
 
 export default function ClientTabs({
@@ -19,9 +20,18 @@ export default function ClientTabs({
   careerRegular,
   careerPlayoffs,
   logs,
+  currentSeasonYear,
 }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState<"stats" | "attributes" | "logs">("stats");
   const [splitTab, setSplitTab] = useState<"regular" | "playoffs">("regular");
+  const [selectedYear, setSelectedYear] = useState<number>(currentSeasonYear);
+
+  const years: number[] = [];
+  for (let y = 2026; y <= currentSeasonYear; y++) {
+    years.push(y);
+  }
+
+  const filteredLogs = logs.filter((log) => log.seasonYear === selectedYear);
 
   const getAttrColor = (val: number) => {
     if (val >= 90) return "bg-orange-500 text-orange-400";
@@ -75,7 +85,7 @@ export default function ClientTabs({
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            Season Game Logs ({logs.length})
+            Season Game Logs ({filteredLogs.length})
           </button>
         </div>
       </div>
@@ -274,14 +284,31 @@ export default function ClientTabs({
       {/* Game Logs Tab Content */}
       {activeTab === "logs" && (
         <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl">
-          <div className="mb-6">
-            <h3 className="text-lg font-bold text-white mb-1">Current Season Game Logs</h3>
-            <p className="text-zinc-550 text-xs font-medium">Individual performance breakdown for each completed matchup.</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-white mb-1">Season Game Logs ({selectedYear})</h3>
+              <p className="text-zinc-550 text-xs font-medium">Individual performance breakdown for each completed matchup.</p>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-zinc-950 p-1.5 px-3 rounded-xl border border-zinc-900 shrink-0">
+              <span className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">Season:</span>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                className="bg-transparent text-xs font-bold text-zinc-200 focus:outline-none cursor-pointer border-none"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y} className="bg-zinc-950 text-zinc-200">
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {logs.length === 0 ? (
+          {filteredLogs.length === 0 ? (
             <div className="bg-zinc-950/20 border border-zinc-900 rounded-2xl p-12 text-center text-zinc-500 text-sm italic">
-              No games simulated in the current calendar season yet.
+              No games simulated in the {selectedYear} season yet.
             </div>
           ) : (
             <div className="w-full overflow-x-auto rounded-xl border border-zinc-900">
@@ -306,7 +333,7 @@ export default function ClientTabs({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-900 bg-zinc-950/20 text-zinc-300">
-                  {logs.map((log, index) => (
+                  {filteredLogs.map((log, index) => (
                     <tr key={index} className="hover:bg-zinc-900/30 transition-colors">
                       <td className="py-3 px-4 text-center font-bold text-zinc-400">Day {log.gameNumber}</td>
                       <td className="py-3 px-4 font-medium text-zinc-300">

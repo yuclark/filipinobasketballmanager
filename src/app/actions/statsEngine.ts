@@ -924,6 +924,7 @@ export async function getPlayerProfileAction(playerId: string) {
       careerPlayoffs: playoffCareer,
       logs: formattedLogs,
       awards: formattedAwards,
+      currentSeasonYear,
     };
   } catch (error: any) {
     console.error("Failed to load player profile action:", error);
