@@ -25,11 +25,32 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Hide ALL scrollbars globally while keeping scroll functionality */
-* {
+/* Custom Scrollbars for a premium dark mode feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+  border: 1px solid #09090b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #f97316;
+}
+
+/* Hide scrollbars utility class */
+.scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-*::-webkit-scrollbar {
+.scrollbar-hide::-webkit-scrollbar {
   display: none;
 }

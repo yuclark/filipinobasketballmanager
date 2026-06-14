@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: 'Filipino Basketball Manager',
   description: 'Manage your Filipino basketball franchise.',
   icons: {
-    icon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏀</text></svg>',
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23f97316' stroke='%2318181b' stroke-width='4'/><line x1='5' y1='50' x2='95' y2='50' stroke='%2318181b' stroke-width='4'/><line x1='50' y1='5' x2='50' y2='95' stroke='%2318181b' stroke-width='4'/><path d='M 17 25 C 38 35, 38 65, 17 75' fill='none' stroke='%2318181b' stroke-width='4'/><path d='M 83 25 C 62 35, 62 65, 83 75' fill='none' stroke='%2318181b' stroke-width='4'/></svg>",
   },
 };
 
