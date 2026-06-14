@@ -10,8 +10,10 @@ import { revalidatePath } from "next/cache";
 
 import {
   FILIPINO_FIRST_NAMES as FIRST_NAMES,
+  FILIPINO_SECOND_NAMES as SECOND_NAMES,
   FILIPINO_SURNAMES as SURNAMES,
   FILAM_FIRST_NAMES,
+  AMERICAN_SECOND_NAMES,
   FILAM_SURNAMES
 } from "@/lib/names";
 
@@ -52,9 +54,16 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
     for (let i = 0; i < count; i++) {
       const isFilAm = Math.random() < 0.2; // 20% Fil-Am
       const useFilAmFirst = isFilAm || (Math.random() < 0.3);
-      const firstName = useFilAmFirst
+      const baseFirst = useFilAmFirst
         ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
         : FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+      const hasSecond = Math.random() < 0.4;
+      const secondName = hasSecond
+        ? (useFilAmFirst
+            ? AMERICAN_SECOND_NAMES[Math.floor(Math.random() * AMERICAN_SECOND_NAMES.length)]
+            : SECOND_NAMES[Math.floor(Math.random() * SECOND_NAMES.length)])
+        : "";
+      const firstName = secondName ? `${baseFirst} ${secondName}` : baseFirst;
       const lastName = isFilAm
         ? FILAM_SURNAMES[Math.floor(Math.random() * FILAM_SURNAMES.length)]
         : SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
@@ -597,9 +606,16 @@ export async function replenishLeagueRostersAction() {
           for (let k = 0; k < neededFAsCount + 10; k++) {
             const isFilAm = Math.random() < 0.2;
             const useFilAmFirst = isFilAm || (Math.random() < 0.3);
-            const firstName = useFilAmFirst
+            const baseFirst = useFilAmFirst
               ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
               : FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+            const hasSecond = Math.random() < 0.4;
+            const secondName = hasSecond
+              ? (useFilAmFirst
+                  ? AMERICAN_SECOND_NAMES[Math.floor(Math.random() * AMERICAN_SECOND_NAMES.length)]
+                  : SECOND_NAMES[Math.floor(Math.random() * SECOND_NAMES.length)])
+              : "";
+            const firstName = secondName ? `${baseFirst} ${secondName}` : baseFirst;
             const lastName = isFilAm
               ? FILAM_SURNAMES[Math.floor(Math.random() * FILAM_SURNAMES.length)]
               : SURNAMES[Math.floor(Math.random() * SURNAMES.length)];

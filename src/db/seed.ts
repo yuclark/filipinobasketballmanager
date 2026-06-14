@@ -16,8 +16,10 @@ const db = drizzle(sql, { schema });
 
 import {
   FILIPINO_FIRST_NAMES,
+  FILIPINO_SECOND_NAMES,
   FILIPINO_SURNAMES,
   FILAM_FIRST_NAMES,
+  AMERICAN_SECOND_NAMES,
   FILAM_SURNAMES
 } from "../lib/names";
 
@@ -185,9 +187,14 @@ async function main() {
         const isRookie = (i === firstRookieIndex || i === secondRookieIndex);
         const isFilAm = i < numFilAms;
         const useFilAmFirst = isFilAm || (Math.random() < 0.3);
-        const firstName = useFilAmFirst
+        const baseFirst = useFilAmFirst
           ? getRandomElement(FILAM_FIRST_NAMES)
           : getRandomElement(FILIPINO_FIRST_NAMES);
+        const hasSecond = Math.random() < 0.4;
+        const secondName = hasSecond
+          ? (useFilAmFirst ? getRandomElement(AMERICAN_SECOND_NAMES) : getRandomElement(FILIPINO_SECOND_NAMES))
+          : "";
+        const firstName = secondName ? `${baseFirst} ${secondName}` : baseFirst;
         const lastName = isFilAm
           ? getRandomElement(FILAM_SURNAMES)
           : getRandomElement(FILIPINO_SURNAMES);
@@ -281,9 +288,14 @@ async function main() {
     for (let i = 0; i < 50; i++) {
       const isFilAm = Math.random() < 0.2;
       const useFilAmFirst = isFilAm || (Math.random() < 0.3);
-      const firstName = useFilAmFirst
+      const baseFirst = useFilAmFirst
         ? getRandomElement(FILAM_FIRST_NAMES)
         : getRandomElement(FILIPINO_FIRST_NAMES);
+      const hasSecond = Math.random() < 0.4;
+      const secondName = hasSecond
+        ? (useFilAmFirst ? getRandomElement(AMERICAN_SECOND_NAMES) : getRandomElement(FILIPINO_SECOND_NAMES))
+        : "";
+      const firstName = secondName ? `${baseFirst} ${secondName}` : baseFirst;
       const lastName = isFilAm
         ? getRandomElement(FILAM_SURNAMES)
         : getRandomElement(FILIPINO_SURNAMES);
