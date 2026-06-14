@@ -28,6 +28,7 @@ import {
   GraduationCap,
   Save,
   CheckCircle,
+  AlertTriangle
 } from "lucide-react";
 import Link from "next/link";
 
@@ -55,6 +56,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [newSaveName, setNewSaveName] = useState("");
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
+
+  const triggerAlert = (title: string, message: string) => {
+    setAlertModal({
+      isOpen: true,
+      title,
+      message,
+    });
+  };
 
   const handleOpenSaveModal = async () => {
     setIsSaveModalOpen(true);
@@ -84,10 +103,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           setSaveSuccess(false);
         }, 1200);
       } else {
-        alert("Failed to save game: " + res.error);
+        triggerAlert("Save Failed", "Failed to save game: " + res.error);
       }
     } catch (err: any) {
-      alert("Error saving game: " + err.message);
+      triggerAlert("System Error", "Error saving game: " + err.message);
     } finally {
       setSaveLoading(false);
     }
@@ -459,6 +478,33 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        {/* Custom Alert Modal */}
+        {alertModal.isOpen && (
+          <div className="fixed inset-0 bg-zinc-955/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 md:p-8 relative shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full pointer-events-none" />
+              
+              <div className="flex items-start gap-4 mb-6">
+                <div className="p-3 rounded-2xl bg-red-500/10 text-red-500">
+                  <AlertTriangle className="w-6 h-6 animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-2">{alertModal.title}</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">{alertModal.message}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setAlertModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-xl transition-all shadow-md cursor-pointer text-sm"
+                >
+                  Acknowledge
+                </button>
+              </div>
             </div>
           </div>
         )}

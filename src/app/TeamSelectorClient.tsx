@@ -15,7 +15,8 @@ import {
   FolderOpen,
   Play,
   Loader2,
-  Plus
+  Plus,
+  AlertTriangle
 } from "lucide-react";
 import {
   getSaveSlotsAction,
@@ -60,6 +61,54 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"saves" | "new_game">("new_game");
 
+  // Custom Alert and Confirm Modal States
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    type?: "warning" | "danger" | "info";
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
+
+  const triggerConfirm = (options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    type?: "warning" | "danger" | "info";
+    onConfirm: () => void | Promise<void>;
+  }) => {
+    setConfirmModal({
+      ...options,
+      isOpen: true,
+    });
+  };
+
+  const triggerAlert = (title: string, message: string) => {
+    setAlertModal({
+      isOpen: true,
+      title,
+      message,
+    });
+  };
+
   const fetchSlots = async () => {
     try {
       setLoadingSaves(true);
@@ -87,31 +136,35 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
   }, []);
 
   const handleSelectTeam = async (teamId: string) => {
-    const confirmStart = confirm(
-      "Starting a new game will reset the active league state. Any unsaved active progress will be overwritten. Do you want to proceed?"
-    );
-    if (!confirmStart) return;
-
-    try {
-      setActionLoading(true);
-      const res = await resetActiveGameAction();
-      if (res.success) {
-        setTeam(teamId);
-        // Reset client Zustand store states back to day 1 fresh game
-        useGameStore.setState({
-          currentLeagueDay: 1,
-          tradeDeadlinePassed: false,
-          isSimulating: false,
-        });
-        router.push("/dashboard");
-      } else {
-        alert("Failed to initialize new game: " + res.error);
+    triggerConfirm({
+      title: "Start New Franchise",
+      message: "Starting a new game will reset the active league state. Any unsaved active progress will be overwritten. Do you want to proceed?",
+      type: "warning",
+      confirmText: "Proceed",
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        try {
+          setActionLoading(true);
+          const res = await resetActiveGameAction();
+          if (res.success) {
+            setTeam(teamId);
+            // Reset client Zustand store states back to day 1 fresh game
+            useGameStore.setState({
+              currentLeagueDay: 1,
+              tradeDeadlinePassed: false,
+              isSimulating: false,
+            });
+            router.push("/dashboard");
+          } else {
+            triggerAlert("Seeding Failed", "Failed to initialize new game: " + res.error);
+          }
+        } catch (err: any) {
+          triggerAlert("System Error", "Error starting new game: " + err.message);
+        } finally {
+          setActionLoading(false);
+        }
       }
-    } catch (err: any) {
-      alert("Error starting new game: " + err.message);
-    } finally {
-      setActionLoading(false);
-    }
+    });
   };
 
   const handleLoadSave = async (slotId: string) => {
@@ -125,10 +178,10 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
         });
         router.push("/dashboard");
       } else {
-        alert("Failed to load save: " + res.error);
+        triggerAlert("Load Failed", "Failed to load save: " + res.error);
       }
     } catch (err: any) {
-      alert("Error loading save: " + err.message);
+      triggerAlert("System Error", "Error loading save: " + err.message);
     } finally {
       setActionLoading(false);
     }
@@ -136,25 +189,33 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
 
   const handleDeleteSave = async (slotId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this save slot?")) return;
-    try {
-      setActionLoading(true);
-      const res = await deleteSaveSlotAction(slotId);
-      if (res.success) {
-        // Refresh saves list
-        const updated = saveSlots.filter((s) => s.id !== slotId);
-        setSaveSlots(updated);
-        if (updated.length === 0) {
-          setActiveTab("new_game");
+    triggerConfirm({
+      title: "Delete Save Slot",
+      message: "Are you sure you want to permanently delete this save slot? This action cannot be undone.",
+      type: "danger",
+      confirmText: "Delete",
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        try {
+          setActionLoading(true);
+          const res = await deleteSaveSlotAction(slotId);
+          if (res.success) {
+            // Refresh saves list
+            const updated = saveSlots.filter((s) => s.id !== slotId);
+            setSaveSlots(updated);
+            if (updated.length === 0) {
+              setActiveTab("new_game");
+            }
+          } else {
+            triggerAlert("Delete Failed", "Failed to delete save slot.");
+          }
+        } catch (err: any) {
+          triggerAlert("System Error", "An error occurred while deleting the save slot: " + err.message);
+        } finally {
+          setActionLoading(false);
         }
-      } else {
-        alert("Failed to delete save slot.");
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setActionLoading(false);
-    }
+    });
   };
 
   const filteredTeams = teams.filter((team) => {
@@ -418,6 +479,83 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
               </p>
             </div>
           )}
+        </div>
+      )}
+      {/* Custom Confirm Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-zinc-955/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 md:p-8 relative shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {confirmModal.type === "danger" ? (
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full pointer-events-none" />
+            ) : (
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 blur-3xl rounded-full pointer-events-none" />
+            )}
+            
+            <div className="flex items-start gap-4 mb-6">
+              <div className={`p-3 rounded-2xl ${
+                confirmModal.type === "danger"
+                  ? "bg-red-500/10 text-red-500"
+                  : "bg-orange-500/10 text-orange-500"
+              }`}>
+                {confirmModal.type === "danger" ? (
+                  <Trash2 className="w-6 h-6 animate-pulse" />
+                ) : (
+                  <AlertTriangle className="w-6 h-6 animate-pulse" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2">{confirmModal.title}</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">{confirmModal.message}</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-5 py-2.5 bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all cursor-pointer text-sm"
+              >
+                {confirmModal.cancelText || "Cancel"}
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className={`px-5 py-2.5 text-white font-bold rounded-xl transition-all shadow-md cursor-pointer text-sm ${
+                  confirmModal.type === "danger"
+                    ? "bg-red-500 hover:bg-red-600"
+                    : "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
+                }`}
+              >
+                {confirmModal.confirmText || "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Alert Modal */}
+      {alertModal.isOpen && (
+        <div className="fixed inset-0 bg-zinc-955/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 md:p-8 relative shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full pointer-events-none" />
+            
+            <div className="flex items-start gap-4 mb-6">
+              <div className="p-3 rounded-2xl bg-red-500/10 text-red-500">
+                <AlertTriangle className="w-6 h-6 animate-bounce" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2">{alertModal.title}</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">{alertModal.message}</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setAlertModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold rounded-xl transition-all shadow-md cursor-pointer text-sm"
+              >
+                Acknowledge
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
