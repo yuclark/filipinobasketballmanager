@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, inArray, sql, isNotNull } from "drizzle-orm";
-import { teams, players, games, playerGameStats, transactions } from "@/db/schema";
+import { teams, players, games, playerGameStats, transactions, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import { enforceLeagueRosterLimitsAction, runCpuDailyAiEngineAction } from "@/app/actions/cpuAiEngine";
@@ -107,12 +107,32 @@ export async function simulateCpuTradesAction(
             const newSalaryA = totalSalaryA - playerA.salary + playerB.salary;
             const newSalaryB = totalSalaryB - playerB.salary + playerA.salary;
 
-            if (newSalaryA > 50000000 || newSalaryB > 50000000) continue;
+            if (newSalaryA + (teamA.deadCap ?? 0) > teamA.budget || newSalaryB + (teamB.deadCap ?? 0) > teamB.budget) continue;
 
             // Valid trade found, execute transaction and exit immediately
             await db.transaction(async (tx) => {
               await tx.update(players).set({ teamId: teamB.id }).where(eq(players.id, playerA.id));
               await tx.update(players).set({ teamId: teamA.id }).where(eq(players.id, playerB.id));
+
+              // Update playerSalaryHistory table for both players in the current season
+              await tx
+                .update(playerSalaryHistory)
+                .set({ teamId: teamB.id })
+                .where(
+                  and(
+                    eq(playerSalaryHistory.playerId, playerA.id),
+                    eq(playerSalaryHistory.seasonYear, seasonYear)
+                  )
+                );
+              await tx
+                .update(playerSalaryHistory)
+                .set({ teamId: teamA.id })
+                .where(
+                  and(
+                    eq(playerSalaryHistory.playerId, playerB.id),
+                    eq(playerSalaryHistory.seasonYear, seasonYear)
+                  )
+                );
 
               const description = `TRADE: The ${teamA.city} ${teamA.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}) to the ${teamB.city} ${teamB.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}).`;
               await tx.insert(transactions).values({

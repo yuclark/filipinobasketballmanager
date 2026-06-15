@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, or } from "drizzle-orm";
-import { players, playerGameStats, games, teams, playerAwards, allLeagueTeams } from "@/db/schema";
+import { players, playerGameStats, games, teams, playerAwards, allLeagueTeams, playerSalaryHistory } from "@/db/schema";
 
 
 export async function getPlayerStatsAction(playerId: string) {
@@ -907,6 +907,20 @@ export async function getPlayerProfileAction(playerId: string) {
       formattedAwards.push(`${al.seasonYear} ${al.type} Team (${al.position})`);
     });
 
+    const salaryHistory = await db
+      .select({
+        seasonYear: playerSalaryHistory.seasonYear,
+        salary: playerSalaryHistory.salary,
+        teamId: playerSalaryHistory.teamId,
+        teamName: sql<string>`coalesce(concat(${teams.city}, ' ', ${teams.name}), 'Free Agent')`,
+        teamCity: teams.city,
+        teamNickname: teams.name,
+      })
+      .from(playerSalaryHistory)
+      .leftJoin(teams, eq(playerSalaryHistory.teamId, teams.id))
+      .where(eq(playerSalaryHistory.playerId, playerId))
+      .orderBy(desc(playerSalaryHistory.seasonYear));
+
     return {
       success: true,
       player: {
@@ -925,6 +939,7 @@ export async function getPlayerProfileAction(playerId: string) {
       careerPlayoffs: playoffCareer,
       logs: formattedLogs,
       awards: formattedAwards,
+      salaryHistory,
       currentSeasonYear,
     };
   } catch (error: any) {

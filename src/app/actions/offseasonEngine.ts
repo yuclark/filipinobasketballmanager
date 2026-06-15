@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks, draftSessions } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
@@ -468,6 +468,24 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
       })
       .where(eq(players.id, playerId));
 
+    // Delete any existing record for this player/season to prevent duplicates
+    await db
+      .delete(playerSalaryHistory)
+      .where(
+        and(
+          eq(playerSalaryHistory.playerId, playerId),
+          eq(playerSalaryHistory.seasonYear, season)
+        )
+      );
+
+    // Record in playerSalaryHistory
+    await db.insert(playerSalaryHistory).values({
+      playerId,
+      seasonYear: season,
+      teamId,
+      salary: player.salary,
+    });
+
     // Mark pick as used in draftPicks table
     await db
       .update(draftPicks)
@@ -854,7 +872,6 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
     freeAgents.sort((a, b) => b.overall - a.overall);
 
     const logs: string[] = [];
-    const SALARY_CAP = 50000000;
 
     // Fetch current year once at the beginning
     const lastGame = await db
@@ -865,12 +882,13 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
     const currentYear = lastGame[0]?.year ?? 2026;
 
     // Track CPU team payroll and roster size in memory
-    const teamState: Record<string, { payroll: number; size: number }> = {};
+    const teamState: Record<string, { payroll: number; size: number; budget: number }> = {};
     for (const team of allTeams) {
       const roster = rosters[team.id] || [];
       teamState[team.id] = {
         payroll: roster.reduce((sum, p) => sum + p.salary, 0),
         size: roster.length,
+        budget: team.budget,
       };
     }
 
@@ -881,7 +899,7 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
         const slotsNeeded = 12 - state.size;
 
         for (let i = 0; i < slotsNeeded; i++) {
-          const capRemaining = SALARY_CAP - state.payroll;
+          const capRemaining = state.budget - state.payroll;
           // Find the best FA we can afford, or sign at min salary if cap space is less than 500k
           let selectedFaIndex = -1;
           for (let j = 0; j < freeAgents.length; j++) {
@@ -938,7 +956,7 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
       for (const team of shuffledCpuTeams) {
         const state = teamState[team.id];
         if (state.size < 14) {
-          const capRemaining = SALARY_CAP - state.payroll;
+          const capRemaining = state.budget - state.payroll;
           // Maintain a ₱1,000,000 cap buffer to leave breathing room for trades/emergency signings
           let selectedFaIndex = -1;
           for (let j = 0; j < freeAgents.length; j++) {
@@ -1012,7 +1030,7 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
           const fa = freeAgents[j];
           if (fa.overall >= worstPlayer.overall + 5) {
             const projectedPayroll = currentPayroll - worstPlayer.salary + fa.salary;
-            if (projectedPayroll <= SALARY_CAP) {
+            if (projectedPayroll <= team.budget) {
               selectedFaIndex = j;
               break;
             }
@@ -1262,6 +1280,24 @@ async function processSingleDraftPick(
       contractYearsRemaining: 3,
     })
     .where(eq(players.id, prospect.id));
+
+  // Delete any existing record for this player/season to prevent duplicates
+  await db
+    .delete(playerSalaryHistory)
+    .where(
+      and(
+        eq(playerSalaryHistory.playerId, prospect.id),
+        eq(playerSalaryHistory.seasonYear, currentYear)
+      )
+    );
+
+  // Record in playerSalaryHistory
+  await db.insert(playerSalaryHistory).values({
+    playerId: prospect.id,
+    seasonYear: currentYear,
+    teamId: draftingTeamId,
+    salary: prospect.salary,
+  });
 
   // 3. Mark draft pick as used
   await db

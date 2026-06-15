@@ -2,10 +2,10 @@
 
 import { db } from "@/db";
 import { eq, inArray, isNull, isNotNull, desc, and } from "drizzle-orm";
-import { teams, players, transactions, games, draftPicks } from "@/db/schema";
+import { teams, players, transactions, games, draftPicks, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
-const SALARY_CAP = 50000000; // 50,000,000 PHP
+
 
 export async function getFreeAgents() {
   try {
@@ -38,12 +38,24 @@ export async function getTeamSalarySpace(teamId: string) {
       .where(eq(players.teamId, teamId))
       .orderBy(desc(players.overall));
 
+    const [team] = await db
+      .select({ budget: teams.budget, deadCap: teams.deadCap })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .limit(1);
+
+    if (!team) {
+      return { success: false, error: "Team not found." };
+    }
+
     const totalSalaries = activeRoster.reduce((sum, p) => sum + p.salary, 0);
-    const space = SALARY_CAP - totalSalaries;
+    const space = team.budget - (totalSalaries + (team.deadCap ?? 0));
 
     return {
       success: true,
       totalSalaries,
+      deadCap: team.deadCap ?? 0,
+      budget: team.budget,
       space,
       rosterCount: activeRoster.length,
       roster: activeRoster,
@@ -138,9 +150,10 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
     }
 
     const totalSalaries = currentTeamPlayers.reduce((sum, p) => sum + p.salary, 0);
+    const totalPayroll = totalSalaries + (team.deadCap ?? 0);
 
-    if (totalSalaries + player.salary > SALARY_CAP) {
-      const excess = totalSalaries + player.salary - SALARY_CAP;
+    if (totalPayroll + player.salary > team.budget) {
+      const excess = totalPayroll + player.salary - team.budget;
       return {
         success: false,
         error: `Cannot sign player. Signing exceeds team salary cap by ${new Intl.NumberFormat(
@@ -150,12 +163,24 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
       };
     }
 
+    const { day, year } = await getCurrentLeagueDayAndYear();
+
     await db
       .update(players)
       .set({ teamId, contractYearsRemaining: 3 })
       .where(eq(players.id, playerId));
 
-    const { day, year } = await getCurrentLeagueDayAndYear();
+    // Update playerSalaryHistory record for the current season
+    await db
+      .update(playerSalaryHistory)
+      .set({ teamId })
+      .where(
+        and(
+          eq(playerSalaryHistory.playerId, playerId),
+          eq(playerSalaryHistory.seasonYear, year)
+        )
+      );
+
     const description = `${team.city} ${team.name} signed free agent ${player.firstName} ${player.lastName} for ${new Intl.NumberFormat(
       "en-PH",
       { style: "currency", currency: "PHP", maximumFractionDigits: 0 }
@@ -257,7 +282,8 @@ export async function sendOfferAction(
       .from(players)
       .where(eq(players.teamId, teamId));
     const currentPayroll = rosterSalaries.reduce((s, p) => s + (p.salary ?? 0), 0);
-    const remaining = SALARY_CAP - currentPayroll;
+    const totalPayroll = currentPayroll + (team.deadCap ?? 0);
+    const remaining = team.budget - totalPayroll;
 
     if (actualOffer > remaining) {
       return {
@@ -300,12 +326,23 @@ export async function sendOfferAction(
     const playerName = `${player.firstName} ${player.lastName}`;
 
     if (accepted) {
+      const { day, year } = await getCurrentLeagueDayAndYear();
+
       await db
         .update(players)
         .set({ teamId, contractYearsRemaining: 3, salary: actualOffer })
         .where(eq(players.id, playerId));
 
-      const { day, year } = await getCurrentLeagueDayAndYear();
+      // Update playerSalaryHistory record for current season
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId })
+        .where(
+          and(
+            eq(playerSalaryHistory.playerId, playerId),
+            eq(playerSalaryHistory.seasonYear, year)
+          )
+        );
       await db.insert(transactions).values({
         type: "Signing",
         description: `${team.city} ${team.name} signed free agent ${playerName} for ₱${actualOffer.toLocaleString("en-PH")}/yr (OVR ${player.overall}).`,
@@ -374,14 +411,34 @@ export async function releasePlayerAction(playerId: string) {
       .where(eq(teams.id, player.teamId))
       .limit(1);
 
+    const penalty = Math.round(player.salary * 0.5);
+
     await db
       .update(players)
       .set({ teamId: null })
       .where(eq(players.id, playerId));
 
     const { day, year } = await getCurrentLeagueDayAndYear();
+
+    // Add penalty to team's dead cap
+    await db
+      .update(teams)
+      .set({ deadCap: (team.deadCap ?? 0) + penalty })
+      .where(eq(teams.id, player.teamId));
+
+    // Update playerSalaryHistory
+    await db
+      .update(playerSalaryHistory)
+      .set({ teamId: null })
+      .where(
+        and(
+          eq(playerSalaryHistory.playerId, playerId),
+          eq(playerSalaryHistory.seasonYear, year)
+        )
+      );
+
     const teamNameStr = team ? `${team.city} ${team.name}` : "their team";
-    const description = `${player.firstName} ${player.lastName} was waived by ${teamNameStr} into free agency.`;
+    const description = `${player.firstName} ${player.lastName} was waived by ${teamNameStr} into free agency (waive penalty: ₱${penalty.toLocaleString("en-PH")} dead cap).`;
 
     await db.insert(transactions).values({
       type: "Release",
@@ -505,8 +562,11 @@ export async function executeTradeAction(
       return { success: false, error: `Trade rejected: ${teamB.city} ${teamB.name} cannot have fewer than ${MIN_ROSTER_SIZE} players (would have ${newRosterCountB} after trade).` };
     }
 
-    if (newSalariesA > SALARY_CAP) {
-      const excess = newSalariesA - SALARY_CAP;
+    const totalPayrollA = newSalariesA + (teamA.deadCap ?? 0);
+    const totalPayrollB = newSalariesB + (teamB.deadCap ?? 0);
+
+    if (totalPayrollA > teamA.budget) {
+      const excess = totalPayrollA - teamA.budget;
       return {
         success: false,
         error: `Trade rejected: ${teamA.city} ${teamA.name} will exceed the salary cap by ${new Intl.NumberFormat(
@@ -516,8 +576,8 @@ export async function executeTradeAction(
       };
     }
 
-    if (newSalariesB > SALARY_CAP) {
-      const excess = newSalariesB - SALARY_CAP;
+    if (totalPayrollB > teamB.budget) {
+      const excess = totalPayrollB - teamB.budget;
       return {
         success: false,
         error: `Trade rejected: ${teamB.city} ${teamB.name} will exceed the salary cap by ${new Intl.NumberFormat(
@@ -533,6 +593,16 @@ export async function executeTradeAction(
         .update(players)
         .set({ teamId: teamBId })
         .where(inArray(players.id, playerAIds));
+
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId: teamBId })
+        .where(
+          and(
+            inArray(playerSalaryHistory.playerId, playerAIds),
+            eq(playerSalaryHistory.seasonYear, year)
+          )
+        );
     }
 
     if (playerBIds.length > 0) {
@@ -540,6 +610,16 @@ export async function executeTradeAction(
         .update(players)
         .set({ teamId: teamAId })
         .where(inArray(players.id, playerBIds));
+
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId: teamAId })
+        .where(
+          and(
+            inArray(playerSalaryHistory.playerId, playerBIds),
+            eq(playerSalaryHistory.seasonYear, year)
+          )
+        );
     }
 
     if (pickAIds && pickAIds.length > 0) {

@@ -47,6 +47,8 @@ interface CapInfo {
   space: number;
   rosterCount: number;
   roster: Player[];
+  budget: number;
+  deadCap: number;
 }
 
 export default function TradesPage() {
@@ -103,6 +105,8 @@ export default function TradesPage() {
             space: userCap.space!,
             rosterCount: userCap.rosterCount!,
             roster: userCap.roster as Player[],
+            budget: userCap.budget!,
+            deadCap: userCap.deadCap!,
           });
         }
 
@@ -135,6 +139,8 @@ export default function TradesPage() {
             space: cpuCap.space!,
             rosterCount: cpuCap.rosterCount!,
             roster: cpuCap.roster as Player[],
+            budget: cpuCap.budget!,
+            deadCap: cpuCap.deadCap!,
           });
         }
 
@@ -222,8 +228,8 @@ export default function TradesPage() {
   const cpuSelectedSalary = cpuSelectedPlayers.reduce((sum, p) => sum + p.salary, 0);
 
   // Budget post-trade calculations
-  const userNewPayroll = (userCapInfo?.totalSalaries || 0) - userSelectedSalary + cpuSelectedSalary;
-  const cpuNewPayroll = (cpuCapInfo?.totalSalaries || 0) - cpuSelectedSalary + userSelectedSalary;
+  const userNewPayroll = (userCapInfo?.totalSalaries || 0) - userSelectedSalary + cpuSelectedSalary + (userCapInfo?.deadCap || 0);
+  const cpuNewPayroll = (cpuCapInfo?.totalSalaries || 0) - cpuSelectedSalary + userSelectedSalary + (cpuCapInfo?.deadCap || 0);
 
   // Roster post-trade calculations
   const userNewCount = (userCapInfo?.rosterCount || 0) - selectedUserIds.length + selectedCpuIds.length;
@@ -242,8 +248,8 @@ export default function TradesPage() {
       : 0;
 
   // Validation Flags
-  const isUserCapSpaceOk = userNewPayroll <= 50000000;
-  const isCpuCapSpaceOk = cpuNewPayroll <= 50000000;
+  const isUserCapSpaceOk = userNewPayroll <= (userCapInfo?.budget || 50000000);
+  const isCpuCapSpaceOk = cpuNewPayroll <= (cpuCapInfo?.budget || 50000000);
   const isUserRosterCountOk = userNewCount <= MAX_ROSTER_SIZE;
   const isCpuRosterCountOk = cpuNewCount <= MAX_ROSTER_SIZE;
 
@@ -263,10 +269,10 @@ export default function TradesPage() {
     rejectionReason = `Trade blocked: Opponent exceeds the ${MAX_ROSTER_SIZE}-player roster limit.`;
   } else if (!isUserCapSpaceOk) {
     tradeStatus = "rejected";
-    rejectionReason = "Trade blocked: Your team exceeds the ₱50,000,000 salary cap.";
+    rejectionReason = `Trade blocked: Your team exceeds the ₱${(userCapInfo?.budget || 50000000).toLocaleString("en-PH")} salary cap.`;
   } else if (!isCpuCapSpaceOk) {
     tradeStatus = "rejected";
-    rejectionReason = "Trade blocked: Opponent exceeds the ₱50,000,000 salary cap.";
+    rejectionReason = `Trade blocked: Opponent exceeds the ₱${(cpuCapInfo?.budget || 50000000).toLocaleString("en-PH")} salary cap.`;
   } else {
     tradeStatus = "approved";
   }
@@ -369,8 +375,13 @@ export default function TradesPage() {
             </div>
             {userCapInfo && (
               <div className="text-right">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block"> Payroll </span>
-                <span className="text-sm font-extrabold text-amber-500">{formatPHP(userCapInfo.totalSalaries)}</span>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block"> Payroll / Cap </span>
+                <span className="text-sm font-extrabold text-amber-500">
+                  {formatPHP(userCapInfo.totalSalaries + userCapInfo.deadCap)} / {formatPHP(userCapInfo.budget)}
+                </span>
+                {userCapInfo.deadCap > 0 && (
+                  <span className="text-[9px] text-zinc-500 block">Includes {formatPHP(userCapInfo.deadCap)} dead cap</span>
+                )}
                 <span className="text-[10px] font-medium text-zinc-400 block mt-0.5">{userCapInfo.rosterCount} / {MAX_ROSTER_SIZE} players</span>
               </div>
             )}
@@ -485,8 +496,13 @@ export default function TradesPage() {
             </div>
             {cpuCapInfo && (
               <div className="text-right">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block"> Payroll </span>
-                <span className="text-sm font-extrabold text-amber-500">{formatPHP(cpuCapInfo.totalSalaries)}</span>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block"> Payroll / Cap </span>
+                <span className="text-sm font-extrabold text-amber-500">
+                  {formatPHP(cpuCapInfo.totalSalaries + cpuCapInfo.deadCap)} / {formatPHP(cpuCapInfo.budget)}
+                </span>
+                {cpuCapInfo.deadCap > 0 && (
+                  <span className="text-[9px] text-zinc-500 block">Includes {formatPHP(cpuCapInfo.deadCap)} dead cap</span>
+                )}
                 <span className="text-[10px] font-medium text-zinc-400 block mt-0.5">{cpuCapInfo.rosterCount} / {MAX_ROSTER_SIZE} players</span>
               </div>
             )}
@@ -615,7 +631,7 @@ export default function TradesPage() {
             <div className="space-y-2 border-t md:border-t-0 md:border-l md:border-r border-zinc-900 md:px-6 py-2 md:py-0">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Your New Payroll</span>
               <span className={`text-xl font-extrabold block ${isUserCapSpaceOk ? "text-white" : "text-red-400"}`}>
-                {formatPHP(userNewPayroll)}
+                {formatPHP(userNewPayroll)} <span className="text-xs font-normal text-zinc-500">/ {formatPHP(userCapInfo?.budget || 50000000)}</span>
               </span>
               <span className="text-[10px] font-medium text-zinc-400 block">
                 Post-trade size: {userNewCount} / {MAX_ROSTER_SIZE} players
@@ -626,7 +642,7 @@ export default function TradesPage() {
             <div className="space-y-2 py-2 md:py-0">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Opponent New Payroll</span>
               <span className={`text-xl font-extrabold block ${isCpuCapSpaceOk ? "text-white" : "text-red-400"}`}>
-                {formatPHP(cpuNewPayroll)}
+                {formatPHP(cpuNewPayroll)} <span className="text-xs font-normal text-zinc-500">/ {formatPHP(cpuCapInfo?.budget || 50000000)}</span>
               </span>
               <span className="text-[10px] font-medium text-zinc-400 block">
                 Post-trade size: {cpuNewCount} / {MAX_ROSTER_SIZE} players

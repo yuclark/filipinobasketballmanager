@@ -162,7 +162,8 @@ export default function TradeProposalsPage() {
 
   const userRosterCount = userRoster.length;
   const userSalaryTotal = userRoster.reduce((sum, p) => sum + p.salary, 0);
-  const SALARY_CAP = 50000000;
+  const userBudget = userTeam?.budget ?? 50000000;
+  const userDeadCap = userTeam?.deadCap ?? 0;
 
   return (
     <div className="space-y-6">
@@ -223,8 +224,8 @@ export default function TradeProposalsPage() {
             const tradedSalary = tradedPlayers.reduce((sum, p) => sum + p.salary, 0);
             const salaryChange = receivedSalary - tradedSalary;
 
-            const nextSalary = userSalaryTotal + salaryChange;
-            const isCapCompliant = nextSalary <= SALARY_CAP;
+            const nextSalary = userSalaryTotal + salaryChange + userDeadCap;
+            const isCapCompliant = nextSalary <= userBudget;
 
             const receivedCount = receivedPlayers.length;
             const tradedCount = tradedPlayers.length;
@@ -358,7 +359,7 @@ export default function TradeProposalsPage() {
                       <Coins className="w-5 h-5 text-amber-500" />
                       <div>
                         <span className="text-white font-extrabold block">
-                          {formatPHP(nextSalary)}
+                          {formatPHP(nextSalary)} <span className="text-[10px] font-normal text-zinc-500">/ {formatPHP(userBudget)}</span>
                         </span>
                         <span className={`text-[10px] font-bold uppercase ${salaryChange >= 0 ? "text-red-400" : "text-green-400"}`}>
                           {salaryChange >= 0 ? "+" : ""}{formatPHP(salaryChange)} yr
@@ -367,7 +368,7 @@ export default function TradeProposalsPage() {
                     </div>
                     {!isCapCompliant && (
                       <span className="text-[10px] text-red-400 font-bold block mt-1 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" /> Exceeds ₱50M Salary Cap
+                        <AlertCircle className="w-3 h-3" /> Exceeds ₱{userBudget.toLocaleString("en-PH")} Salary Cap
                       </span>
                     )}
                   </div>

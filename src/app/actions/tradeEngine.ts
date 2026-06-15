@@ -2,14 +2,14 @@
 
 import { db } from "@/db";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
-import { players, teams, transactions, games, draftPicks, tradeProposals } from "@/db/schema";
+import { players, teams, transactions, games, draftPicks, tradeProposals, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 export type TradeAsset =
   | { type: "PLAYER"; playerId: string }
   | { type: "PICK"; pickId: string };
 
-const SALARY_CAP = 50000000;
+
 
 // Position Group helper
 function getPositionGroup(pos: string): "G" | "F" | "C" {
@@ -225,7 +225,8 @@ export async function getTradeOffersAction(userAssetId: string, assetType: "PLAY
         const newUserSalary = userTeamSalary - salarySentByUser + salaryReceivedByUser;
         const newCpuSalary = cpuTeamSalary - salaryReceivedByUser + salarySentByUser;
 
-        if (newUserSalary <= SALARY_CAP && newCpuSalary <= SALARY_CAP) {
+        const userTeam = allTeams.find((t) => t.id === userTeamId);
+        if (userTeam && newUserSalary <= userTeam.budget && newCpuSalary <= cpuTeam.budget) {
           offers.push({
             id: cpuTeam.id,
             cpuTeamId: cpuTeam.id,
@@ -356,11 +357,11 @@ export async function executeUserTradeAction(
       const newSalariesA = currentSalariesA - salarySentByUser + salaryReceivedByUser;
       const newSalariesB = currentSalariesB - salaryReceivedByUser + salarySentByUser;
 
-      if (newSalariesA > 50000000) {
-        return { success: false, error: "Trade blocked: Your team exceeds the ₱50,000,000 salary cap." };
+      if (newSalariesA > userTeam.budget) {
+        return { success: false, error: `Trade blocked: Your team exceeds the ₱${userTeam.budget.toLocaleString("en-PH")} salary cap.` };
       }
-      if (newSalariesB > 50000000) {
-        return { success: false, error: "Trade blocked: Opposing team exceeds the ₱50,000,000 salary cap." };
+      if (newSalariesB > cpuTeam.budget) {
+        return { success: false, error: `Trade blocked: Opposing team exceeds the ₱${cpuTeam.budget.toLocaleString("en-PH")} salary cap.` };
       }
 
       // SWAP ASSETS
@@ -370,6 +371,16 @@ export async function executeUserTradeAction(
           .update(players)
           .set({ teamId: cpuTeamId, isOnTradeBlock: false })
           .where(eq(players.id, userAssetId));
+
+        await tx
+          .update(playerSalaryHistory)
+          .set({ teamId: cpuTeamId })
+          .where(
+            and(
+              eq(playerSalaryHistory.playerId, userAssetId),
+              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+            )
+          );
       } else {
         await tx
           .update(draftPicks)
@@ -383,6 +394,21 @@ export async function executeUserTradeAction(
           .update(players)
           .set({ teamId: userTeamId, isOnTradeBlock: false })
           .where(eq(players.id, cp.id));
+      }
+
+      if (matchedCpuPlayers.length > 0) {
+        await tx
+          .update(playerSalaryHistory)
+          .set({ teamId: userTeamId })
+          .where(
+            and(
+              inArray(
+                playerSalaryHistory.playerId,
+                matchedCpuPlayers.map((p) => p.id)
+              ),
+              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+            )
+          );
       }
 
       // 3. CPU Picks
@@ -434,7 +460,9 @@ function checkTradeViability(
   userPlayer: typeof players.$inferSelect,
   cpuPlayer: typeof players.$inferSelect,
   userSalaryTotal: number,
-  cpuRoster: typeof players.$inferSelect[]
+  cpuRoster: typeof players.$inferSelect[],
+  userBudget: number,
+  cpuBudget: number
 ): boolean {
   if (userPlayer.overall < 65 || cpuPlayer.overall < 65) return false;
 
@@ -446,7 +474,7 @@ function checkTradeViability(
   const newUserSalary = userSalaryTotal - userPlayer.salary + cpuPlayer.salary;
   const newCpuSalary = cpuSalaryTotal - cpuPlayer.salary + userPlayer.salary;
 
-  if (newUserSalary > SALARY_CAP || newCpuSalary > SALARY_CAP) return false;
+  if (newUserSalary > userBudget || newCpuSalary > cpuBudget) return false;
 
   return true;
 }
@@ -512,6 +540,9 @@ export async function generateTradeProposalsAction(seasonYear: number, userTeamI
     const userRoster = activePlayers.filter((p) => p.teamId === userTeamId);
     if (userRoster.length === 0) return { success: true, count: 0 };
 
+    const [userTeam] = await db.select().from(teams).where(eq(teams.id, userTeamId)).limit(1);
+    if (!userTeam) return { success: true, count: 0 };
+
     const cpuPlayers = activePlayers.filter((p) => p.teamId && p.teamId !== userTeamId);
     
     const rostersByCpuTeam = new Map<string, typeof players.$inferSelect[]>();
@@ -572,7 +603,7 @@ export async function generateTradeProposalsAction(seasonYear: number, userTeamI
           const userCandidates = userRoster.filter((p) => getPositionGroup(p.position) !== userDef);
           for (const u of userCandidates) {
             for (const c of cpuCandidates) {
-              if (checkTradeViability(u, c, userSalaryTotal, cpuRoster)) {
+              if (checkTradeViability(u, c, userSalaryTotal, cpuRoster, userTeam.budget, cpuTeam.budget)) {
                 validPairs.push([c, u]);
               }
             }
@@ -589,7 +620,7 @@ export async function generateTradeProposalsAction(seasonYear: number, userTeamI
             const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) !== cpuDef);
             for (const u of userCandidates) {
               for (const c of cpuCandidates) {
-                if (checkTradeViability(u, c, userSalaryTotal, cpuRoster)) {
+                  if (checkTradeViability(u, c, userSalaryTotal, cpuRoster, userTeam.budget, cpuTeam.budget)) {
                   validPairs.push([c, u]);
                 }
               }
@@ -606,7 +637,7 @@ export async function generateTradeProposalsAction(seasonYear: number, userTeamI
           const cpuCandidates = cpuRoster.filter((p) => getPositionGroup(p.position) === posGrp);
           for (const u of userCandidates) {
             for (const c of cpuCandidates) {
-              if (checkTradeViability(u, c, userSalaryTotal, cpuRoster)) {
+              if (checkTradeViability(u, c, userSalaryTotal, cpuRoster, userTeam.budget, cpuTeam.budget)) {
                 validPairs.push([c, u]);
               }
             }
@@ -783,11 +814,11 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
       const newProposerSalary = proposerSalary - outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0) + incomingPlayersList.reduce((sum, p) => sum + p.salary, 0);
       const newReceiverSalary = receiverSalary - incomingPlayersList.reduce((sum, p) => sum + p.salary, 0) + outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0);
 
-      if (newProposerSalary > SALARY_CAP) {
-        throw new Error(`Opposing team exceeds the ₱50,000,000 salary cap.`);
+      if (newProposerSalary > proposerTeam.budget) {
+        throw new Error(`Opposing team exceeds the ₱${proposerTeam.budget.toLocaleString("en-PH")} salary cap.`);
       }
-      if (newReceiverSalary > SALARY_CAP) {
-        throw new Error(`Your team exceeds the ₱50,000,050 salary cap.`);
+      if (newReceiverSalary > receiverTeam.budget) {
+        throw new Error(`Your team exceeds the ₱${receiverTeam.budget.toLocaleString("en-PH")} salary cap.`);
       }
 
       // SWAP PLAYERS
@@ -798,11 +829,35 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
           .where(eq(players.id, p.id));
       }
 
+      if (proposal.outgoingPlayerIds.length > 0) {
+        await tx
+          .update(playerSalaryHistory)
+          .set({ teamId: proposal.receiverTeamId })
+          .where(
+            and(
+              inArray(playerSalaryHistory.playerId, proposal.outgoingPlayerIds),
+              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+            )
+          );
+      }
+
       for (const p of incomingPlayersList) {
         await tx
           .update(players)
           .set({ teamId: proposal.proposerTeamId, isOnTradeBlock: false })
           .where(eq(players.id, p.id));
+      }
+
+      if (proposal.incomingPlayerIds.length > 0) {
+        await tx
+          .update(playerSalaryHistory)
+          .set({ teamId: proposal.proposerTeamId })
+          .where(
+            and(
+              inArray(playerSalaryHistory.playerId, proposal.incomingPlayerIds),
+              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+            )
+          );
       }
 
       await tx

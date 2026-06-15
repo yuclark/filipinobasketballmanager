@@ -2,12 +2,12 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, inArray, isNull, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks, draftSessions } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { generateRookiePoolAction, replenishLeagueRostersAction, getOrCreateActiveDraftSessionBySeason, initializeDraftSessionAction } from "@/app/actions/offseasonEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 
-const SALARY_CAP = 50000000; // 50,000,000 PHP
+// Dynamic team budget cap replaces SALARY_CAP
 
 // Phase 1: Expiring Players
 export async function getExpiringPlayersAction(teamId: string) {
@@ -53,8 +53,8 @@ export async function reSignPlayerAction(playerId: string, years: number, salary
     const totalSalaries = teamPlayers.reduce((sum, p) => sum + p.salary, 0);
     const newTotal = totalSalaries - player.salary + salary;
 
-    if (newTotal > SALARY_CAP) {
-      const excess = newTotal - SALARY_CAP;
+    if (newTotal > team.budget) {
+      const excess = newTotal - team.budget;
       return {
         success: false,
         error: `Re-signing exceeds salary cap by ₱${excess.toLocaleString("en-PH")}. Offer rejected.`
@@ -69,13 +69,34 @@ export async function reSignPlayerAction(playerId: string, years: number, salary
       })
       .where(eq(players.id, playerId));
 
-    // Record transaction
     const lastGame = await db
       .select({ year: games.seasonYear })
       .from(games)
       .orderBy(desc(games.seasonYear))
       .limit(1);
     const currentYear = lastGame[0]?.year ?? 2026;
+    const upcomingYear = currentYear + 1;
+
+    // Record upcoming salary history
+    const existingHistory = await db
+      .select({ id: playerSalaryHistory.id })
+      .from(playerSalaryHistory)
+      .where(and(eq(playerSalaryHistory.playerId, playerId), eq(playerSalaryHistory.seasonYear, upcomingYear)))
+      .limit(1);
+
+    if (existingHistory.length > 0) {
+      await db
+        .update(playerSalaryHistory)
+        .set({ salary: salary, teamId: player.teamId })
+        .where(eq(playerSalaryHistory.id, existingHistory[0].id));
+    } else {
+      await db.insert(playerSalaryHistory).values({
+        playerId,
+        seasonYear: upcomingYear,
+        teamId: player.teamId,
+        salary: salary,
+      });
+    }
 
     await db.insert(transactions).values({
       type: "Signing",
@@ -136,7 +157,7 @@ export async function runCpuReSigningsAction() {
         if (p.overall >= 80) {
           const newSalary = p.overall * 40000;
           const salaryDiff = newSalary - p.salary;
-          if (currentSalaries + salaryDiff <= SALARY_CAP) {
+          if (currentSalaries + salaryDiff <= team.budget) {
             updates.push({
               id: p.id,
               contractYearsRemaining: 3,
@@ -179,6 +200,30 @@ export async function runCpuReSigningsAction() {
       const chunkSize = 50;
       for (let i = 0; i < batchQueries.length; i += chunkSize) {
         await db.batch(batchQueries.slice(i, i + chunkSize) as any);
+      }
+
+      // Record upcoming salary history for CPU re-signings
+      const upcomingYear = currentYear + 1;
+      const playerTeamIds = new Map(expiringCpuPlayers.map((p) => [p.id, p.teamId]));
+      const historyInserts = updates.map((up) => ({
+        playerId: up.id,
+        seasonYear: upcomingYear,
+        teamId: playerTeamIds.get(up.id) ?? null,
+        salary: up.salary,
+      }));
+
+      const playerIds = updates.map((up) => up.id);
+      await db
+        .delete(playerSalaryHistory)
+        .where(
+          and(
+            inArray(playerSalaryHistory.playerId, playerIds),
+            eq(playerSalaryHistory.seasonYear, upcomingYear)
+          )
+        );
+
+      for (let i = 0; i < historyInserts.length; i += chunkSize) {
+        await db.insert(playerSalaryHistory).values(historyInserts.slice(i, i + chunkSize));
       }
     }
 
@@ -318,8 +363,35 @@ export async function finalizeOffseasonAction() {
     const currentYear = lastGame[0]?.year ?? 2026;
     const nextYear = currentYear + 1;
 
+    // Reset dead cap for all teams at start of the new season
+    await db.update(teams).set({ deadCap: 0 });
+
     // Safety net: enforce strict roster limits (12-18)
     await enforceLeagueRosterLimitsAction();
+
+    // Snapshot all active players' contracts for the new season, avoiding duplicates
+    const existingHistory = await db
+      .select({ playerId: playerSalaryHistory.playerId })
+      .from(playerSalaryHistory)
+      .where(eq(playerSalaryHistory.seasonYear, nextYear));
+    const existingIds = new Set(existingHistory.map((h) => h.playerId));
+
+    const activePlayers = await db.select().from(players).where(eq(players.status, "Active"));
+    const historyInserts = activePlayers
+      .filter((p) => !existingIds.has(p.id))
+      .map((p) => ({
+        playerId: p.id,
+        seasonYear: nextYear,
+        teamId: p.teamId,
+        salary: p.salary,
+      }));
+
+    if (historyInserts.length > 0) {
+      const chunkSize = 50;
+      for (let i = 0; i < historyInserts.length; i += chunkSize) {
+        await db.insert(playerSalaryHistory).values(historyInserts.slice(i, i + chunkSize));
+      }
+    }
 
     // 3. Clear schedule games and stats (will cascade delete playerGameStats)
     await db.delete(games);
@@ -423,6 +495,156 @@ export async function finalizeLotteryAction(draftOrderIds: string[], season: num
   }
 }
 
+async function adjustTeamBudgetsForSeason(upcomingYear: number) {
+  const completedYear = upcomingYear - 1;
+  console.log(`[Offseason Budget] Adjusting team budgets for completed season ${completedYear}...`);
+
+  // 1. Fetch all teams
+  const allTeams = await db.select().from(teams);
+  if (allTeams.length === 0) return;
+
+  // 2. Fetch all playoff games for completedYear
+  const playoffGames = await db
+    .select()
+    .from(games)
+    .where(
+      and(
+        eq(games.stage, "Playoffs"),
+        eq(games.seasonYear, completedYear)
+      )
+    );
+
+  if (playoffGames.length === 0) {
+    console.log("[Offseason Budget] No playoff games found. Skipping budget adjustments.");
+    return;
+  }
+
+  // 3. Determine Champion and Runner-up from Grand Finals
+  let championId: string | null = null;
+  let runnerUpId: string | null = null;
+
+  const gfGames = playoffGames.filter((g) => g.seriesId === "GF_GrandFinals");
+  if (gfGames.length > 0) {
+    const team1Id = gfGames[0].homeTeamId;
+    const team2Id = gfGames[0].awayTeamId;
+    let w1 = 0;
+    let w2 = 0;
+    for (const g of gfGames) {
+      if (g.status === "Completed") {
+        const isHome = g.homeTeamId === team1Id;
+        const wonHome = g.homeScore > g.awayScore;
+        if (isHome ? wonHome : !wonHome) {
+          w1++;
+        } else {
+          w2++;
+        }
+      }
+    }
+    if (w1 >= 4) {
+      championId = team1Id;
+      runnerUpId = team2Id;
+    } else if (w2 >= 4) {
+      championId = team2Id;
+      runnerUpId = team1Id;
+    }
+  }
+
+  // 4. Determine Conference Finals losers
+  const cfLosers = new Set<string>();
+  const cfLuzonGames = playoffGames.filter((g) => g.seriesId === "CF_Luzon");
+  if (cfLuzonGames.length > 0) {
+    const team1Id = cfLuzonGames[0].homeTeamId;
+    const team2Id = cfLuzonGames[0].awayTeamId;
+    let w1 = 0;
+    let w2 = 0;
+    for (const g of cfLuzonGames) {
+      if (g.status === "Completed") {
+        const isHome = g.homeTeamId === team1Id;
+        const wonHome = g.homeScore > g.awayScore;
+        if (isHome ? wonHome : !wonHome) w1++; else w2++;
+      }
+    }
+    if (w1 >= 3) {
+      cfLosers.add(team2Id);
+    } else if (w2 >= 3) {
+      cfLosers.add(team1Id);
+    }
+  }
+
+  const cfVisMinGames = playoffGames.filter((g) => g.seriesId === "CF_VisMin");
+  if (cfVisMinGames.length > 0) {
+    const team1Id = cfVisMinGames[0].homeTeamId;
+    const team2Id = cfVisMinGames[0].awayTeamId;
+    let w1 = 0;
+    let w2 = 0;
+    for (const g of cfVisMinGames) {
+      if (g.status === "Completed") {
+        const isHome = g.homeTeamId === team1Id;
+        const wonHome = g.homeScore > g.awayScore;
+        if (isHome ? wonHome : !wonHome) w1++; else w2++;
+      }
+    }
+    if (w1 >= 3) {
+      cfLosers.add(team2Id);
+    } else if (w2 >= 3) {
+      cfLosers.add(team1Id);
+    }
+  }
+
+  // 5. Determine which teams missed the playoffs
+  const teamsWithPlayoffGames = new Set<string>(
+    playoffGames.map((g) => g.homeTeamId).concat(playoffGames.map((g) => g.awayTeamId))
+  );
+
+  // 6. Adjust budgets and write logs
+  const transactionInserts: any[] = [];
+  for (const team of allTeams) {
+    let adjustment = 0;
+    let reason = "reaching the playoffs";
+
+    if (team.id === championId) {
+      adjustment = 5000000;
+      reason = "winning the championship";
+    } else if (team.id === runnerUpId) {
+      adjustment = 2500000;
+      reason = "reaching the Grand Finals";
+    } else if (cfLosers.has(team.id)) {
+      adjustment = 1000000;
+      reason = "reaching the Conference Finals";
+    } else if (!teamsWithPlayoffGames.has(team.id)) {
+      adjustment = -2000000;
+      reason = "missing the playoffs";
+    } else {
+      adjustment = 0;
+      reason = "reaching the playoffs";
+    }
+
+    const newBudget = Math.max(40000000, Math.min(65000000, team.budget + adjustment));
+    const finalAdjustment = newBudget - team.budget;
+
+    // Update in database
+    await db
+      .update(teams)
+      .set({ budget: newBudget })
+      .where(eq(teams.id, team.id));
+
+    // Prepare log description
+    let adjSign = finalAdjustment >= 0 ? "+" : "-";
+    const logDescription = `💼 Budget Update: ${team.city} ${team.name} budget adjusted to ₱${newBudget.toLocaleString("en-PH")} (${adjSign}₱${Math.abs(finalAdjustment).toLocaleString("en-PH")} change) due to ${reason}.`;
+    
+    transactionInserts.push({
+      type: "Signing",
+      description: logDescription,
+      seasonYear: completedYear,
+      gameDay: 82,
+    });
+  }
+
+  if (transactionInserts.length > 0) {
+    await db.insert(transactions).values(transactionInserts);
+  }
+}
+
 export async function getCurrentOffseasonStateAction(seasonYear: number, userTeamId?: string | null) {
   try {
     // 1. Check if draft pool has players
@@ -447,6 +669,10 @@ export async function getCurrentOffseasonStateAction(seasonYear: number, userTea
 
     if (!session) {
       console.log(`[Offseason Wizard] Creating new draft session for season ${seasonYear}`);
+      
+      // Compute and apply budget adjustments for the new season
+      await adjustTeamBudgetsForSeason(seasonYear);
+
       const [inserted] = await db
         .insert(draftSessions)
         .values({

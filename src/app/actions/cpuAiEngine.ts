@@ -2,10 +2,10 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, inArray, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions } from "@/db/schema";
+import { players, teams, games, transactions, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
-const SALARY_CAP = 50000000; // 50,000,000 PHP
+
 
 import {
   FILIPINO_FIRST_NAMES as FIRST_NAMES,
@@ -262,7 +262,7 @@ export async function runCpuDailyAiEngineAction(
 
       if (deficitGroups.length === 0) continue;
 
-      const teamTotalSalary = roster.reduce((sum, p) => sum + p.salary, 0);
+      const teamTotalSalary = roster.reduce((sum, p) => sum + p.salary, 0) + (team.deadCap ?? 0);
 
       // Search free agency for the first player of a deficit group that maintains salary cap compliance
       for (const group of deficitGroups) {
@@ -274,13 +274,24 @@ export async function runCpuDailyAiEngineAction(
         // Find qualifying player in FA pool
         const qualifyingFA = freeAgents.find((fa) => {
           const faGroup = getPositionGroup(fa.position);
-          return faGroup === group && teamTotalSalary + fa.salary <= SALARY_CAP;
+          return faGroup === group && teamTotalSalary + fa.salary <= team.budget;
         });
 
         if (qualifyingFA) {
           // Mutate the state object directly in memory
           qualifyingFA.teamId = team.id;
           qualifyingFA.contractYearsRemaining = 2;
+
+          // Also update playerSalaryHistory table in the database for the current season
+          await db
+            .update(playerSalaryHistory)
+            .set({ teamId: team.id })
+            .where(
+              and(
+                eq(playerSalaryHistory.playerId, qualifyingFA.id),
+                eq(playerSalaryHistory.seasonYear, seasonYear)
+              )
+            );
 
           const descStr = `✍️ Front Office: The ${team.city} ${team.name} signed Free Agent ${qualifyingFA.firstName} ${qualifyingFA.lastName} (${qualifyingFA.position}, OVR ${qualifyingFA.overall}) to a 2-year contract of ₱${qualifyingFA.salary.toLocaleString("en-PH")}/yr to address a positional deficit.`;
           await db.insert(transactions).values({
@@ -328,7 +339,7 @@ export async function runCpuDailyAiEngineAction(
           counts,
           deficits,
           surpluses,
-          totalSalary: roster.reduce((sum, p) => sum + p.salary, 0),
+          totalSalary: roster.reduce((sum, p) => sum + p.salary, 0) + (team.deadCap ?? 0),
         });
       }
 
@@ -363,10 +374,30 @@ export async function runCpuDailyAiEngineAction(
                 const newSalaryA = teamA.totalSalary - playerA.salary + playerB.salary;
                 const newSalaryB = teamB.totalSalary - playerB.salary + playerA.salary;
 
-                if (newSalaryA <= SALARY_CAP && newSalaryB <= SALARY_CAP) {
+                if (newSalaryA <= teamA.team.budget && newSalaryB <= teamB.team.budget) {
                   // Mutate player objects directly in memory
                   playerA.teamId = teamB.team.id;
                   playerB.teamId = teamA.team.id;
+
+                  // Update playerSalaryHistory in DB
+                  await db
+                    .update(playerSalaryHistory)
+                    .set({ teamId: teamB.team.id })
+                    .where(
+                      and(
+                        eq(playerSalaryHistory.playerId, playerA.id),
+                        eq(playerSalaryHistory.seasonYear, seasonYear)
+                      )
+                    );
+                  await db
+                    .update(playerSalaryHistory)
+                    .set({ teamId: teamA.team.id })
+                    .where(
+                      and(
+                        eq(playerSalaryHistory.playerId, playerB.id),
+                        eq(playerSalaryHistory.seasonYear, seasonYear)
+                      )
+                    );
 
                   const descStr = `🔄 TRADE: The ${teamA.team.city} ${teamA.team.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${teamB.team.city} ${teamB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}) to balance rosters.`;
                   await db.insert(transactions).values({
@@ -448,10 +479,30 @@ export async function runCpuDailyAiEngineAction(
               const newSalaryA = tA.totalSalary - playerA.salary + playerB.salary;
               const newSalaryB = tB.totalSalary - playerB.salary + playerA.salary;
 
-              if (newSalaryA <= SALARY_CAP && newSalaryB <= SALARY_CAP) {
+              if (newSalaryA <= tA.team.budget && newSalaryB <= tB.team.budget) {
                 // Execute the swap directly in memory
                 playerA.teamId = tB.team.id;
                 playerB.teamId = tA.team.id;
+
+                // Update playerSalaryHistory in DB
+                await db
+                  .update(playerSalaryHistory)
+                  .set({ teamId: tB.team.id })
+                  .where(
+                    and(
+                      eq(playerSalaryHistory.playerId, playerA.id),
+                      eq(playerSalaryHistory.seasonYear, seasonYear)
+                    )
+                  );
+                await db
+                  .update(playerSalaryHistory)
+                  .set({ teamId: tA.team.id })
+                  .where(
+                    and(
+                      eq(playerSalaryHistory.playerId, playerB.id),
+                      eq(playerSalaryHistory.seasonYear, seasonYear)
+                    )
+                  );
 
                 const descStr = `🔄 TRADE: The ${tA.team.city} ${tA.team.name} cleared cap space by sending ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${tB.team.city} ${tB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}).`;
 

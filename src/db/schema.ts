@@ -6,6 +6,7 @@ export const teams = pgTable("teams", {
   city: varchar("city", { length: 50 }).notNull(),
   conference: varchar("conference", { length: 20 }).$type<"Luzon" | "VisMin">().notNull(),
   budget: integer("budget").default(50000000).notNull(),
+  deadCap: integer("dead_cap").default(0).notNull(),
 });
 
 export const players = pgTable("players", {
@@ -173,5 +174,16 @@ export const saveSlots = pgTable("save_slots", {
   gameStateJson: text("game_state_json").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const playerSalaryHistory = pgTable("player_salary_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  playerId: uuid("player_id")
+    .references(() => players.id, { onDelete: "cascade" })
+    .notNull(),
+  seasonYear: integer("season_year").notNull(),
+  teamId: uuid("team_id")
+    .references(() => teams.id, { onDelete: "set null" }), // Nullable for free agency
+  salary: integer("salary").notNull(),
 });
 

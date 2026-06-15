@@ -11,6 +11,7 @@ interface ClientTabsProps {
   careerPlayoffs: any;
   logs: any[];
   currentSeasonYear: number;
+  salaryHistory: any[];
 }
 
 export default function ClientTabs({
@@ -21,8 +22,9 @@ export default function ClientTabs({
   careerPlayoffs,
   logs,
   currentSeasonYear,
+  salaryHistory = [],
 }: ClientTabsProps) {
-  const [activeTab, setActiveTab] = useState<"stats" | "attributes" | "logs">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "attributes" | "logs" | "contract">("stats");
   const [splitTab, setSplitTab] = useState<"regular" | "playoffs">("regular");
   const [selectedYear, setSelectedYear] = useState<number>(currentSeasonYear);
 
@@ -32,6 +34,14 @@ export default function ClientTabs({
   }
 
   const filteredLogs = logs.filter((log) => log.seasonYear === selectedYear);
+
+  const formatPHP = (amount: number) => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
 
   const getAttrColor = (val: number) => {
     if (val >= 90) return "bg-orange-500 text-orange-400";
@@ -86,6 +96,16 @@ export default function ClientTabs({
             }`}
           >
             Season Game Logs ({filteredLogs.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("contract")}
+            className={`px-4 py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+              activeTab === "contract"
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Contract & Salary History
           </button>
         </div>
       </div>
@@ -369,6 +389,96 @@ export default function ClientTabs({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Contract & Salary History Tab Content */}
+      {activeTab === "contract" && (
+        <div className="space-y-6">
+          {/* Current Contract Details Card */}
+          <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/5 blur-3xl rounded-full pointer-events-none" />
+            
+            <h3 className="text-lg font-bold text-white mb-4">Current Contract Summary</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-zinc-950/40 border border-zinc-900/80 rounded-2xl p-4 shadow-sm hover:border-zinc-800 transition-all">
+                <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest block mb-1">Annual Salary</span>
+                <span className="text-lg font-black text-amber-500">{formatPHP(player.salary)}</span>
+              </div>
+              
+              <div className="bg-zinc-950/40 border border-zinc-900/80 rounded-2xl p-4 shadow-sm hover:border-zinc-800 transition-all">
+                <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest block mb-1">Contract Duration</span>
+                <span className="text-lg font-black text-zinc-100">{player.contractYearsRemaining} Year{player.contractYearsRemaining > 1 ? "s" : ""}</span>
+              </div>
+              
+              <div className="bg-zinc-950/40 border border-zinc-900/80 rounded-2xl p-4 shadow-sm hover:border-zinc-800 transition-all">
+                <span className="text-[10px] font-bold text-zinc-550 uppercase tracking-widest block mb-1">Current Team</span>
+                {player.teamId ? (
+                  <a
+                    href={`/dashboard/teams/${player.teamId}`}
+                    className="text-lg font-black text-blue-400 hover:text-blue-300 transition-colors inline-block hover:underline"
+                  >
+                    {player.teamName || "View Team"}
+                  </a>
+                ) : (
+                  <span className="text-lg font-black text-zinc-400">Free Agent</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Salary History Table */}
+          <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl">
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-white mb-1">Career Earnings & Salary History</h3>
+              <p className="text-zinc-550 text-xs font-medium">Historical snapshot of contract salaries earned per season.</p>
+            </div>
+
+            <div className="w-full overflow-x-auto rounded-xl border border-zinc-900">
+              <table className="w-full text-left border-collapse text-xs select-none">
+                <thead>
+                  <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-550 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="py-4 px-6">Season</th>
+                    <th className="py-4 px-6">Franchise / Team</th>
+                    <th className="py-4 px-6 text-right">Salary</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-900 bg-zinc-950/20 text-zinc-300">
+                  {salaryHistory.length > 0 ? (
+                    salaryHistory.map((historyItem, idx) => (
+                      <tr key={idx} className="hover:bg-zinc-900/40 transition-colors">
+                        <td className="py-4.5 px-6 font-bold text-zinc-400">
+                          {historyItem.seasonYear}
+                        </td>
+                        <td className="py-4.5 px-6 font-medium">
+                          {historyItem.teamId ? (
+                            <a
+                              href={`/dashboard/teams/${historyItem.teamId}`}
+                              className="text-blue-400 hover:text-blue-300 transition-colors hover:underline"
+                            >
+                              {historyItem.teamName}
+                            </a>
+                          ) : (
+                            <span className="text-zinc-500 font-semibold">Free Agent</span>
+                          )}
+                        </td>
+                        <td className="py-4.5 px-6 text-right font-extrabold text-zinc-100">
+                          {formatPHP(historyItem.salary)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="py-8 text-center text-zinc-500 italic">
+                        No salary history records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

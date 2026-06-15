@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import { getPlayoffBracketAction } from "@/app/actions/playoffEngine";
 import { getStandingsDataAction } from "@/app/actions/leagueEngine";
+import { getTeamSalarySpace } from "@/app/actions/transactions";
 import {
   generateRookiePoolAction,
   processPlayerEvolutionAction,
@@ -118,6 +119,8 @@ export default function OffseasonWizardPage() {
   const [reSignedPlayerIds, setReSignedPlayerIds] = useState<string[]>([]);
   const [declinedPlayerIds, setDeclinedPlayerIds] = useState<string[]>([]);
   const [totalSalaries, setTotalSalaries] = useState<number>(0);
+  const [userBudget, setUserBudget] = useState<number>(50000000);
+  const [userDeadCap, setUserDeadCap] = useState<number>(0);
   const [cpuReSignLogs, setCpuReSignLogs] = useState<string[]>([]);
   const [cpuReSignSimulated, setCpuReSignSimulated] = useState<boolean>(false);
   const [submittingExtensions, setSubmittingExtensions] = useState<boolean>(false);
@@ -375,6 +378,14 @@ export default function OffseasonWizardPage() {
           setExpiringPlayers(expRes.players as Player[]);
         }
 
+        // Fetch user salary space and budget
+        const capRes = await getTeamSalarySpace(userTeamId);
+        if (capRes.success) {
+          setUserBudget(capRes.budget!);
+          setTotalSalaries(capRes.totalSalaries!);
+          setUserDeadCap(capRes.deadCap!);
+        }
+
         // Load prospects if we are on draft phase
         const prospectsRes = await getDraftProspectsAction(upcomingYear);
         if (prospectsRes.success && prospectsRes.prospects) {
@@ -487,6 +498,15 @@ export default function OffseasonWizardPage() {
           saveWizardState({ reSignedPlayerIds: next });
           return next;
         });
+        // Reload user salary space details to reflect the updated contract
+        if (userTeamId) {
+          const capRes = await getTeamSalarySpace(userTeamId);
+          if (capRes.success) {
+            setUserBudget(capRes.budget!);
+            setTotalSalaries(capRes.totalSalaries!);
+            setUserDeadCap(capRes.deadCap!);
+          }
+        }
         setWizardSuccess("Player re-signed successfully!");
       } else {
         setWizardError("Failed to re-sign player. Please verify that your team has enough budget or roster space.");
@@ -1111,14 +1131,19 @@ export default function OffseasonWizardPage() {
               
               <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 space-y-4">
                 <div>
-                  <span className="text-zinc-500 font-bold text-[10px] uppercase block mb-1">Salary Cap Ceiling</span>
-                  <span className="text-lg font-extrabold text-white">₱{SALARY_CAP.toLocaleString("en-PH")}</span>
+                  <span className="text-zinc-500 font-bold text-[10px] uppercase block mb-1">Payroll / Cap Ceiling</span>
+                  <span className="text-lg font-extrabold text-white">
+                    ₱{(totalSalaries + userDeadCap).toLocaleString("en-PH")} / ₱{userBudget.toLocaleString("en-PH")}
+                  </span>
+                  {userDeadCap > 0 && (
+                    <span className="text-[9px] text-zinc-500 block">Includes ₱{userDeadCap.toLocaleString("en-PH")} dead cap</span>
+                  )}
                 </div>
                 
                 <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-orange-500" 
-                    style={{ width: `${Math.min((totalSalaries / SALARY_CAP) * 100, 100)}%` }}
+                    style={{ width: `${Math.min(((totalSalaries + userDeadCap) / userBudget) * 100, 100)}%` }}
                   />
                 </div>
               </div>

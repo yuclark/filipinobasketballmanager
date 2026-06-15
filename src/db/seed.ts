@@ -102,6 +102,9 @@ export async function seedDatabase(db: any) {
     await db.delete(schema.tradeProposals);
     console.log(" - Truncated trade_proposals");
 
+    await db.delete(schema.playerSalaryHistory);
+    console.log(" - Truncated player_salary_history");
+
     console.log("Truncating core players and teams tables...");
 
     await db.delete(schema.players);
@@ -352,7 +355,20 @@ export async function seedDatabase(db: any) {
     const chunkSize = 50;
     for (let i = 0; i < playersToInsert.length; i += chunkSize) {
       const chunk = playersToInsert.slice(i, i + chunkSize);
-      await db.insert(schema.players).values(chunk);
+      const inserted = await db.insert(schema.players).values(chunk).returning({
+        id: schema.players.id,
+        teamId: schema.players.teamId,
+        salary: schema.players.salary,
+      });
+
+      const historyChunk = inserted.map((p: any) => ({
+        playerId: p.id,
+        seasonYear: 2026,
+        teamId: p.teamId,
+        salary: p.salary,
+      }));
+
+      await db.insert(schema.playerSalaryHistory).values(historyChunk);
     }
 
     console.log("Database seeding completed successfully! All tables ready.");
