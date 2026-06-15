@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronLeft, Calendar, User, MapPin, Award, Shield, Coins, Activity, Zap, Star } from "lucide-react";
 import { getPlayerProfileAction } from "@/app/actions/statsEngine";
 import ClientTabs from "./ClientTabs";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 interface PageProps {
   params: {
@@ -107,10 +108,16 @@ export default async function PlayerProfilePage({ params }: PageProps) {
           
           {/* Left Block: Avatar + Name + Core Info */}
           <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start w-full lg:w-auto">
-            {/* Avatar / Number Placeholder */}
-            <div className="w-28 h-28 shrink-0 rounded-2xl bg-zinc-950 border border-zinc-800 flex flex-col items-center justify-center relative group overflow-hidden">
-              <User className="w-12 h-12 text-zinc-600 group-hover:text-orange-500 transition-colors" />
-              <div className="absolute bottom-1 text-[10px] font-extrabold uppercase text-zinc-500 tracking-widest">{player.position}</div>
+            {/* Avatar / Cartoon Headshot */}
+            <div className="w-28 h-28 shrink-0 rounded-2xl bg-zinc-950 border border-zinc-850 relative group overflow-hidden shadow-xl">
+              <PlayerAvatar
+                playerId={player.id}
+                firstName={player.firstName}
+                lastName={player.lastName}
+                position={player.position}
+                teamName={player.teamName}
+                teamConference={player.teamConference}
+              />
             </div>
 
             <div className="text-center sm:text-left space-y-3">

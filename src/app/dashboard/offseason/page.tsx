@@ -48,6 +48,8 @@ import {
   Flame,
   X,
 } from "lucide-react";
+import { getTeamRoster } from "@/app/actions";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 interface Team {
   id: string;
@@ -126,6 +128,7 @@ export default function OffseasonWizardPage() {
   const [submittingExtensions, setSubmittingExtensions] = useState<boolean>(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardSuccess, setWizardSuccess] = useState<string | null>(null);
+  const [userTeamDetails, setUserTeamDetails] = useState<any>(null);
 
   // Phase 2: Evolution State
   const [evolutionLogs, setEvolutionLogs] = useState<string[]>([]);
@@ -372,6 +375,10 @@ export default function OffseasonWizardPage() {
 
       // 2. Load context based on active phase
       if (userTeamId) {
+        const rosterRes = await getTeamRoster(userTeamId);
+        if (rosterRes) {
+          setUserTeamDetails(rosterRes.team);
+        }
         // Fetch expiring players
         const expRes = await getExpiringPlayersAction(userTeamId);
         if (expRes.success && expRes.players) {
@@ -1063,16 +1070,28 @@ export default function OffseasonWizardPage() {
                         key={player.id}
                         className="bg-zinc-950/40 border border-zinc-900 hover:border-zinc-800 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all"
                       >
-                        <div>
-                          <span className="text-[10px] text-orange-500 font-bold bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/15">
-                            OVR {player.overall}
-                          </span>
-                          <h5 className="font-bold text-white text-sm mt-1">
-                            {player.firstName} {player.lastName} <span className="text-zinc-500 font-bold text-xs">({player.position})</span>
-                          </h5>
-                          <p className="text-xs text-zinc-500 font-semibold mt-1">
-                            Age {player.age} • Previous Salary: ₱{player.salary.toLocaleString("en-PH")}
-                          </p>
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                          <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                            <PlayerAvatar
+                              playerId={player.id}
+                              firstName={player.firstName}
+                              lastName={player.lastName}
+                              position={player.position}
+                              teamName={userTeamDetails?.name}
+                              teamConference={userTeamDetails?.conference}
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-orange-500 font-bold bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/15">
+                              OVR {player.overall}
+                            </span>
+                            <h5 className="font-bold text-white text-sm mt-1">
+                              {player.firstName} {player.lastName} <span className="text-zinc-500 font-bold text-xs">({player.position})</span>
+                            </h5>
+                            <p className="text-xs text-zinc-555 font-semibold mt-1">
+                              Age {player.age} • Previous Salary: ₱{player.salary.toLocaleString("en-PH")}
+                            </p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-4 w-full sm:w-auto">
                           <div className="text-left sm:text-right flex-1 sm:flex-none">
@@ -1725,8 +1744,20 @@ export default function OffseasonWizardPage() {
                           }`}
                         >
                           <td className="py-3 px-3">
-                            <div className="font-bold flex items-center gap-1.5">
-                              {p.firstName} {p.lastName}
+                            <div className="font-bold flex items-center gap-2">
+                              <div className="w-6 h-6 shrink-0 bg-zinc-950 border border-zinc-850 rounded overflow-hidden shadow-xs">
+                                <PlayerAvatar
+                                  playerId={p.id}
+                                  firstName={p.firstName}
+                                  lastName={p.lastName}
+                                  position={p.position}
+                                  teamName={null}
+                                  teamConference={null}
+                                />
+                              </div>
+                              <span>
+                                {p.firstName} {p.lastName}
+                              </span>
                               {p.isFilAm && (
                                 <span className="text-[9px] bg-cyan-500/15 text-cyan-400 px-1 py-0.5 rounded font-extrabold">
                                   Fil-Am

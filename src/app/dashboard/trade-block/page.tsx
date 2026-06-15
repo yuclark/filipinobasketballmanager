@@ -24,6 +24,7 @@ import {
   X,
   ShieldAlert,
 } from "lucide-react";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 interface Player {
   id: string;
@@ -51,6 +52,7 @@ export default function TradeBlockPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userTeam, setUserTeam] = useState<any>(null);
 
   // Search/Sorting
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,6 +85,7 @@ export default function TradeBlockPage() {
         setError("Team roster details not found.");
       } else {
         setPlayersList(rosterData.players as Player[]);
+        setUserTeam(rosterData.team);
       }
 
       const picksRes = await getUserDraftPicksAction(userTeamId);
@@ -383,8 +386,15 @@ export default function TradeBlockPage() {
                     {/* Name */}
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg group-hover:border-zinc-700 transition-colors">
-                          <Users className="w-4.5 h-4.5 text-zinc-400 group-hover:text-orange-500 transition-colors" />
+                        <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                          <PlayerAvatar
+                            playerId={player.id}
+                            firstName={player.firstName}
+                            lastName={player.lastName}
+                            position={player.position}
+                            teamName={userTeam?.name}
+                            teamConference={userTeam?.conference}
+                          />
                         </div>
                         <div>
                           <Link href={`/dashboard/players/${player.id}`} className="font-bold text-zinc-100 hover:text-orange-400 block transition-colors">
@@ -636,9 +646,21 @@ export default function TradeBlockPage() {
                               <p className="font-semibold text-zinc-400 text-[10px] uppercase">Receive Assets:</p>
                               <div className="space-y-1">
                                 {offer.cpuPlayers.map((p: any) => (
-                                  <div key={p.id} className="flex justify-between items-center bg-zinc-950/40 p-2 rounded-xl border border-zinc-900">
-                                    <span className="font-bold text-zinc-100">{p.firstName} {p.lastName} <span className="text-zinc-500">({p.position})</span></span>
-                                    <span className="text-amber-500 font-bold">{formatPHP(p.salary)} • {p.overall} OVR</span>
+                                  <div key={p.id} className="flex justify-between items-center bg-zinc-950/40 p-2 rounded-xl border border-zinc-900 gap-3">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className="w-7 h-7 shrink-0 bg-zinc-950 border border-zinc-850 rounded-lg overflow-hidden shadow-xs">
+                                        <PlayerAvatar
+                                          playerId={p.id}
+                                          firstName={p.firstName}
+                                          lastName={p.lastName}
+                                          position={p.position}
+                                          teamName={offer.cpuTeamName}
+                                          teamConference={null}
+                                        />
+                                      </div>
+                                      <span className="font-bold text-zinc-100 truncate">{p.firstName} {p.lastName} <span className="text-zinc-500 font-bold text-[10px]">({p.position})</span></span>
+                                    </div>
+                                    <span className="text-amber-500 font-bold text-xs shrink-0">{formatPHP(p.salary)} • {p.overall} OVR</span>
                                   </div>
                                 ))}
                                 {offer.cpuPicks.map((p: any) => (

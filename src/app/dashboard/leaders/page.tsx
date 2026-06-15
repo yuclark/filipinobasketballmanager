@@ -6,6 +6,7 @@ import { getLeagueLeadersAction, LeaderCategory } from "@/app/actions/leadersEng
 import { useGameStore } from "@/store/useGameStore";
 import { BarChart2, Loader2, Award, Sparkles, Shield, Users } from "lucide-react";
 import React from "react";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 const CAT_COLORS: Record<string, { text: string; bg: string; border: string; bar: string }> = {
   ppg: { text: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20", bar: "bg-orange-500" },
@@ -241,13 +242,26 @@ export default function LeadersPage() {
                           {/* Entry Top Row (Rank, Name, Team, Value) */}
                           <div className="flex items-center justify-between gap-3 relative z-10">
                             
-                            <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
                               {/* Ranks number badge */}
                               <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] shrink-0 ${getRankBadgeClass(entry.rank)}`}>
                                 {entry.rank}
                               </span>
                               
-                              <div className="min-w-0 leading-tight">
+                              {isPlayerView && entry.playerId && (
+                                <div className="w-7 h-7 shrink-0 bg-zinc-950 border border-zinc-850 rounded-lg overflow-hidden shadow-xs">
+                                  <PlayerAvatar
+                                    playerId={entry.playerId}
+                                    firstName={entry.playerName?.split(" ")[0] || ""}
+                                    lastName={entry.playerName?.split(" ").slice(1).join(" ") || ""}
+                                    position=""
+                                    teamName={entry.teamName}
+                                    teamConference={null}
+                                  />
+                                </div>
+                              )}
+                              
+                              <div className="min-w-0 leading-tight flex-1">
                                 {isPlayerView ? (
                                   <>
                                     <Link href={`/dashboard/players/${entry.playerId}`} className="font-bold text-xs text-zinc-100 hover:text-orange-400 block truncate transition-colors">

@@ -7,6 +7,7 @@ import { useGameStore } from "@/store/useGameStore";
 import { getSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import { initializePlayoffsAction, checkPlayoffsInitializedAction } from "@/app/actions/playoffEngine";
 import { Loader2, Award, Trophy, Users, Shield, Zap, Sparkles, ChevronRight } from "lucide-react";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 interface AwardItem {
   id: string;
@@ -175,9 +176,22 @@ export default function AwardsCeremonyPage() {
         <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border border-orange-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden group hover:border-orange-500/50 transition-all duration-300">
           <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 blur-2xl rounded-full" />
           <div className="flex items-center justify-between mb-6">
-            <div className="p-3 bg-orange-500/10 rounded-2xl text-orange-500">
-              <Trophy className="w-6 h-6" />
-            </div>
+            {mvp ? (
+              <div className="w-12 h-12 shrink-0 bg-zinc-950 border border-zinc-850 rounded-2xl overflow-hidden shadow-md">
+                <PlayerAvatar
+                  playerId={mvp.playerId}
+                  firstName={mvp.playerName?.split(" ")[0] || ""}
+                  lastName={mvp.playerName?.split(" ").slice(1).join(" ") || ""}
+                  position={mvp.position}
+                  teamName={mvp.teamName}
+                  teamConference={null}
+                />
+              </div>
+            ) : (
+              <div className="p-3 bg-orange-500/10 rounded-2xl text-orange-500">
+                <Trophy className="w-6 h-6" />
+              </div>
+            )}
             <span className="text-[10px] font-extrabold uppercase tracking-widest bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/30">
               MVP
             </span>
@@ -207,9 +221,22 @@ export default function AwardsCeremonyPage() {
         {/* ROY */}
         <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-900 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-zinc-800 transition-all duration-300">
           <div className="flex items-center justify-between mb-6">
-            <div className="p-3 bg-purple-500/10 rounded-2xl text-purple-500">
-              <Zap className="w-6 h-6" />
-            </div>
+            {roy ? (
+              <div className="w-12 h-12 shrink-0 bg-zinc-950 border border-zinc-850 rounded-2xl overflow-hidden shadow-md">
+                <PlayerAvatar
+                  playerId={roy.playerId}
+                  firstName={roy.playerName?.split(" ")[0] || ""}
+                  lastName={roy.playerName?.split(" ").slice(1).join(" ") || ""}
+                  position={roy.position}
+                  teamName={roy.teamName}
+                  teamConference={null}
+                />
+              </div>
+            ) : (
+              <div className="p-3 bg-purple-500/10 rounded-2xl text-purple-500">
+                <Zap className="w-6 h-6" />
+              </div>
+            )}
             <span className="text-[10px] font-extrabold uppercase tracking-widest bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/30">
               ROY
             </span>
@@ -239,9 +266,22 @@ export default function AwardsCeremonyPage() {
         {/* DPOY */}
         <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-900 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-zinc-800 transition-all duration-300">
           <div className="flex items-center justify-between mb-6">
-            <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-500">
-              <Shield className="w-6 h-6" />
-            </div>
+            {dpoy ? (
+              <div className="w-12 h-12 shrink-0 bg-zinc-950 border border-zinc-850 rounded-2xl overflow-hidden shadow-md">
+                <PlayerAvatar
+                  playerId={dpoy.playerId}
+                  firstName={dpoy.playerName?.split(" ")[0] || ""}
+                  lastName={dpoy.playerName?.split(" ").slice(1).join(" ") || ""}
+                  position={dpoy.position}
+                  teamName={dpoy.teamName}
+                  teamConference={null}
+                />
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-500">
+                <Shield className="w-6 h-6" />
+              </div>
+            )}
             <span className="text-[10px] font-extrabold uppercase tracking-widest bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">
               DPOY
             </span>
@@ -271,9 +311,22 @@ export default function AwardsCeremonyPage() {
         {/* 6MOTY */}
         <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 border border-zinc-900 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-zinc-800 transition-all duration-300">
           <div className="flex items-center justify-between mb-6">
-            <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500">
-              <Users className="w-6 h-6" />
-            </div>
+            {sixman ? (
+              <div className="w-12 h-12 shrink-0 bg-zinc-950 border border-zinc-850 rounded-2xl overflow-hidden shadow-md">
+                <PlayerAvatar
+                  playerId={sixman.playerId}
+                  firstName={sixman.playerName?.split(" ")[0] || ""}
+                  lastName={sixman.playerName?.split(" ").slice(1).join(" ") || ""}
+                  position={sixman.position}
+                  teamName={sixman.teamName}
+                  teamConference={null}
+                />
+              </div>
+            ) : (
+              <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500">
+                <Users className="w-6 h-6" />
+              </div>
+            )}
             <span className="text-[10px] font-extrabold uppercase tracking-widest bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
               6MOTY
             </span>
@@ -320,13 +373,25 @@ export default function AwardsCeremonyPage() {
             <div className="divide-y divide-zinc-900/80">
               {firstTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
-                  <div>
-                    <h4 className="font-bold text-zinc-100 text-sm hover:text-orange-400 transition-colors">
-                      <Link href={`/dashboard/players/${m.playerId}`}>
-                        {m.playerName}
-                      </Link>
-                    </h4>
-                    <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                      <PlayerAvatar
+                        playerId={m.playerId}
+                        firstName={m.playerName?.split(" ")[0] || ""}
+                        lastName={m.playerName?.split(" ").slice(1).join(" ") || ""}
+                        position={m.playerPosition}
+                        teamName={m.teamName}
+                        teamConference={null}
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 text-sm hover:text-orange-400 transition-colors">
+                        <Link href={`/dashboard/players/${m.playerId}`}>
+                          {m.playerName}
+                        </Link>
+                      </h4>
+                      <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="px-2 py-0.5 bg-zinc-950 border border-zinc-900 rounded text-[10px] font-extrabold text-zinc-400">
@@ -350,13 +415,25 @@ export default function AwardsCeremonyPage() {
             <div className="divide-y divide-zinc-900/80">
               {secondTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
-                  <div>
-                    <h4 className="font-bold text-zinc-200 text-sm hover:text-orange-400 transition-colors">
-                      <Link href={`/dashboard/players/${m.playerId}`}>
-                        {m.playerName}
-                      </Link>
-                    </h4>
-                    <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                      <PlayerAvatar
+                        playerId={m.playerId}
+                        firstName={m.playerName?.split(" ")[0] || ""}
+                        lastName={m.playerName?.split(" ").slice(1).join(" ") || ""}
+                        position={m.playerPosition}
+                        teamName={m.teamName}
+                        teamConference={null}
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-zinc-200 text-sm hover:text-orange-400 transition-colors">
+                        <Link href={`/dashboard/players/${m.playerId}`}>
+                          {m.playerName}
+                        </Link>
+                      </h4>
+                      <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="px-2 py-0.5 bg-zinc-950 border border-zinc-900 rounded text-[10px] font-extrabold text-zinc-400">
@@ -380,13 +457,25 @@ export default function AwardsCeremonyPage() {
             <div className="divide-y divide-zinc-900/80">
               {thirdTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
-                  <div>
-                    <h4 className="font-bold text-zinc-300 text-sm hover:text-orange-400 transition-colors">
-                      <Link href={`/dashboard/players/${m.playerId}`}>
-                        {m.playerName}
-                      </Link>
-                    </h4>
-                    <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                      <PlayerAvatar
+                        playerId={m.playerId}
+                        firstName={m.playerName?.split(" ")[0] || ""}
+                        lastName={m.playerName?.split(" ").slice(1).join(" ") || ""}
+                        position={m.playerPosition}
+                        teamName={m.teamName}
+                        teamConference={null}
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-zinc-300 text-sm hover:text-orange-400 transition-colors">
+                        <Link href={`/dashboard/players/${m.playerId}`}>
+                          {m.playerName}
+                        </Link>
+                      </h4>
+                      <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="px-2 py-0.5 bg-zinc-950 border border-zinc-900 rounded text-[10px] font-extrabold text-zinc-400">
@@ -410,13 +499,25 @@ export default function AwardsCeremonyPage() {
             <div className="divide-y divide-zinc-900/80">
               {defensiveTeam.map((m) => (
                 <div key={m.id} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
-                  <div>
-                    <h4 className="font-bold text-zinc-100 text-sm hover:text-orange-400 transition-colors">
-                      <Link href={`/dashboard/players/${m.playerId}`}>
-                        {m.playerName}
-                      </Link>
-                    </h4>
-                    <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                      <PlayerAvatar
+                        playerId={m.playerId}
+                        firstName={m.playerName?.split(" ")[0] || ""}
+                        lastName={m.playerName?.split(" ").slice(1).join(" ") || ""}
+                        position={m.playerPosition}
+                        teamName={m.teamName}
+                        teamConference={null}
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-zinc-100 text-sm hover:text-orange-400 transition-colors">
+                        <Link href={`/dashboard/players/${m.playerId}`}>
+                          {m.playerName}
+                        </Link>
+                      </h4>
+                      <p className="text-zinc-500 text-[10px] font-semibold mt-0.5">{m.teamName}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="px-2 py-0.5 bg-zinc-950 border border-zinc-900 rounded text-[10px] font-extrabold text-zinc-400">

@@ -22,6 +22,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import React from "react";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 interface Player {
   id: string;
@@ -83,6 +84,7 @@ export default function RosterPage() {
   const [error, setError] = useState<string | null>(null);
   const [releaseError, setReleaseError] = useState<string | null>(null);
   const [confirmReleaseId, setConfirmReleaseId] = useState<string | null>(null);
+  const [userTeam, setUserTeam] = useState<any>(null);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -106,6 +108,7 @@ export default function RosterPage() {
         setError("Team roster details not found.");
       } else {
         setPlayersList(rosterData.players as Player[]);
+        setUserTeam(rosterData.team);
       }
 
       const statsRes = await getTeamSeasonStatsAction(userTeamId!);
@@ -533,8 +536,15 @@ export default function RosterPage() {
                     {/* Name */}
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg group-hover:border-zinc-700 transition-colors">
-                          <Users className="w-4.5 h-4.5 text-zinc-400 group-hover:text-orange-500 transition-colors" />
+                        <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                          <PlayerAvatar
+                            playerId={player.id}
+                            firstName={player.firstName}
+                            lastName={player.lastName}
+                            position={player.position}
+                            teamName={userTeam?.name}
+                            teamConference={userTeam?.conference}
+                          />
                         </div>
                         <div>
                           <Link href={`/dashboard/players/${player.id}`} className="font-bold text-zinc-100 hover:text-orange-400 block transition-colors">

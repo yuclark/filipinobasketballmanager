@@ -17,6 +17,7 @@ import {
   Coins,
   Clock,
 } from "lucide-react";
+import PlayerAvatar from "@/components/PlayerAvatar";
 
 interface Player {
   id: string;
@@ -288,16 +289,28 @@ export default function FreeAgencyPage() {
                     <tr key={player.id} className="hover:bg-zinc-900/30 transition-all">
                       {/* Name */}
                       <td className="py-4 px-6">
-                        <div>
-                          <Link href={`/dashboard/players/${player.id}`} className="font-bold text-zinc-100 hover:text-orange-400 block transition-colors">
-                            {player.firstName} {player.lastName}
-                          </Link>
-                          {player.isFilAm && (
-                            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">
-                              <Sparkles className="w-2.5 h-2.5" />
-                              Fil-Am
-                            </span>
-                          )}
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 shrink-0 bg-zinc-950 border border-zinc-850 rounded-xl overflow-hidden shadow-md">
+                            <PlayerAvatar
+                              playerId={player.id}
+                              firstName={player.firstName}
+                              lastName={player.lastName}
+                              position={player.position}
+                              teamName={null}
+                              teamConference={null}
+                            />
+                          </div>
+                          <div>
+                            <Link href={`/dashboard/players/${player.id}`} className="font-bold text-zinc-100 hover:text-orange-400 block transition-colors">
+                              {player.firstName} {player.lastName}
+                            </Link>
+                            {player.isFilAm && (
+                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 tracking-wider">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                Fil-Am
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
