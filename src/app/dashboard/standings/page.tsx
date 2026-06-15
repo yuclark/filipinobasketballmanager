@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useGameStore } from "@/store/useGameStore";
 import { getStandingsDataAction } from "@/app/actions/leagueEngine";
 import {
@@ -336,12 +337,15 @@ export default function StandingsPage() {
                               <Star className="w-3.5 h-3.5 text-orange-500 fill-orange-500 shrink-0" />
                             )}
                             <div>
-                              <span className="font-bold text-zinc-200 block group-hover:text-white">
+                              <Link
+                                href={`/dashboard/teams/${team.id}`}
+                                className="font-bold text-zinc-200 block hover:text-orange-400 transition-colors"
+                              >
                                 {team.city}{" "}
                                 <span className="text-zinc-400 font-semibold">{team.name}</span>
-                              </span>
+                              </Link>
                               {isUserTeam && (
-                                <span className="text-[9px] font-extrabold text-orange-500 uppercase tracking-widest block">
+                                <span className="text-[9px] font-extrabold text-orange-500 uppercase tracking-widest block mt-0.5">
                                   Your Franchise
                                 </span>
                               )}
@@ -450,12 +454,15 @@ export default function StandingsPage() {
                               <Star className="w-3.5 h-3.5 text-orange-500 fill-orange-500 shrink-0" />
                             )}
                             <div>
-                              <span className="font-bold text-zinc-200 block group-hover:text-white">
+                              <Link
+                                href={`/dashboard/teams/${team.id}`}
+                                className="font-bold text-zinc-200 block hover:text-orange-400 transition-colors"
+                              >
                                 {team.city}{" "}
                                 <span className="text-zinc-400 font-semibold">{team.name}</span>
-                              </span>
+                              </Link>
                               {isUserTeam && (
-                                <span className="text-[9px] font-extrabold text-orange-500 uppercase tracking-widest block">
+                                <span className="text-[9px] font-extrabold text-orange-500 uppercase tracking-widest block mt-0.5">
                                   Your Franchise
                                 </span>
                               )}
