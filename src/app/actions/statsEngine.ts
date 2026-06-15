@@ -541,6 +541,7 @@ export async function getPlayerProfileAction(playerId: string) {
         injuryDaysRemaining: players.injuryDaysRemaining,
         injuryType: players.injuryType,
         isOnTradeBlock: players.isOnTradeBlock,
+        yearsPlayed: players.yearsPlayed,
         
         teamName: sql<string>`coalesce(concat(${teams.city}, ' ', ${teams.name}), 'Free Agent')`,
         teamCity: teams.city,
@@ -776,7 +777,7 @@ export async function getPlayerProfileAction(playerId: string) {
     const dbRegularSplit = computeAverages(dbLogs.filter(l => l.stage === "Regular" && l.status === "Completed"), "Regular");
     const dbPlayoffsSplit = computeAverages(dbLogs.filter(l => l.stage === "Playoffs" && l.status === "Completed"), "Playoffs");
 
-    const yearsInLeague = playerData.age - (playerData.isRookie ? playerData.age : 21);
+    const yearsInLeague = playerData.yearsPlayed;
     const startYear = Math.max(2026, currentSeasonYear - Math.max(0, yearsInLeague));
 
     const simulatedSeasons: any[] = [];

@@ -66,6 +66,7 @@ interface Player {
   salary: number;
   contractYearsRemaining: number;
   status: string;
+  yearsPlayed?: number;
 }
 
 interface Prospect {

@@ -141,6 +141,7 @@ export async function enforceLeagueRosterLimitsAction() {
               contractYearsRemaining: 1, // contract to 1 year
               status: "Active",
               isRookie: false,
+              yearsPlayed: Math.max(0, age - 21),
             }).returning();
 
             chosenPlayer = inserted;

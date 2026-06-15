@@ -37,6 +37,7 @@ interface Player {
   salary: number;
   position: string;
   isOnTradeBlock: boolean;
+  yearsPlayed?: number;
 }
 
 type SortKey = "name" | "age" | "overall" | "salary" | "position";

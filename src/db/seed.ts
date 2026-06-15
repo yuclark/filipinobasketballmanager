@@ -241,6 +241,7 @@ export async function seedDatabase(db: any) {
           isRookie,
           injuryDaysRemaining: 0,
           injuryType: null,
+          yearsPlayed: isRookie ? 0 : Math.max(0, age - 21),
         });
       }
 
@@ -342,6 +343,7 @@ export async function seedDatabase(db: any) {
         isRookie: false,
         injuryDaysRemaining: 0,
         injuryType: null,
+        yearsPlayed: Math.max(0, age - 21),
       });
     }
 

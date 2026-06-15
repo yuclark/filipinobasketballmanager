@@ -31,6 +31,7 @@ interface Player {
   overall: number;
   position: string;
   salary: number;
+  yearsPlayed?: number;
 }
 
 interface Proposal {

@@ -39,6 +39,7 @@ interface Player {
   overall: number;
   salary: number;
   position: string;
+  yearsPlayed?: number;
 }
 
 interface CapInfo {

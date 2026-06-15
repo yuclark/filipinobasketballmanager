@@ -112,6 +112,7 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
         contractYearsRemaining: 3,
         status: "DraftPool",
         isRookie: true, // eligible for Rookie of the Year
+        yearsPlayed: 0,
       });
     }
 
@@ -376,6 +377,7 @@ export async function processPlayerEvolutionAction() {
         stamina: nextStamina,
         contractYearsRemaining: nextContractYears <= 0 ? 3 : nextContractYears,
         teamId: nextTeamId,
+        yearsPlayed: player.yearsPlayed + 1,
       });
     }
 
@@ -400,6 +402,7 @@ export async function processPlayerEvolutionAction() {
               status: p.status,
               teamId: p.teamId,
               isRookie: false, // clear rookie status after first season
+              yearsPlayed: p.yearsPlayed,
             })
             .where(eq(players.id, p.id))
         );
@@ -647,6 +650,7 @@ export async function replenishLeagueRostersAction() {
               isRookie: false,
               injuryDaysRemaining: 0,
               injuryType: null,
+              yearsPlayed: Math.max(0, age - 21),
             });
           }
 

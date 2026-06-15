@@ -43,12 +43,14 @@ interface Player {
   speed: number;
   stamina: number;
   isRookie?: boolean;
+  yearsPlayed: number;
 }
 
 type SortKey =
   | "name"
   | "position"
   | "age"
+  | "yearsPlayed"
   | "hometown"
   | "salary"
   | "overall"
@@ -220,6 +222,7 @@ export default function RosterPage() {
     if (key === "name") return `${player.firstName} ${player.lastName}`.toLowerCase();
     if (key === "position") return player.position;
     if (key === "age") return player.age;
+    if (key === "yearsPlayed") return player.yearsPlayed;
     if (key === "hometown") return player.hometown.toLowerCase();
     if (key === "salary") return player.salary;
     if (key === "overall") return player.overall;
@@ -403,7 +406,16 @@ export default function RosterPage() {
               >
                 <div className="flex items-center justify-center gap-1.5">
                   <span>Age</span>
-                  <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
+                </div>
+              </th>
+              <th
+                onClick={() => handleSort("yearsPlayed")}
+                className="py-4.5 px-4 cursor-pointer hover:bg-zinc-900 transition-colors text-center"
+              >
+                <div className="flex items-center justify-center gap-1.5">
+                  <span>Exp</span>
+                  <ArrowUpDown className="w-3.5 h-3.5 text-zinc-550" />
                 </div>
               </th>
               <th
@@ -558,6 +570,11 @@ export default function RosterPage() {
                       {player.age}
                     </td>
 
+                    {/* Exp */}
+                    <td className="py-4 px-4 text-center font-semibold text-zinc-300">
+                      {(player.isRookie || player.yearsPlayed === 0) ? "R" : player.yearsPlayed}
+                    </td>
+
                     {/* Hometown */}
                     <td className="py-4 px-4 text-sm font-medium text-zinc-400">
                       {player.hometown}
@@ -656,7 +673,7 @@ export default function RosterPage() {
               })
             ) : (
               <tr>
-                <td colSpan={viewMode === "attributes" ? 13 : 17} className="py-12 text-center text-zinc-500">
+                <td colSpan={viewMode === "attributes" ? 14 : 18} className="py-12 text-center text-zinc-500">
                   No active players found.
                 </td>
               </tr>

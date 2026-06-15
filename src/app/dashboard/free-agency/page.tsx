@@ -37,6 +37,7 @@ interface Player {
   rebounding: number;
   speed: number;
   stamina: number;
+  yearsPlayed?: number;
 }
 
 type SortKey = "name" | "age" | "hometown" | "overall" | "salary" | "position";
