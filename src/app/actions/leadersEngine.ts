@@ -27,7 +27,11 @@ export async function getLeagueLeadersAction(): Promise<{
   seasonYear: number;
   categories: LeaderCategory[];
   teamCategories: LeaderCategory[];
+  rookieCategories?: LeaderCategory[];
+  sophomoreCategories?: LeaderCategory[];
   playerCount: number;
+  rookieCount?: number;
+  sophomoreCount?: number;
   error?: string;
 }> {
   try {
@@ -116,6 +120,7 @@ export async function getLeagueLeadersAction(): Promise<{
         lastName: players.lastName,
         teamId: players.teamId,
         overall: players.overall,
+        yearsPlayed: players.yearsPlayed,
       }).from(players),
     ]);
 
@@ -184,6 +189,7 @@ export async function getLeagueLeadersAction(): Promise<{
       ppg: number; rpg: number; apg: number; spg: number; bpg: number;
       fgPct: number; tpPct: number; ftPct: number;
       per: number; winShares: number;
+      yearsPlayed: number;
     };
 
     const qualified: QP[] = [];
@@ -233,15 +239,17 @@ export async function getLeagueLeadersAction(): Promise<{
         ftPct,
         per,
         winShares,
+        yearsPlayed: p.yearsPlayed,
       });
     }
 
-    const makeCategory = (
+    const makeFilteredCategory = (
+      list: QP[],
       key: string, label: string, emoji: string, color: string,
       format: "decimal" | "pct" | "integer", getter: (p: QP) => number
     ): LeaderCategory => ({
       key, label, emoji, color, format,
-      leaders: [...qualified]
+      leaders: [...list]
         .sort((a, b) => getter(b) - getter(a))
         .slice(0, 10)
         .map((p, i) => ({
@@ -255,16 +263,45 @@ export async function getLeagueLeadersAction(): Promise<{
     });
 
     const playerCategories: LeaderCategory[] = [
-      makeCategory("ppg",   "Points Per Game",    "🏀", "#FF6D00", "decimal", (p) => p.ppg),
-      makeCategory("rpg",   "Rebounds Per Game",  "💪", "#00E5FF", "decimal", (p) => p.rpg),
-      makeCategory("apg",   "Assists Per Game",   "🎯", "#76FF03", "decimal", (p) => p.apg),
-      makeCategory("spg",   "Steals Per Game",    "🤚", "#FFD700", "decimal", (p) => p.spg),
-      makeCategory("bpg",   "Blocks Per Game",    "🛡️", "#E040FB", "decimal", (p) => p.bpg),
-      makeCategory("fgPct", "Field Goal %",       "📊", "#FF4081", "pct",     (p) => p.fgPct),
-      makeCategory("tpPct", "3-Point %",          "🎯", "#40C4FF", "pct",     (p) => p.tpPct),
-      makeCategory("ftPct", "Free Throw %",       "🎪", "#69F0AE", "pct",     (p) => p.ftPct),
-      makeCategory("per",   "Player Efficiency",  "⚡", "#FF9100", "decimal", (p) => p.per),
-      makeCategory("winShares", "Win Shares",     "📈", "#00E676", "decimal", (p) => p.winShares),
+      makeFilteredCategory(qualified, "ppg",   "Points Per Game",    "🏀", "#FF6D00", "decimal", (p) => p.ppg),
+      makeFilteredCategory(qualified, "rpg",   "Rebounds Per Game",  "💪", "#00E5FF", "decimal", (p) => p.rpg),
+      makeFilteredCategory(qualified, "apg",   "Assists Per Game",   "🎯", "#76FF03", "decimal", (p) => p.apg),
+      makeFilteredCategory(qualified, "spg",   "Steals Per Game",    "🤚", "#FFD700", "decimal", (p) => p.spg),
+      makeFilteredCategory(qualified, "bpg",   "Blocks Per Game",    "🛡️", "#E040FB", "decimal", (p) => p.bpg),
+      makeFilteredCategory(qualified, "fgPct", "Field Goal %",       "📊", "#FF4081", "pct",     (p) => p.fgPct),
+      makeFilteredCategory(qualified, "tpPct", "3-Point %",          "🎯", "#40C4FF", "pct",     (p) => p.tpPct),
+      makeFilteredCategory(qualified, "ftPct", "Free Throw %",       "🎪", "#69F0AE", "pct",     (p) => p.ftPct),
+      makeFilteredCategory(qualified, "per",   "Player Efficiency",  "⚡", "#FF9100", "decimal", (p) => p.per),
+      makeFilteredCategory(qualified, "winShares", "Win Shares",     "📈", "#00E676", "decimal", (p) => p.winShares),
+    ];
+
+    const rookies = qualified.filter((p) => p.yearsPlayed === 0);
+    const sophomores = qualified.filter((p) => p.yearsPlayed === 1);
+
+    const rookieCategories: LeaderCategory[] = [
+      makeFilteredCategory(rookies, "ppg",   "Points Per Game",    "🏀", "#FF6D00", "decimal", (p) => p.ppg),
+      makeFilteredCategory(rookies, "rpg",   "Rebounds Per Game",  "💪", "#00E5FF", "decimal", (p) => p.rpg),
+      makeFilteredCategory(rookies, "apg",   "Assists Per Game",   "🎯", "#76FF03", "decimal", (p) => p.apg),
+      makeFilteredCategory(rookies, "spg",   "Steals Per Game",    "🤚", "#FFD700", "decimal", (p) => p.spg),
+      makeFilteredCategory(rookies, "bpg",   "Blocks Per Game",    "🛡️", "#E040FB", "decimal", (p) => p.bpg),
+      makeFilteredCategory(rookies, "fgPct", "Field Goal %",       "📊", "#FF4081", "pct",     (p) => p.fgPct),
+      makeFilteredCategory(rookies, "tpPct", "3-Point %",          "🎯", "#40C4FF", "pct",     (p) => p.tpPct),
+      makeFilteredCategory(rookies, "ftPct", "Free Throw %",       "🎪", "#69F0AE", "pct",     (p) => p.ftPct),
+      makeFilteredCategory(rookies, "per",   "Player Efficiency",  "⚡", "#FF9100", "decimal", (p) => p.per),
+      makeFilteredCategory(rookies, "winShares", "Win Shares",     "📈", "#00E676", "decimal", (p) => p.winShares),
+    ];
+
+    const sophomoreCategories: LeaderCategory[] = [
+      makeFilteredCategory(sophomores, "ppg",   "Points Per Game",    "🏀", "#FF6D00", "decimal", (p) => p.ppg),
+      makeFilteredCategory(sophomores, "rpg",   "Rebounds Per Game",  "💪", "#00E5FF", "decimal", (p) => p.rpg),
+      makeFilteredCategory(sophomores, "apg",   "Assists Per Game",   "🎯", "#76FF03", "decimal", (p) => p.apg),
+      makeFilteredCategory(sophomores, "spg",   "Steals Per Game",    "🤚", "#FFD700", "decimal", (p) => p.spg),
+      makeFilteredCategory(sophomores, "bpg",   "Blocks Per Game",    "🛡️", "#E040FB", "decimal", (p) => p.bpg),
+      makeFilteredCategory(sophomores, "fgPct", "Field Goal %",       "📊", "#FF4081", "pct",     (p) => p.fgPct),
+      makeFilteredCategory(sophomores, "tpPct", "3-Point %",          "🎯", "#40C4FF", "pct",     (p) => p.tpPct),
+      makeFilteredCategory(sophomores, "ftPct", "Free Throw %",       "🎪", "#69F0AE", "pct",     (p) => p.ftPct),
+      makeFilteredCategory(sophomores, "per",   "Player Efficiency",  "⚡", "#FF9100", "decimal", (p) => p.per),
+      makeFilteredCategory(sophomores, "winShares", "Win Shares",     "📈", "#00E676", "decimal", (p) => p.winShares),
     ];
 
     const makeTeamCategory = (
@@ -297,9 +334,30 @@ export async function getLeagueLeadersAction(): Promise<{
       makeTeamCategory("pointDiff", "Avg Point Diff",    "📊", "#AB47BC", "decimal", (t) => t.avgPointDiff),
     ];
 
-    return { success: true, seasonYear, categories: playerCategories, teamCategories, playerCount: qualified.length };
+    return {
+      success: true,
+      seasonYear,
+      categories: playerCategories,
+      teamCategories,
+      rookieCategories,
+      sophomoreCategories,
+      playerCount: qualified.length,
+      rookieCount: rookies.length,
+      sophomoreCount: sophomores.length
+    };
   } catch (error: any) {
     console.error("[Leaders Action] Failed:", error);
-    return { success: false, seasonYear: 0, categories: [], teamCategories: [], playerCount: 0, error: error.message };
+    return {
+      success: false,
+      seasonYear: 0,
+      categories: [],
+      teamCategories: [],
+      rookieCategories: [],
+      sophomoreCategories: [],
+      playerCount: 0,
+      rookieCount: 0,
+      sophomoreCount: 0,
+      error: error.message
+    };
   }
 }

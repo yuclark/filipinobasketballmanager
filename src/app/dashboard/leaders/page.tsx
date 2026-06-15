@@ -34,11 +34,15 @@ export default function LeadersPage() {
   const [seasonYear, setSeasonYear] = useState(0);
   const [playerCategories, setPlayerCategories] = useState<LeaderCategory[]>([]);
   const [teamCategories, setTeamCategories] = useState<LeaderCategory[]>([]);
+  const [rookieCategories, setRookieCategories] = useState<LeaderCategory[]>([]);
+  const [sophomoreCategories, setSophomoreCategories] = useState<LeaderCategory[]>([]);
   const [playerCount, setPlayerCount] = useState(0);
+  const [rookieCount, setRookieCount] = useState(0);
+  const [sophomoreCount, setSophomoreCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   
   // Toggle Mode
-  const [viewMode, setViewMode] = useState<"players" | "teams">("players");
+  const [viewMode, setViewMode] = useState<"players" | "teams" | "rookies" | "sophomores">("players");
 
   useEffect(() => {
     setMounted(true);
@@ -55,7 +59,11 @@ export default function LeadersPage() {
           setSeasonYear(res.seasonYear);
           setPlayerCategories(res.categories);
           setTeamCategories(res.teamCategories || []);
+          setRookieCategories(res.rookieCategories || []);
+          setSophomoreCategories(res.sophomoreCategories || []);
           setPlayerCount(res.playerCount);
+          setRookieCount(res.rookieCount || 0);
+          setSophomoreCount(res.sophomoreCount || 0);
         } else {
           setError(res.error ?? "Failed to load leaders.");
         }
@@ -98,7 +106,13 @@ export default function LeadersPage() {
     );
   }
 
-  const activeCategories = viewMode === "players" ? playerCategories : teamCategories;
+  const activeCategories = 
+    viewMode === "players" ? playerCategories : 
+    viewMode === "teams" ? teamCategories :
+    viewMode === "rookies" ? rookieCategories :
+    sophomoreCategories;
+
+  const isPlayerView = viewMode === "players" || viewMode === "rookies" || viewMode === "sophomores";
 
   return (
     <div className="space-y-6">
@@ -110,15 +124,17 @@ export default function LeadersPage() {
           </div>
           <div>
             <h3 className="text-2xl font-bold text-white tracking-tight">League Leaders</h3>
-            <p className="text-zinc-500 text-sm font-semibold tracking-wide">
+            <p className="text-zinc-550 text-sm font-semibold tracking-wide">
               {seasonYear > 0 ? `Season ${seasonYear} · ` : ""}Regular Season Leaderboards
               {viewMode === "players" && ` · ${playerCount} Qualified Players (min. 10 GP)`}
+              {viewMode === "rookies" && ` · ${rookieCount} Qualified Rookies (min. 10 GP)`}
+              {viewMode === "sophomores" && ` · ${sophomoreCount} Qualified Sophomores (min. 10 GP)`}
             </p>
           </div>
         </div>
 
         {/* View Mode Toggle */}
-        <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900">
+        <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-900 gap-1 sm:gap-0 flex-wrap">
           <button
             onClick={() => setViewMode("players")}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer flex items-center gap-2 ${
@@ -140,6 +156,28 @@ export default function LeadersPage() {
           >
             <Shield className="w-3.5 h-3.5" />
             <span>Teams</span>
+          </button>
+          <button
+            onClick={() => setViewMode("rookies")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer flex items-center gap-2 ${
+              viewMode === "rookies"
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <Award className="w-3.5 h-3.5" />
+            <span>Rookies</span>
+          </button>
+          <button
+            onClick={() => setViewMode("sophomores")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer flex items-center gap-2 ${
+              viewMode === "sophomores"
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Sophomores</span>
           </button>
         </div>
       </div>
@@ -210,12 +248,12 @@ export default function LeadersPage() {
                               </span>
                               
                               <div className="min-w-0 leading-tight">
-                                {viewMode === "players" ? (
+                                {isPlayerView ? (
                                   <>
                                     <Link href={`/dashboard/players/${entry.playerId}`} className="font-bold text-xs text-zinc-100 hover:text-orange-400 block truncate transition-colors">
                                       {entry.playerName}
                                     </Link>
-                                    <span className="text-[9px] text-zinc-550 font-semibold block truncate">
+                                    <span className="text-[9px] text-zinc-555 font-semibold block truncate">
                                       {entry.teamName}
                                     </span>
                                   </>
