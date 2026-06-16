@@ -997,13 +997,21 @@ export async function requestTradeOfferForPlayerAction(
     const userCurrentSalary = userRoster.reduce((sum, p) => sum + p.salary, 0);
     const cpuCurrentSalary = cpuRoster.reduce((sum, p) => sum + p.salary, 0);
 
-    const getVal = (overall: number) => Math.pow(1.09, overall);
-    const getPickVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
+    const getVal = (overall: number) => Math.pow(1.10, overall);
+    const getPickVal = (round: number) => Math.pow(1.10, round === 1 ? 77 : 64);
 
     const cpuVal = cpuPlayers.reduce((sum, p) => sum + getVal(p.overall), 0) +
                    cpuPicks.reduce((sum, pk) => sum + getPickVal(pk.round), 0);
 
     const cpuPlayerSalarySum = cpuPlayers.reduce((sum, p) => sum + p.salary, 0);
+
+    const maxCpuOvr = cpuPlayers.length > 0 ? Math.max(...cpuPlayers.map(p => p.overall)) : 0;
+    let requiredRatio = 1.0;
+    if (maxCpuOvr >= 88) {
+      requiredRatio = 1.10; // 10% premium for superstars
+    } else if (maxCpuOvr >= 80) {
+      requiredRatio = 1.05; // 5% premium for stars
+    }
 
     // List of candidate packages
     const candidates: Array<{
@@ -1039,21 +1047,20 @@ export async function requestTradeOfferForPlayerAction(
                         pkList.reduce((sum, pk) => sum + getPickVal(pk.round), 0);
 
       // CPU perspective check
-      if (valueUser < cpuVal * 0.98) return;
+      if (valueUser < cpuVal * requiredRatio) return;
       if (cpuVal < valueUser * 0.75) return; // League balance check
 
       // Star player check
       const maxUserOvr = pList.length > 0 ? Math.max(...pList.map(p => p.overall)) : 0;
       const hasUserFirstRoundPick = pkList.some(pk => pk.round === 1);
 
-      const maxCpuOvr = cpuPlayers.length > 0 ? Math.max(...cpuPlayers.map(p => p.overall)) : 0;
       if (maxCpuOvr >= 80) {
         if (maxCpuOvr >= 88) {
-          const hasProperPlayer = maxUserOvr >= 80;
-          const hasFallback = maxUserOvr >= 75 && hasUserFirstRoundPick;
+          const hasProperPlayer = maxUserOvr >= 82;
+          const hasFallback = maxUserOvr >= 78 && hasUserFirstRoundPick;
           if (!hasProperPlayer && !hasFallback) return;
         } else {
-          const hasProperPlayer = maxUserOvr >= 73;
+          const hasProperPlayer = maxUserOvr >= 75;
           if (!hasProperPlayer && !hasUserFirstRoundPick) return;
         }
       }

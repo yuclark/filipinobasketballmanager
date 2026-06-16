@@ -517,18 +517,26 @@ export async function executeTradeAction(
     }
 
     // Check point deficit (fair trade evaluation using exponential valuation and star protection)
-    const getVal = (overall: number) => Math.pow(1.09, overall);
-    const getPickVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
+    const getVal = (overall: number) => Math.pow(1.10, overall);
+    const getPickVal = (round: number) => Math.pow(1.10, round === 1 ? 77 : 64);
 
     const valA = rosterA.reduce((sum, p) => sum + getVal(p.overall), 0) + picksA.reduce((sum, p) => sum + getPickVal(p.round), 0);
     const valB = rosterB.reduce((sum, p) => sum + getVal(p.overall), 0) + picksB.reduce((sum, p) => sum + getPickVal(p.round), 0);
 
     const valRatio = valA / valB;
 
-    if (valRatio < 0.95) {
+    const maxCpuOvr = rosterB.length > 0 ? Math.max(...rosterB.map(p => p.overall)) : 0;
+    let requiredRatio = 1.0; // CPU demands equal or higher value
+    if (maxCpuOvr >= 88) {
+      requiredRatio = 1.10; // 10% premium for superstars
+    } else if (maxCpuOvr >= 80) {
+      requiredRatio = 1.05; // 5% premium for stars
+    }
+
+    if (valRatio < requiredRatio) {
       return {
         success: false,
-        error: `Trade rejected: Opposing front office feels the asset value offered is insufficient.`,
+        error: `Trade rejected: Opposing front office feels the asset value offered is insufficient${requiredRatio > 1.0 ? " (requires talent premium for star player)" : ""}.`,
       };
     }
 
@@ -540,26 +548,25 @@ export async function executeTradeAction(
     }
 
     // Star player protection check
-    const maxCpuOvr = rosterB.length > 0 ? Math.max(...rosterB.map(p => p.overall)) : 0;
     const maxUserOvr = rosterA.length > 0 ? Math.max(...rosterA.map(p => p.overall)) : 0;
     const hasUserFirstRoundPick = picksA.some(p => p.round === 1);
 
     if (maxCpuOvr >= 80) {
       if (maxCpuOvr >= 88) {
-        const hasProperPlayer = maxUserOvr >= 80;
-        const hasFallback = maxUserOvr >= 75 && hasUserFirstRoundPick;
+        const hasProperPlayer = maxUserOvr >= 82;
+        const hasFallback = maxUserOvr >= 78 && hasUserFirstRoundPick;
         if (!hasProperPlayer && !hasFallback) {
           return {
             success: false,
-            error: `Trade rejected: CPU refuses to trade superstar player (OVR ${maxCpuOvr}) without receiving a star player (OVR 80+) or an established starter (OVR 75+) and a first-round draft pick.`,
+            error: `Trade rejected: CPU refuses to trade superstar player (OVR ${maxCpuOvr}) without receiving a high-quality starter (OVR 82+) or a solid starter (OVR 78+) and a first-round draft pick.`,
           };
         }
       } else {
-        const hasProperPlayer = maxUserOvr >= 73;
+        const hasProperPlayer = maxUserOvr >= 75;
         if (!hasProperPlayer && !hasUserFirstRoundPick) {
           return {
             success: false,
-            error: `Trade rejected: CPU refuses to trade star player (OVR ${maxCpuOvr}) without receiving at least a solid rotation player (OVR 73+) or a first-round draft pick.`,
+            error: `Trade rejected: CPU refuses to trade star player (OVR ${maxCpuOvr}) without receiving at least a solid rotation player (OVR 75+) or a first-round draft pick.`,
           };
         }
       }

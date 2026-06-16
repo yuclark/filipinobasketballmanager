@@ -290,8 +290,8 @@ export default function TradesPage() {
   const isCpuSelected = selectedCpuIds.length > 0 || selectedCpuPickIds.length > 0;
 
   // Strict CPU Rationality checks (Exponential Values & Star Protections)
-  const getExponentialVal = (overall: number) => Math.pow(1.09, overall);
-  const getPickExponentialVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
+  const getExponentialVal = (overall: number) => Math.pow(1.10, overall);
+  const getPickExponentialVal = (round: number) => Math.pow(1.10, round === 1 ? 77 : 64);
 
   const userExpValue = userSelectedPlayers.reduce((sum, p) => sum + getExponentialVal(p.overall), 0) +
                        userDraftPicks.filter(p => selectedUserPickIds.includes(p.id)).reduce((sum, p) => sum + getPickExponentialVal(p.round), 0);
@@ -299,10 +299,17 @@ export default function TradesPage() {
   const cpuExpValue = cpuSelectedPlayers.reduce((sum, p) => sum + getExponentialVal(p.overall), 0) +
                        cpuDraftPicks.filter(p => selectedCpuPickIds.includes(p.id)).reduce((sum, p) => sum + getPickExponentialVal(p.round), 0);
 
-  const isValSufficient = userExpValue >= cpuExpValue * 0.95;
+  const maxCpuOvrSelected = cpuSelectedPlayers.length > 0 ? Math.max(...cpuSelectedPlayers.map(p => p.overall)) : 0;
+  let requiredRatioSelected = 1.0;
+  if (maxCpuOvrSelected >= 88) {
+    requiredRatioSelected = 1.10; // 10% premium for superstars
+  } else if (maxCpuOvrSelected >= 80) {
+    requiredRatioSelected = 1.05; // 5% premium for stars
+  }
+
+  const isValSufficient = userExpValue >= cpuExpValue * requiredRatioSelected;
   const isValExcessive = userExpValue > cpuExpValue * 1.4;
 
-  const maxCpuOvrSelected = cpuSelectedPlayers.length > 0 ? Math.max(...cpuSelectedPlayers.map(p => p.overall)) : 0;
   const maxUserOvrSelected = userSelectedPlayers.length > 0 ? Math.max(...userSelectedPlayers.map(p => p.overall)) : 0;
   const hasUserFirstRoundPickSelected = userDraftPicks.filter(p => selectedUserPickIds.includes(p.id)).some(p => p.round === 1);
 
@@ -311,17 +318,17 @@ export default function TradesPage() {
 
   if (maxCpuOvrSelected >= 80) {
     if (maxCpuOvrSelected >= 88) {
-      const hasProperPlayer = maxUserOvrSelected >= 80;
-      const hasFallback = maxUserOvrSelected >= 75 && hasUserFirstRoundPickSelected;
+      const hasProperPlayer = maxUserOvrSelected >= 82;
+      const hasFallback = maxUserOvrSelected >= 78 && hasUserFirstRoundPickSelected;
       if (!hasProperPlayer && !hasFallback) {
         starCheckPassed = false;
-        starCheckReason = `CPU refuses to trade superstar player (OVR ${maxCpuOvrSelected}) without receiving a star player (OVR 80+) or an established starter (OVR 75+) and a first-round draft pick.`;
+        starCheckReason = `CPU refuses to trade superstar player (OVR ${maxCpuOvrSelected}) without receiving a high-quality starter (OVR 82+) or a solid starter (OVR 78+) and a first-round draft pick.`;
       }
     } else {
-      const hasProperPlayer = maxUserOvrSelected >= 73;
+      const hasProperPlayer = maxUserOvrSelected >= 75;
       if (!hasProperPlayer && !hasUserFirstRoundPickSelected) {
         starCheckPassed = false;
-        starCheckReason = `CPU refuses to trade star player (OVR ${maxCpuOvrSelected}) without receiving at least a solid rotation player (OVR 73+) or a first-round draft pick.`;
+        starCheckReason = `CPU refuses to trade star player (OVR ${maxCpuOvrSelected}) without receiving at least a solid rotation player (OVR 75+) or a first-round draft pick.`;
       }
     }
   }
