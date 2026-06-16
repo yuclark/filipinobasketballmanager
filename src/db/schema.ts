@@ -187,3 +187,17 @@ export const playerSalaryHistory = pgTable("player_salary_history", {
   salary: integer("salary").notNull(),
 });
 
+export const playerEvolutions = pgTable("player_evolutions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  playerId: uuid("player_id")
+    .references(() => players.id, { onDelete: "cascade" })
+    .notNull(),
+  seasonYear: integer("season_year").notNull(),
+  gameDay: integer("game_day").notNull(), // 0 for offseason phase, 1-82 for regular season
+  oldOverall: integer("old_overall").notNull(),
+  newOverall: integer("new_overall").notNull(),
+  attributeChangesJson: text("attribute_changes_json").notNull(), // e.g. '{"threePoint":1,"speed":-1}'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+
