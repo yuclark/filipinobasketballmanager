@@ -258,49 +258,34 @@ export default function SchedulePage() {
     setPendingDays(days);
     setSimulating(true);
     stopSimulationRef.current = false;
-    let daysSimulated = 0;
     try {
-      while (daysSimulated < days) {
-        if (stopSimulationRef.current) {
-          setToastMessage("Simulation paused by manager.");
-          break;
-        }
-
-        const res = await simulateBatchDaysAction(1, bypass || hasConfirmedDeadline, userTeamId);
-        
-        if (res.currentDay) {
-          setLeagueDay(res.currentDay);
-        }
-
-        if (res.status === "REGULAR_SEASON_COMPLETE") {
-          router.push("/dashboard/awards");
-          return;
-        }
-
-        if (res.status === "DEADLINE_REACHED") {
-          setTradeDeadlinePassed(true);
-          setShowDeadlineModal(true);
-          setPendingDays(days - daysSimulated - 1);
-          break;
-        }
-
-        if (res.status === "ERROR") {
-          setToastMessage("Simulation failed. Please check team states and try again.");
-          break;
-        }
-
-        daysSimulated++;
-
-        // Refresh games list in client
-        const currentDay = res.currentDay ?? currentLeagueDay;
-        const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
-        setGamesList(data);
-        setViewingDay(currentDay);
-
-
-        // Small yield to allow React to re-render and detect state changes
-        await new Promise((resolve) => setTimeout(resolve, 50));
+      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline, userTeamId);
+      
+      if (res.currentDay) {
+        setLeagueDay(res.currentDay);
       }
+
+      if (res.status === "REGULAR_SEASON_COMPLETE") {
+        router.push("/dashboard/awards");
+        return;
+      }
+
+      if (res.status === "DEADLINE_REACHED") {
+        setTradeDeadlinePassed(true);
+        setShowDeadlineModal(true);
+        const simulated = res.daysSimulated ?? 0;
+        setPendingDays(days - simulated);
+      }
+
+      if (res.status === "ERROR") {
+        setToastMessage("Simulation failed. Please check team states and try again.");
+      }
+
+      // Refresh games list in client
+      const currentDay = res.currentDay ?? currentLeagueDay;
+      const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
+      setGamesList(data);
+      setViewingDay(currentDay);
 
       if (userTeamId) {
         const schedule = await getTeamScheduleAction(userTeamId);
