@@ -621,107 +621,105 @@ export async function replenishLeagueRostersAction() {
     let faIndex = 0;
     let totalSigningsCount = 0;
 
-    await db.transaction(async (tx) => {
-      const lastGame = await tx
-        .select({ year: games.seasonYear })
-        .from(games)
-        .orderBy(desc(games.seasonYear))
-        .limit(1);
-      const currentYear = lastGame[0]?.year ?? 2026;
+    const lastGame = await db
+      .select({ year: games.seasonYear })
+      .from(games)
+      .orderBy(desc(games.seasonYear))
+      .limit(1);
+    const currentYear = lastGame[0]?.year ?? 2026;
 
-      for (const team of depletedTeams) {
-        const currentCount = rosterCounts.get(team.id) ?? 0;
-        const playersNeeded = MIN_ROSTER_SIZE - currentCount;
+    for (const team of depletedTeams) {
+      const currentCount = rosterCounts.get(team.id) ?? 0;
+      const playersNeeded = MIN_ROSTER_SIZE - currentCount;
 
-        console.log(`[Roster Replenishment] ${team.city} ${team.name} needs ${playersNeeded} players (current roster: ${currentCount}).`);
+      console.log(`[Roster Replenishment] ${team.city} ${team.name} needs ${playersNeeded} players (current roster: ${currentCount}).`);
 
-        if (faIndex + playersNeeded > freeAgents.length) {
-          console.warn("[Roster Replenishment] Free agency pool is too small! Generating emergency free agents...");
-          const emergencyFAs: Array<typeof players.$inferInsert> = [];
-          const neededFAsCount = (faIndex + playersNeeded) - freeAgents.length;
+      if (faIndex + playersNeeded > freeAgents.length) {
+        console.warn("[Roster Replenishment] Free agency pool is too small! Generating emergency free agents...");
+        const emergencyFAs: Array<typeof players.$inferInsert> = [];
+        const neededFAsCount = (faIndex + playersNeeded) - freeAgents.length;
 
-          for (let k = 0; k < neededFAsCount + 10; k++) {
-            const isFilAm = Math.random() < 0.2;
-            const useFilAmFirst = isFilAm || (Math.random() < 0.3);
-            const baseFirst = useFilAmFirst
-              ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
-              : FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
-            const hasSecond = Math.random() < 0.4;
-            const secondName = hasSecond
-              ? (useFilAmFirst
-                  ? AMERICAN_SECOND_NAMES[Math.floor(Math.random() * AMERICAN_SECOND_NAMES.length)]
-                  : SECOND_NAMES[Math.floor(Math.random() * SECOND_NAMES.length)])
-              : "";
-            const firstName = secondName ? `${baseFirst} ${secondName}` : baseFirst;
-            const lastName = isFilAm
-              ? FILAM_SURNAMES[Math.floor(Math.random() * FILAM_SURNAMES.length)]
-              : SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
-            const age = Math.floor(Math.random() * 12) + 21; // 21 to 32
-            const hometown = Math.random() < 0.5 ? "Manila" : "Cebu City";
-            const position = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
-            const overall = Math.floor(Math.random() * 20) + 55; // 55 to 74
+        for (let k = 0; k < neededFAsCount + 10; k++) {
+          const isFilAm = Math.random() < 0.2;
+          const useFilAmFirst = isFilAm || (Math.random() < 0.3);
+          const baseFirst = useFilAmFirst
+            ? FILAM_FIRST_NAMES[Math.floor(Math.random() * FILAM_FIRST_NAMES.length)]
+            : FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+          const hasSecond = Math.random() < 0.4;
+          const secondName = hasSecond
+            ? (useFilAmFirst
+                ? AMERICAN_SECOND_NAMES[Math.floor(Math.random() * AMERICAN_SECOND_NAMES.length)]
+                : SECOND_NAMES[Math.floor(Math.random() * SECOND_NAMES.length)])
+            : "";
+          const firstName = secondName ? `${baseFirst} ${secondName}` : baseFirst;
+          const lastName = isFilAm
+            ? FILAM_SURNAMES[Math.floor(Math.random() * FILAM_SURNAMES.length)]
+            : SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+          const age = Math.floor(Math.random() * 12) + 21; // 21 to 32
+          const hometown = Math.random() < 0.5 ? "Manila" : "Cebu City";
+          const position = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
+          const overall = Math.floor(Math.random() * 20) + 55; // 55 to 74
 
-            emergencyFAs.push({
-              teamId: null,
-              firstName,
-              lastName,
-              age,
-              hometown,
-              isFilAm,
-              overall,
-              salary: 500000,
-              position,
-              threePoint: overall - Math.floor(Math.random() * 5),
-              insideScoring: overall - Math.floor(Math.random() * 5),
-              playmaking: overall - Math.floor(Math.random() * 5),
-              perimeterDefense: overall - Math.floor(Math.random() * 5),
-              interiorDefense: overall - Math.floor(Math.random() * 5),
-              rebounding: overall - Math.floor(Math.random() * 5),
-              speed: overall - Math.floor(Math.random() * 5),
-              stamina: overall - Math.floor(Math.random() * 5),
-              contractYearsRemaining: 1,
-              status: "Active",
-              isRookie: false,
-              injuryDaysRemaining: 0,
-              injuryType: null,
-              yearsPlayed: Math.max(0, age - 21),
-            });
-          }
-
-          const insertedFAs = await tx.insert(players).values(emergencyFAs).returning();
-          freeAgents.push(...insertedFAs);
-        }
-
-        for (let signIdx = 0; signIdx < playersNeeded; signIdx++) {
-          const fa = freeAgents[faIndex];
-          faIndex++;
-          totalSigningsCount++;
-
-          const contractYears = Math.random() < 0.5 ? 1 : 2;
-          const salaryVal = 500000; // Minimum baseline salary ₱500,000
-
-          await tx
-            .update(players)
-            .set({
-              teamId: team.id,
-              contractYearsRemaining: contractYears,
-              salary: salaryVal,
-            })
-            .where(eq(players.id, fa.id));
-
-          const description = `SYSTEM: ${team.city} ${team.name} signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) to meet league roster minimums.`;
-
-          await tx.insert(transactions).values({
-            type: "Signing",
-            description,
-            seasonYear: currentYear,
-            gameDay: 82,
+          emergencyFAs.push({
+            teamId: null,
+            firstName,
+            lastName,
+            age,
+            hometown,
+            isFilAm,
+            overall,
+            salary: 500000,
+            position,
+            threePoint: overall - Math.floor(Math.random() * 5),
+            insideScoring: overall - Math.floor(Math.random() * 5),
+            playmaking: overall - Math.floor(Math.random() * 5),
+            perimeterDefense: overall - Math.floor(Math.random() * 5),
+            interiorDefense: overall - Math.floor(Math.random() * 5),
+            rebounding: overall - Math.floor(Math.random() * 5),
+            speed: overall - Math.floor(Math.random() * 5),
+            stamina: overall - Math.floor(Math.random() * 5),
+            contractYearsRemaining: 1,
+            status: "Active",
+            isRookie: false,
+            injuryDaysRemaining: 0,
+            injuryType: null,
+            yearsPlayed: Math.max(0, age - 21),
           });
-
-          console.log(`[Roster Replenishment] Signed ${fa.firstName} ${fa.lastName} to ${team.name}.`);
         }
+
+        const insertedFAs = await db.insert(players).values(emergencyFAs).returning();
+        freeAgents.push(...insertedFAs);
       }
-    });
+
+      for (let signIdx = 0; signIdx < playersNeeded; signIdx++) {
+        const fa = freeAgents[faIndex];
+        faIndex++;
+        totalSigningsCount++;
+
+        const contractYears = Math.random() < 0.5 ? 1 : 2;
+        const salaryVal = 500000; // Minimum baseline salary ₱500,000
+
+        await db
+          .update(players)
+          .set({
+            teamId: team.id,
+            contractYearsRemaining: contractYears,
+            salary: salaryVal,
+          })
+          .where(eq(players.id, fa.id));
+
+        const description = `SYSTEM: ${team.city} ${team.name} signed free agent ${fa.firstName} ${fa.lastName} (OVR ${fa.overall}) to meet league roster minimums.`;
+
+        await db.insert(transactions).values({
+          type: "Signing",
+          description,
+          seasonYear: currentYear,
+          gameDay: 82,
+        });
+
+        console.log(`[Roster Replenishment] Signed ${fa.firstName} ${fa.lastName} to ${team.name}.`);
+      }
+    }
 
     console.log(`[Roster Replenishment] Safety net execution complete. Signed ${totalSigningsCount} players.`);
     return { success: true, count: totalSigningsCount };

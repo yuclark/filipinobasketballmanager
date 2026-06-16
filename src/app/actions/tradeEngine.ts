@@ -260,193 +260,191 @@ export async function executeUserTradeAction(
   cpuPickIds: string[]
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    return await db.transaction(async (tx) => {
-      // 1. Fetch current season and game day from games table
-      const maxSeasonGame = await tx
-        .select({ year: games.seasonYear })
-        .from(games)
-        .orderBy(desc(games.seasonYear))
-        .limit(1);
-      const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
+    // 1. Fetch current season and game day from games table
+    const maxSeasonGame = await db
+      .select({ year: games.seasonYear })
+      .from(games)
+      .orderBy(desc(games.seasonYear))
+      .limit(1);
+    const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
 
-      const nextScheduled = await tx
-        .select({ day: games.gameNumber })
-        .from(games)
-        .where(and(
-          eq(games.seasonYear, currentSeasonYear),
-          eq(games.status, "Scheduled"),
-          eq(games.stage, "Regular")
-        ))
-        .orderBy(games.gameNumber)
-        .limit(1);
-      const currentDay = nextScheduled[0]?.day ?? 82;
+    const nextScheduled = await db
+      .select({ day: games.gameNumber })
+      .from(games)
+      .where(and(
+        eq(games.seasonYear, currentSeasonYear),
+        eq(games.status, "Scheduled"),
+        eq(games.stage, "Regular")
+      ))
+      .orderBy(games.gameNumber)
+      .limit(1);
+    const currentDay = nextScheduled[0]?.day ?? 82;
 
-      if (currentDay > 50) {
-        throw new Error("The trade deadline has passed. Roster adjustments are locked until the offseason.");
-      }
+    if (currentDay > 50) {
+      throw new Error("The trade deadline has passed. Roster adjustments are locked until the offseason.");
+    }
 
-      // Fetch CPU Team
-      const [cpuTeam] = await tx.select().from(teams).where(eq(teams.id, cpuTeamId)).limit(1);
-      if (!cpuTeam) return { success: false, error: "CPU Team not found." };
+    // Fetch CPU Team
+    const [cpuTeam] = await db.select().from(teams).where(eq(teams.id, cpuTeamId)).limit(1);
+    if (!cpuTeam) return { success: false, error: "CPU Team not found." };
 
-      let userTeamId = "";
-      let userPlayer: any = null;
-      let userPick: any = null;
+    let userTeamId = "";
+    let userPlayer: any = null;
+    let userPick: any = null;
 
-      if (userAssetType === "PLAYER") {
-        const [p] = await tx.select().from(players).where(eq(players.id, userAssetId)).limit(1);
-        if (!p || !p.teamId) return { success: false, error: "User player not found." };
-        userPlayer = p;
-        userTeamId = p.teamId;
-      } else {
-        const [pick] = await tx.select().from(draftPicks).where(eq(draftPicks.id, userAssetId)).limit(1);
-        if (!pick || !pick.ownerTeamId) return { success: false, error: "User draft pick not found." };
-        userPick = pick;
-        userTeamId = pick.ownerTeamId;
-      }
+    if (userAssetType === "PLAYER") {
+      const [p] = await db.select().from(players).where(eq(players.id, userAssetId)).limit(1);
+      if (!p || !p.teamId) return { success: false, error: "User player not found." };
+      userPlayer = p;
+      userTeamId = p.teamId;
+    } else {
+      const [pick] = await db.select().from(draftPicks).where(eq(draftPicks.id, userAssetId)).limit(1);
+      if (!pick || !pick.ownerTeamId) return { success: false, error: "User draft pick not found." };
+      userPick = pick;
+      userTeamId = pick.ownerTeamId;
+    }
 
-      const [userTeam] = await tx.select().from(teams).where(eq(teams.id, userTeamId)).limit(1);
-      if (!userTeam) return { success: false, error: "User team not found." };
+    const [userTeam] = await db.select().from(teams).where(eq(teams.id, userTeamId)).limit(1);
+    if (!userTeam) return { success: false, error: "User team not found." };
 
-      // Load CPU players and picks
-      const cpuPlayersList = cpuPlayerIds.length > 0
-        ? await tx.select().from(players).where(and(eq(players.teamId, cpuTeamId), eq(players.status, "Active")))
-        : [];
-      const cpuPicksList = cpuPickIds.length > 0
-        ? await tx.select().from(draftPicks).where(and(eq(draftPicks.ownerTeamId, cpuTeamId), eq(draftPicks.isUsed, false)))
-        : [];
+    // Load CPU players and picks
+    const cpuPlayersList = cpuPlayerIds.length > 0
+      ? await db.select().from(players).where(and(eq(players.teamId, cpuTeamId), eq(players.status, "Active")))
+      : [];
+    const cpuPicksList = cpuPickIds.length > 0
+      ? await db.select().from(draftPicks).where(and(eq(draftPicks.ownerTeamId, cpuTeamId), eq(draftPicks.isUsed, false)))
+      : [];
 
-      // Verify that all IDs matched
-      const matchedCpuPlayers = cpuPlayersList.filter((p) => cpuPlayerIds.includes(p.id));
-      const matchedCpuPicks = cpuPicksList.filter((p) => cpuPickIds.includes(p.id));
+    // Verify that all IDs matched
+    const matchedCpuPlayers = cpuPlayersList.filter((p) => cpuPlayerIds.includes(p.id));
+    const matchedCpuPicks = cpuPicksList.filter((p) => cpuPickIds.includes(p.id));
 
-      if (matchedCpuPlayers.length !== cpuPlayerIds.length || matchedCpuPicks.length !== cpuPickIds.length) {
-        return { success: false, error: "One or more CPU assets were not found or are no longer valid." };
-      }
+    if (matchedCpuPlayers.length !== cpuPlayerIds.length || matchedCpuPicks.length !== cpuPickIds.length) {
+      return { success: false, error: "One or more CPU assets were not found or are no longer valid." };
+    }
 
-      // Validation check roster sizes
-      const fullRosterA = await tx.select().from(players).where(and(eq(players.teamId, userTeamId), eq(players.status, "Active")));
-      const fullRosterB = await tx.select().from(players).where(and(eq(players.teamId, cpuTeamId), eq(players.status, "Active")));
+    // Validation check roster sizes
+    const fullRosterA = await db.select().from(players).where(and(eq(players.teamId, userTeamId), eq(players.status, "Active")));
+    const fullRosterB = await db.select().from(players).where(and(eq(players.teamId, cpuTeamId), eq(players.status, "Active")));
 
-      const playersSentByUser = userAssetType === "PLAYER" ? 1 : 0;
-      const playersReceivedByUser = matchedCpuPlayers.length;
+    const playersSentByUser = userAssetType === "PLAYER" ? 1 : 0;
+    const playersReceivedByUser = matchedCpuPlayers.length;
 
-      const newRosterCountA = fullRosterA.length - playersSentByUser + playersReceivedByUser;
-      const newRosterCountB = fullRosterB.length - playersReceivedByUser + playersSentByUser;
+    const newRosterCountA = fullRosterA.length - playersSentByUser + playersReceivedByUser;
+    const newRosterCountB = fullRosterB.length - playersReceivedByUser + playersSentByUser;
 
-      if (newRosterCountA > 18) {
-        return { success: false, error: `Trade blocked: Your team exceeds the 18-player maximum (would have ${newRosterCountA}).` };
-      }
-      if (newRosterCountA < 12) {
-        return { success: false, error: `Trade blocked: Your team falls below the 12-player minimum (would have ${newRosterCountA}).` };
-      }
-      if (newRosterCountB > 18) {
-        return { success: false, error: `Trade blocked: Opposing team exceeds the 18-player maximum (would have ${newRosterCountB}).` };
-      }
-      if (newRosterCountB < 12) {
-        return { success: false, error: `Trade blocked: Opposing team falls below the 12-player minimum (would have ${newRosterCountB}).` };
-      }
+    if (newRosterCountA > 18) {
+      return { success: false, error: `Trade blocked: Your team exceeds the 18-player maximum (would have ${newRosterCountA}).` };
+    }
+    if (newRosterCountA < 12) {
+      return { success: false, error: `Trade blocked: Your team falls below the 12-player minimum (would have ${newRosterCountA}).` };
+    }
+    if (newRosterCountB > 18) {
+      return { success: false, error: `Trade blocked: Opposing team exceeds the 18-player maximum (would have ${newRosterCountB}).` };
+    }
+    if (newRosterCountB < 12) {
+      return { success: false, error: `Trade blocked: Opposing team falls below the 12-player minimum (would have ${newRosterCountB}).` };
+    }
 
-      // Check salary cap limits
-      const currentSalariesA = fullRosterA.reduce((sum, p) => sum + p.salary, 0);
-      const currentSalariesB = fullRosterB.reduce((sum, p) => sum + p.salary, 0);
+    // Check salary cap limits
+    const currentSalariesA = fullRosterA.reduce((sum, p) => sum + p.salary, 0);
+    const currentSalariesB = fullRosterB.reduce((sum, p) => sum + p.salary, 0);
 
-      const salarySentByUser = userAssetType === "PLAYER" && userPlayer ? userPlayer.salary : 0;
-      const salaryReceivedByUser = matchedCpuPlayers.reduce((sum, p) => sum + p.salary, 0);
+    const salarySentByUser = userAssetType === "PLAYER" && userPlayer ? userPlayer.salary : 0;
+    const salaryReceivedByUser = matchedCpuPlayers.reduce((sum, p) => sum + p.salary, 0);
 
-      const newSalariesA = currentSalariesA - salarySentByUser + salaryReceivedByUser;
-      const newSalariesB = currentSalariesB - salaryReceivedByUser + salarySentByUser;
+    const newSalariesA = currentSalariesA - salarySentByUser + salaryReceivedByUser;
+    const newSalariesB = currentSalariesB - salaryReceivedByUser + salarySentByUser;
 
-      if (newSalariesA > userTeam.budget) {
-        return { success: false, error: `Trade blocked: Your team exceeds the ₱${userTeam.budget.toLocaleString("en-PH")} salary cap.` };
-      }
-      if (newSalariesB > cpuTeam.budget) {
-        return { success: false, error: `Trade blocked: Opposing team exceeds the ₱${cpuTeam.budget.toLocaleString("en-PH")} salary cap.` };
-      }
+    if (newSalariesA > userTeam.budget) {
+      return { success: false, error: `Trade blocked: Your team exceeds the ₱${userTeam.budget.toLocaleString("en-PH")} salary cap.` };
+    }
+    if (newSalariesB > cpuTeam.budget) {
+      return { success: false, error: `Trade blocked: Opposing team exceeds the ₱${cpuTeam.budget.toLocaleString("en-PH")} salary cap.` };
+    }
 
-      // SWAP ASSETS
-      // 1. User Asset
-      if (userAssetType === "PLAYER") {
-        await tx
-          .update(players)
-          .set({ teamId: cpuTeamId, isOnTradeBlock: false })
-          .where(eq(players.id, userAssetId));
+    // SWAP ASSETS
+    // 1. User Asset
+    if (userAssetType === "PLAYER") {
+      await db
+        .update(players)
+        .set({ teamId: cpuTeamId, isOnTradeBlock: false })
+        .where(eq(players.id, userAssetId));
 
-        await tx
-          .update(playerSalaryHistory)
-          .set({ teamId: cpuTeamId })
-          .where(
-            and(
-              eq(playerSalaryHistory.playerId, userAssetId),
-              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
-            )
-          );
-      } else {
-        await tx
-          .update(draftPicks)
-          .set({ ownerTeamId: cpuTeamId, isAvailable: false })
-          .where(eq(draftPicks.id, userAssetId));
-      }
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId: cpuTeamId })
+        .where(
+          and(
+            eq(playerSalaryHistory.playerId, userAssetId),
+            eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+          )
+        );
+    } else {
+      await db
+        .update(draftPicks)
+        .set({ ownerTeamId: cpuTeamId, isAvailable: false })
+        .where(eq(draftPicks.id, userAssetId));
+    }
 
-      // 2. CPU Players
-      for (const cp of matchedCpuPlayers) {
-        await tx
-          .update(players)
-          .set({ teamId: userTeamId, isOnTradeBlock: false })
-          .where(eq(players.id, cp.id));
-      }
+    // 2. CPU Players
+    for (const cp of matchedCpuPlayers) {
+      await db
+        .update(players)
+        .set({ teamId: userTeamId, isOnTradeBlock: false })
+        .where(eq(players.id, cp.id));
+    }
 
-      if (matchedCpuPlayers.length > 0) {
-        await tx
-          .update(playerSalaryHistory)
-          .set({ teamId: userTeamId })
-          .where(
-            and(
-              inArray(
-                playerSalaryHistory.playerId,
-                matchedCpuPlayers.map((p) => p.id)
-              ),
-              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
-            )
-          );
-      }
+    if (matchedCpuPlayers.length > 0) {
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId: userTeamId })
+        .where(
+          and(
+            inArray(
+              playerSalaryHistory.playerId,
+              matchedCpuPlayers.map((p) => p.id)
+            ),
+            eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+          )
+        );
+    }
 
-      // 3. CPU Picks
-      for (const cp of matchedCpuPicks) {
-        await tx
-          .update(draftPicks)
-          .set({ ownerTeamId: userTeamId, isAvailable: false })
-          .where(eq(draftPicks.id, cp.id));
-      }
+    // 3. CPU Picks
+    for (const cp of matchedCpuPicks) {
+      await db
+        .update(draftPicks)
+        .set({ ownerTeamId: userTeamId, isAvailable: false })
+        .where(eq(draftPicks.id, cp.id));
+    }
 
-      // Generate Description
-      let userAssetDesc = "";
-      if (userAssetType === "PLAYER" && userPlayer) {
-        userAssetDesc = `${userPlayer.firstName} ${userPlayer.lastName} (${userPlayer.position}, OVR ${userPlayer.overall})`;
-      } else if (userPick) {
-        userAssetDesc = `a ${userPick.season} Round ${userPick.round} pick`;
-      }
+    // Generate Description
+    let userAssetDesc = "";
+    if (userAssetType === "PLAYER" && userPlayer) {
+      userAssetDesc = `${userPlayer.firstName} ${userPlayer.lastName} (${userPlayer.position}, OVR ${userPlayer.overall})`;
+    } else if (userPick) {
+      userAssetDesc = `a ${userPick.season} Round ${userPick.round} pick`;
+    }
 
-      const receivedDescs: string[] = [];
-      for (const cp of matchedCpuPlayers) {
-        receivedDescs.push(`${cp.firstName} ${cp.lastName} (${cp.position}, OVR ${cp.overall})`);
-      }
-      for (const cp of matchedCpuPicks) {
-        receivedDescs.push(`a ${cp.season} Round ${cp.round} pick`);
-      }
+    const receivedDescs: string[] = [];
+    for (const cp of matchedCpuPlayers) {
+      receivedDescs.push(`${cp.firstName} ${cp.lastName} (${cp.position}, OVR ${cp.overall})`);
+    }
+    for (const cp of matchedCpuPicks) {
+      receivedDescs.push(`a ${cp.season} Round ${cp.round} pick`);
+    }
 
-      const descStr = `🔄 TRADE: The ${userTeam.city} ${userTeam.name} traded ${userAssetDesc} to the ${cpuTeam.city} ${cpuTeam.name} in exchange for ${receivedDescs.join(" and ")}.`;
+    const descStr = `🔄 TRADE: The ${userTeam.city} ${userTeam.name} traded ${userAssetDesc} to the ${cpuTeam.city} ${cpuTeam.name} in exchange for ${receivedDescs.join(" and ")}.`;
 
-      await tx.insert(transactions).values({
-        type: "Trade",
-        description: descStr,
-        seasonYear: currentSeasonYear,
-        gameDay: currentDay,
-      });
-
-      console.log(`[Trade Block Action] User trade block offer accepted: ${descStr}`);
-      return { success: true };
+    await db.insert(transactions).values({
+      type: "Trade",
+      description: descStr,
+      seasonYear: currentSeasonYear,
+      gameDay: currentDay,
     });
+
+    console.log(`[Trade Block Action] User trade block offer accepted: ${descStr}`);
+    return { success: true };
   } catch (error: any) {
     console.error("Error executing trade from trade block:", error);
     return { success: false, error: error.message || "Failed to execute trade." };
@@ -784,159 +782,157 @@ export async function getTradeProposalsAction(teamId: string) {
  */
 export async function acceptTradeProposalAction(proposalId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    return await db.transaction(async (tx) => {
-      const [proposal] = await tx
-        .select()
-        .from(tradeProposals)
-        .where(eq(tradeProposals.id, proposalId))
-        .limit(1);
+    const [proposal] = await db
+      .select()
+      .from(tradeProposals)
+      .where(eq(tradeProposals.id, proposalId))
+      .limit(1);
 
-      if (!proposal) throw new Error("Proposal not found.");
-      if (proposal.status !== "Pending") throw new Error("Proposal is no longer pending.");
+    if (!proposal) throw new Error("Proposal not found.");
+    if (proposal.status !== "Pending") throw new Error("Proposal is no longer pending.");
 
-      const maxSeasonGame = await tx
-        .select({ year: games.seasonYear })
-        .from(games)
-        .orderBy(desc(games.seasonYear))
-        .limit(1);
-      const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
+    const maxSeasonGame = await db
+      .select({ year: games.seasonYear })
+      .from(games)
+      .orderBy(desc(games.seasonYear))
+      .limit(1);
+    const currentSeasonYear = maxSeasonGame[0]?.year ?? 2026;
 
-      const nextScheduled = await tx
-        .select({ day: games.gameNumber })
-        .from(games)
-        .where(and(
-          eq(games.seasonYear, currentSeasonYear),
-          eq(games.status, "Scheduled"),
-          eq(games.stage, "Regular")
-        ))
-        .orderBy(games.gameNumber)
-        .limit(1);
-      const currentDay = nextScheduled[0]?.day ?? 82;
+    const nextScheduled = await db
+      .select({ day: games.gameNumber })
+      .from(games)
+      .where(and(
+        eq(games.seasonYear, currentSeasonYear),
+        eq(games.status, "Scheduled"),
+        eq(games.stage, "Regular")
+      ))
+      .orderBy(games.gameNumber)
+      .limit(1);
+    const currentDay = nextScheduled[0]?.day ?? 82;
 
-      if (currentDay > 50) {
-        throw new Error("The trade deadline has passed.");
+    if (currentDay > 50) {
+      throw new Error("The trade deadline has passed.");
+    }
+
+    const [proposerTeam] = await db.select().from(teams).where(eq(teams.id, proposal.proposerTeamId)).limit(1);
+    const [receiverTeam] = await db.select().from(teams).where(eq(teams.id, proposal.receiverTeamId)).limit(1);
+
+    if (!proposerTeam || !receiverTeam) throw new Error("Teams not found.");
+
+    const outgoingPlayersList = await db
+      .select()
+      .from(players)
+      .where(inArray(players.id, proposal.outgoingPlayerIds));
+    
+    const incomingPlayersList = await db
+      .select()
+      .from(players)
+      .where(inArray(players.id, proposal.incomingPlayerIds));
+
+    if (outgoingPlayersList.length !== proposal.outgoingPlayerIds.length || incomingPlayersList.length !== proposal.incomingPlayerIds.length) {
+      throw new Error("One or more players in the trade proposal are no longer valid.");
+    }
+
+    const proposerRoster = await db.select().from(players).where(and(eq(players.teamId, proposal.proposerTeamId), eq(players.status, "Active")));
+    const receiverRoster = await db.select().from(players).where(and(eq(players.teamId, proposal.receiverTeamId), eq(players.status, "Active")));
+
+    const newProposerCount = proposerRoster.length - outgoingPlayersList.length + incomingPlayersList.length;
+    const newReceiverCount = receiverRoster.length - incomingPlayersList.length + outgoingPlayersList.length;
+
+    if (newProposerCount < 12 || newProposerCount > 18) {
+      throw new Error(`Opposing team roster limits violated after trade (${newProposerCount} players).`);
+    }
+    if (newReceiverCount < 12 || newReceiverCount > 18) {
+      throw new Error(`Your team roster limits violated after trade (${newReceiverCount} players).`);
+    }
+
+    const proposerSalary = proposerRoster.reduce((sum, p) => sum + p.salary, 0);
+    const receiverSalary = receiverRoster.reduce((sum, p) => sum + p.salary, 0);
+
+    const newProposerSalary = proposerSalary - outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0) + incomingPlayersList.reduce((sum, p) => sum + p.salary, 0);
+    const newReceiverSalary = receiverSalary - incomingPlayersList.reduce((sum, p) => sum + p.salary, 0) + outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0);
+
+    if (newProposerSalary > proposerTeam.budget) {
+      throw new Error(`Opposing team exceeds the ₱${proposerTeam.budget.toLocaleString("en-PH")} salary cap.`);
+    }
+    if (newReceiverSalary > receiverTeam.budget) {
+      throw new Error(`Your team exceeds the ₱${receiverTeam.budget.toLocaleString("en-PH")} salary cap.`);
+    }
+
+    // SWAP PLAYERS
+    for (const p of outgoingPlayersList) {
+      await db
+        .update(players)
+        .set({ teamId: proposal.receiverTeamId, isOnTradeBlock: false })
+        .where(eq(players.id, p.id));
+    }
+
+    if (proposal.outgoingPlayerIds.length > 0) {
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId: proposal.receiverTeamId })
+        .where(
+          and(
+            inArray(playerSalaryHistory.playerId, proposal.outgoingPlayerIds),
+            eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+          )
+        );
+    }
+
+    for (const p of incomingPlayersList) {
+      await db
+        .update(players)
+        .set({ teamId: proposal.proposerTeamId, isOnTradeBlock: false })
+        .where(eq(players.id, p.id));
+    }
+
+    if (proposal.incomingPlayerIds.length > 0) {
+      await db
+        .update(playerSalaryHistory)
+        .set({ teamId: proposal.proposerTeamId })
+        .where(
+          and(
+            inArray(playerSalaryHistory.playerId, proposal.incomingPlayerIds),
+            eq(playerSalaryHistory.seasonYear, currentSeasonYear)
+          )
+        );
+    }
+
+    await db
+      .update(tradeProposals)
+      .set({ status: "Accepted" })
+      .where(eq(tradeProposals.id, proposalId));
+
+    const allInvolvedPlayerIds = [...proposal.outgoingPlayerIds, ...proposal.incomingPlayerIds];
+    
+    const otherPending = await db
+      .select()
+      .from(tradeProposals)
+      .where(and(eq(tradeProposals.status, "Pending"), sql`id != ${proposalId}`));
+
+    for (const other of otherPending) {
+      const hasOverlap = other.outgoingPlayerIds.some((id) => allInvolvedPlayerIds.includes(id)) ||
+                          other.incomingPlayerIds.some((id) => allInvolvedPlayerIds.includes(id));
+      if (hasOverlap) {
+        await db
+          .update(tradeProposals)
+          .set({ status: "Expired" })
+          .where(eq(tradeProposals.id, other.id));
       }
+    }
 
-      const [proposerTeam] = await tx.select().from(teams).where(eq(teams.id, proposal.proposerTeamId)).limit(1);
-      const [receiverTeam] = await tx.select().from(teams).where(eq(teams.id, proposal.receiverTeamId)).limit(1);
+    const outgoingDescs = outgoingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
+    const incomingDescs = incomingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
+    const descStr = `🤝 TRADE ACCEPTED: The ${receiverTeam.city} ${receiverTeam.name} accepted a CPU trade proposal from the ${proposerTeam.city} ${proposerTeam.name}. Received: ${outgoingDescs}. Traded away: ${incomingDescs}.`;
 
-      if (!proposerTeam || !receiverTeam) throw new Error("Teams not found.");
-
-      const outgoingPlayersList = await tx
-        .select()
-        .from(players)
-        .where(inArray(players.id, proposal.outgoingPlayerIds));
-      
-      const incomingPlayersList = await tx
-        .select()
-        .from(players)
-        .where(inArray(players.id, proposal.incomingPlayerIds));
-
-      if (outgoingPlayersList.length !== proposal.outgoingPlayerIds.length || incomingPlayersList.length !== proposal.incomingPlayerIds.length) {
-        throw new Error("One or more players in the trade proposal are no longer valid.");
-      }
-
-      const proposerRoster = await tx.select().from(players).where(and(eq(players.teamId, proposal.proposerTeamId), eq(players.status, "Active")));
-      const receiverRoster = await tx.select().from(players).where(and(eq(players.teamId, proposal.receiverTeamId), eq(players.status, "Active")));
-
-      const newProposerCount = proposerRoster.length - outgoingPlayersList.length + incomingPlayersList.length;
-      const newReceiverCount = receiverRoster.length - incomingPlayersList.length + outgoingPlayersList.length;
-
-      if (newProposerCount < 12 || newProposerCount > 18) {
-        throw new Error(`Opposing team roster limits violated after trade (${newProposerCount} players).`);
-      }
-      if (newReceiverCount < 12 || newReceiverCount > 18) {
-        throw new Error(`Your team roster limits violated after trade (${newReceiverCount} players).`);
-      }
-
-      const proposerSalary = proposerRoster.reduce((sum, p) => sum + p.salary, 0);
-      const receiverSalary = receiverRoster.reduce((sum, p) => sum + p.salary, 0);
-
-      const newProposerSalary = proposerSalary - outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0) + incomingPlayersList.reduce((sum, p) => sum + p.salary, 0);
-      const newReceiverSalary = receiverSalary - incomingPlayersList.reduce((sum, p) => sum + p.salary, 0) + outgoingPlayersList.reduce((sum, p) => sum + p.salary, 0);
-
-      if (newProposerSalary > proposerTeam.budget) {
-        throw new Error(`Opposing team exceeds the ₱${proposerTeam.budget.toLocaleString("en-PH")} salary cap.`);
-      }
-      if (newReceiverSalary > receiverTeam.budget) {
-        throw new Error(`Your team exceeds the ₱${receiverTeam.budget.toLocaleString("en-PH")} salary cap.`);
-      }
-
-      // SWAP PLAYERS
-      for (const p of outgoingPlayersList) {
-        await tx
-          .update(players)
-          .set({ teamId: proposal.receiverTeamId, isOnTradeBlock: false })
-          .where(eq(players.id, p.id));
-      }
-
-      if (proposal.outgoingPlayerIds.length > 0) {
-        await tx
-          .update(playerSalaryHistory)
-          .set({ teamId: proposal.receiverTeamId })
-          .where(
-            and(
-              inArray(playerSalaryHistory.playerId, proposal.outgoingPlayerIds),
-              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
-            )
-          );
-      }
-
-      for (const p of incomingPlayersList) {
-        await tx
-          .update(players)
-          .set({ teamId: proposal.proposerTeamId, isOnTradeBlock: false })
-          .where(eq(players.id, p.id));
-      }
-
-      if (proposal.incomingPlayerIds.length > 0) {
-        await tx
-          .update(playerSalaryHistory)
-          .set({ teamId: proposal.proposerTeamId })
-          .where(
-            and(
-              inArray(playerSalaryHistory.playerId, proposal.incomingPlayerIds),
-              eq(playerSalaryHistory.seasonYear, currentSeasonYear)
-            )
-          );
-      }
-
-      await tx
-        .update(tradeProposals)
-        .set({ status: "Accepted" })
-        .where(eq(tradeProposals.id, proposalId));
-
-      const allInvolvedPlayerIds = [...proposal.outgoingPlayerIds, ...proposal.incomingPlayerIds];
-      
-      const otherPending = await tx
-        .select()
-        .from(tradeProposals)
-        .where(and(eq(tradeProposals.status, "Pending"), sql`id != ${proposalId}`));
-
-      for (const other of otherPending) {
-        const hasOverlap = other.outgoingPlayerIds.some((id) => allInvolvedPlayerIds.includes(id)) ||
-                            other.incomingPlayerIds.some((id) => allInvolvedPlayerIds.includes(id));
-        if (hasOverlap) {
-          await tx
-            .update(tradeProposals)
-            .set({ status: "Expired" })
-            .where(eq(tradeProposals.id, other.id));
-        }
-      }
-
-      const outgoingDescs = outgoingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
-      const incomingDescs = incomingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
-      const descStr = `🤝 TRADE ACCEPTED: The ${receiverTeam.city} ${receiverTeam.name} accepted a CPU trade proposal from the ${proposerTeam.city} ${proposerTeam.name}. Received: ${outgoingDescs}. Traded away: ${incomingDescs}.`;
-
-      await tx.insert(transactions).values({
-        type: "Trade",
-        description: descStr,
-        seasonYear: currentSeasonYear,
-        gameDay: currentDay,
-      });
-
-      return { success: true };
+    await db.insert(transactions).values({
+      type: "Trade",
+      description: descStr,
+      seasonYear: currentSeasonYear,
+      gameDay: currentDay,
     });
+
+    return { success: true };
   } catch (error: any) {
     console.error("Error accepting trade proposal:", error);
     return { success: false, error: error.message || "Failed to accept trade proposal." };

@@ -110,41 +110,39 @@ export async function simulateCpuTradesAction(
 
             if (newSalaryA + (teamA.deadCap ?? 0) > teamA.budget || newSalaryB + (teamB.deadCap ?? 0) > teamB.budget) continue;
 
-            // Valid trade found, execute transaction and exit immediately
-            await db.transaction(async (tx) => {
-              await tx.update(players).set({ teamId: teamB.id }).where(eq(players.id, playerA.id));
-              await tx.update(players).set({ teamId: teamA.id }).where(eq(players.id, playerB.id));
+            // Valid trade found, execute sequentially and exit immediately
+            await db.update(players).set({ teamId: teamB.id }).where(eq(players.id, playerA.id));
+            await db.update(players).set({ teamId: teamA.id }).where(eq(players.id, playerB.id));
 
-              // Update playerSalaryHistory table for both players in the current season
-              await tx
-                .update(playerSalaryHistory)
-                .set({ teamId: teamB.id })
-                .where(
-                  and(
-                    eq(playerSalaryHistory.playerId, playerA.id),
-                    eq(playerSalaryHistory.seasonYear, seasonYear)
-                  )
-                );
-              await tx
-                .update(playerSalaryHistory)
-                .set({ teamId: teamA.id })
-                .where(
-                  and(
-                    eq(playerSalaryHistory.playerId, playerB.id),
-                    eq(playerSalaryHistory.seasonYear, seasonYear)
-                  )
-                );
+            // Update playerSalaryHistory table for both players in the current season
+            await db
+              .update(playerSalaryHistory)
+              .set({ teamId: teamB.id })
+              .where(
+                and(
+                  eq(playerSalaryHistory.playerId, playerA.id),
+                  eq(playerSalaryHistory.seasonYear, seasonYear)
+                )
+              );
+            await db
+              .update(playerSalaryHistory)
+              .set({ teamId: teamA.id })
+              .where(
+                and(
+                  eq(playerSalaryHistory.playerId, playerB.id),
+                  eq(playerSalaryHistory.seasonYear, seasonYear)
+                )
+              );
 
-              const description = `TRADE: The ${teamA.city} ${teamA.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}) to the ${teamB.city} ${teamB.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}).`;
-              await tx.insert(transactions).values({
-                type: "Trade",
-                description,
-                seasonYear,
-                gameDay,
-              });
-
-              console.log(`[CPU Trade Engine] Trade executed: ${description}`);
+            const description = `TRADE: The ${teamA.city} ${teamA.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}) to the ${teamB.city} ${teamB.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}).`;
+            await db.insert(transactions).values({
+              type: "Trade",
+              description,
+              seasonYear,
+              gameDay,
             });
+
+            console.log(`[CPU Trade Engine] Trade executed: ${description}`);
 
             return {
               playerAId: playerA.id,
