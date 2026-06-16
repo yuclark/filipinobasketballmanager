@@ -2,11 +2,12 @@
 
 import { db } from "@/db";
 import { eq, and, inArray, sql, isNotNull } from "drizzle-orm";
-import { teams, players, games, playerGameStats, transactions, playerSalaryHistory } from "@/db/schema";
+import { teams, players, games, playerGameStats, transactions, playerSalaryHistory, playerEvolutions } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import { enforceLeagueRosterLimitsAction, runCpuDailyAiEngineAction } from "@/app/actions/cpuAiEngine";
 import { generateTradeProposalsAction } from "@/app/actions/tradeEngine";
+import { evolvePlayersListInMemory, processWithinSeasonEvolutionAction } from "@/app/actions/evolutionEngine";
 
 // Box-Muller transform for Gaussian/Normal distribution
 function randomNormal(mean = 0, stdDev = 1): number {
@@ -725,6 +726,9 @@ export async function simulateRemainingDayGames(day: number, userTeamId?: string
       }
     }
 
+    // Trigger daily within-season player evolution
+    await processWithinSeasonEvolutionAction(seasonYear, day);
+
     // Trigger trade proposal generation during single-day simulation
     if (userTeamId) {
       await generateTradeProposalsAction(seasonYear, userTeamId);
@@ -824,12 +828,25 @@ export async function simulateBatchDaysAction(
       const gamesToUpdate: Array<{ id: string; homeScore: number; awayScore: number }> = [];
       const statsToInsert: Array<typeof playerGameStats.$inferInsert> = [];
       const injuryTransactionsToInsert: Array<typeof transactions.$inferInsert> = [];
+      const evolutionsToInsertList: any[] = [];
+      const evolutionTransactionsToInsertList: any[] = [];
 
       for (const day of daysToSimulateList) {
-        // Run daily CPU-CPU trade & signing AI logic in local memory arrays
+        // Run daily CPU front-office simulation using in-memory state arrays
         const aiResult = await runCpuDailyAiEngineAction(localPlayers, localTeams, day, seasonYear, userTeamId);
         localPlayers = aiResult.updatedPlayers;
         localTeams = aiResult.updatedTeams;
+
+        // Run daily within-season player evolution in local memory state
+        const evoResult = await evolvePlayersListInMemory(localPlayers, seasonYear, day);
+        localPlayers = evoResult.updatedPlayers;
+
+        if (evoResult.evolutionsToInsert.length > 0) {
+          evolutionsToInsertList.push(...evoResult.evolutionsToInsert);
+        }
+        if (evoResult.evolutionTransactions.length > 0) {
+          evolutionTransactionsToInsertList.push(...evoResult.evolutionTransactions);
+        }
 
         if (userTeamId) {
           await generateTradeProposalsAction(seasonYear, userTeamId);
@@ -947,15 +964,24 @@ export async function simulateBatchDaysAction(
         }
       }
 
-      // Persist injury transactions to database
-      if (injuryTransactionsToInsert.length > 0) {
+      // Persist injury and evolution transactions to database
+      const allTransactionsToInsert = [...injuryTransactionsToInsert, ...evolutionTransactionsToInsertList];
+      if (allTransactionsToInsert.length > 0) {
         const txChunkSize = 100;
-        for (let i = 0; i < injuryTransactionsToInsert.length; i += txChunkSize) {
-          await db.insert(transactions).values(injuryTransactionsToInsert.slice(i, i + txChunkSize));
+        for (let i = 0; i < allTransactionsToInsert.length; i += txChunkSize) {
+          await db.insert(transactions).values(allTransactionsToInsert.slice(i, i + txChunkSize));
         }
       }
 
-      // Bulk write all updated player records (including trade, signing, and injury mutations) back to database
+      // Persist in-season player evolutions to database
+      if (evolutionsToInsertList.length > 0) {
+        const evoChunkSize = 100;
+        for (let i = 0; i < evolutionsToInsertList.length; i += evoChunkSize) {
+          await db.insert(playerEvolutions).values(evolutionsToInsertList.slice(i, i + evoChunkSize));
+        }
+      }
+
+      // Bulk write all updated player records (including trade, signing, injury, and rating mutations) back to database
       if (localPlayers.length > 0) {
         const playerUpdateQueries = localPlayers.map((p) =>
           db.update(players)
@@ -966,6 +992,15 @@ export async function simulateBatchDaysAction(
               injuryType: p.injuryType ?? null,
               status: p.status,
               salary: p.salary,
+              overall: p.overall,
+              threePoint: p.threePoint,
+              insideScoring: p.insideScoring,
+              playmaking: p.playmaking,
+              perimeterDefense: p.perimeterDefense,
+              interiorDefense: p.interiorDefense,
+              rebounding: p.rebounding,
+              speed: p.speed,
+              stamina: p.stamina,
             })
             .where(eq(players.id, p.id))
         );
@@ -1115,12 +1150,25 @@ export async function simulateWeekChunkAction(
     const gamesToUpdate: Array<{ id: string; homeScore: number; awayScore: number }> = [];
     const statsToInsert: Array<typeof playerGameStats.$inferInsert> = [];
     const injuryTransactionsToInsert: Array<typeof transactions.$inferInsert> = [];
+    const evolutionsToInsertList: any[] = [];
+    const evolutionTransactionsToInsertList: any[] = [];
 
     for (const day of daysToSimulateList) {
       // Run daily CPU front-office simulation using in-memory state arrays
       const aiResult = await runCpuDailyAiEngineAction(localPlayers, localTeams, day, seasonYear, userTeamId);
       localPlayers = aiResult.updatedPlayers;
       localTeams = aiResult.updatedTeams;
+
+      // Run daily within-season player evolution in local memory state
+      const evoResult = await evolvePlayersListInMemory(localPlayers, seasonYear, day);
+      localPlayers = evoResult.updatedPlayers;
+
+      if (evoResult.evolutionsToInsert.length > 0) {
+        evolutionsToInsertList.push(...evoResult.evolutionsToInsert);
+      }
+      if (evoResult.evolutionTransactions.length > 0) {
+        evolutionTransactionsToInsertList.push(...evoResult.evolutionTransactions);
+      }
 
       if (userTeamId) {
         await generateTradeProposalsAction(seasonYear, userTeamId);
@@ -1231,27 +1279,46 @@ export async function simulateWeekChunkAction(
       }
     }
 
-    if (injuryTransactionsToInsert.length > 0) {
+    // Persist injury and evolution transactions to database
+    const allTransactionsToInsert = [...injuryTransactionsToInsert, ...evolutionTransactionsToInsertList];
+    if (allTransactionsToInsert.length > 0) {
       const txChunkSize = 100;
-      for (let i = 0; i < injuryTransactionsToInsert.length; i += txChunkSize) {
-        await db.insert(transactions).values(injuryTransactionsToInsert.slice(i, i + txChunkSize));
+      for (let i = 0; i < allTransactionsToInsert.length; i += txChunkSize) {
+        await db.insert(transactions).values(allTransactionsToInsert.slice(i, i + txChunkSize));
       }
     }
 
-    // Bulk write all updated player records (including trade, signing, and injury mutations) back to database
-    if (localPlayers.length > 0) {
-      const playerUpdateQueries = localPlayers.map((p) =>
-        db.update(players)
-          .set({
-            teamId: p.teamId,
-            contractYearsRemaining: p.contractYearsRemaining,
-            injuryDaysRemaining: p.injuryDaysRemaining ?? 0,
-            injuryType: p.injuryType ?? null,
-            status: p.status,
-            salary: p.salary,
-          })
-          .where(eq(players.id, p.id))
-      );
+      // Persist in-season player evolutions to database
+      if (evolutionsToInsertList.length > 0) {
+        const evoChunkSize = 100;
+        for (let i = 0; i < evolutionsToInsertList.length; i += evoChunkSize) {
+          await db.insert(playerEvolutions).values(evolutionsToInsertList.slice(i, i + evoChunkSize));
+        }
+      }
+
+      // Bulk write all updated player records (including trade, signing, injury, and rating mutations) back to database
+      if (localPlayers.length > 0) {
+        const playerUpdateQueries = localPlayers.map((p) =>
+          db.update(players)
+            .set({
+              teamId: p.teamId,
+              contractYearsRemaining: p.contractYearsRemaining,
+              injuryDaysRemaining: p.injuryDaysRemaining ?? 0,
+              injuryType: p.injuryType ?? null,
+              status: p.status,
+              salary: p.salary,
+              overall: p.overall,
+              threePoint: p.threePoint,
+              insideScoring: p.insideScoring,
+              playmaking: p.playmaking,
+              perimeterDefense: p.perimeterDefense,
+              interiorDefense: p.interiorDefense,
+              rebounding: p.rebounding,
+              speed: p.speed,
+              stamina: p.stamina,
+            })
+            .where(eq(players.id, p.id))
+        );
       const playerChunkSize = 100;
       for (let i = 0; i < playerUpdateQueries.length; i += playerChunkSize) {
         await db.batch(playerUpdateQueries.slice(i, i + playerChunkSize) as any);

@@ -234,6 +234,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 title: "Franchise Management",
                 links: [
                   { name: "Active Roster", path: "/dashboard", icon: Users },
+                  { name: "Player Evolution", path: "/dashboard/evolution", icon: Sparkles },
                   { name: "Team Schedule", path: "/dashboard/schedule", icon: Calendar },
                   { name: "Transactions Office", path: "/dashboard/trades", icon: ArrowLeftRight },
                   { name: "Team Finances", path: "/dashboard/finances", icon: Coins },
@@ -344,6 +345,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {/* Quick links for mobile */}
           <div className="flex md:hidden gap-1 text-[10px] sm:text-xs overflow-x-auto pb-1 max-w-full">
             <Link href="/dashboard" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Roster</Link>
+            <Link href="/dashboard/evolution" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Evolution</Link>
             <Link href="/dashboard/schedule" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Games</Link>
             <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
             <Link href="/dashboard/finances" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Finances</Link>

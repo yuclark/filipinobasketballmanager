@@ -50,6 +50,13 @@
       "when": 1781494236871,
       "tag": "0006_natural_aqueduct",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781588043210,
+      "tag": "0007_cool_sleeper",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory, playerEvolutions } from "@/db/schema";
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
@@ -410,6 +410,22 @@ export async function processPlayerEvolutionAction() {
 
       if (newTransactions.length > 0) {
         batchQueries.push(db.insert(transactions).values(newTransactions));
+      }
+
+      // Record offseason progression/regression logs in player_evolutions table
+      const offseasonEvolutionsToInsert = evolutionResultsList
+        .filter((res) => res.status !== "retired") // Skip retired GMs/players
+        .map((res) => ({
+          playerId: res.playerId,
+          seasonYear: currentYear,
+          gameDay: 0, // 0 indicates offseason
+          oldOverall: res.oldOverall,
+          newOverall: res.newOverall,
+          attributeChangesJson: JSON.stringify(res.changedAttributes),
+        }));
+
+      if (offseasonEvolutionsToInsert.length > 0) {
+        batchQueries.push(db.insert(playerEvolutions).values(offseasonEvolutionsToInsert));
       }
 
       const queryChunkSize = 100;
