@@ -357,32 +357,46 @@ export default function TradesPage() {
     }
   };
 
-  const handleRequestOffers = async () => {
-    if (selectedCpuIds.length !== 1 || selectedCpuPickIds.length !== 0 || !userTeamId || !selectedCpuTeamId) return;
+  // Auto-update counter-offers when CPU assets selection changes
+  useEffect(() => {
+    if (!mounted) return;
 
-    setRequestingOffers(true);
-    setCpuProposals(null);
-    setProposalsError(null);
-
-    try {
-      const res = await requestTradeOfferForPlayerAction(
-        userTeamId,
-        selectedCpuTeamId,
-        selectedCpuIds[0]
-      );
-
-      if (res.success && res.offers) {
-        setCpuProposals(res.offers);
-      } else {
-        setProposalsError(res.error || "Failed to query opposing front office.");
-      }
-    } catch (err) {
-      console.error(err);
-      setProposalsError("Failed to communicate with opposing franchise.");
-    } finally {
-      setRequestingOffers(false);
+    if (selectedCpuIds.length === 0 && selectedCpuPickIds.length === 0) {
+      setCpuProposals(null);
+      setProposalsError(null);
+      return;
     }
-  };
+
+    if (!userTeamId || !selectedCpuTeamId) return;
+
+    const fetchOffers = async () => {
+      setRequestingOffers(true);
+      setProposalsError(null);
+      try {
+        const res = await requestTradeOfferForPlayerAction(
+          userTeamId,
+          selectedCpuTeamId,
+          selectedCpuIds,
+          selectedCpuPickIds
+        );
+        if (res.success && res.offers) {
+          setCpuProposals(res.offers);
+        } else {
+          setCpuProposals([]);
+          setProposalsError(res.error || "Failed to query opposing front office.");
+        }
+      } catch (err) {
+        console.error(err);
+        setProposalsError("Failed to communicate with opposing franchise.");
+      } finally {
+        setRequestingOffers(false);
+      }
+    };
+
+    // Debounce slightly to prevent double execution on fast clicks
+    const timer = setTimeout(fetchOffers, 250);
+    return () => clearTimeout(timer);
+  }, [selectedCpuIds, selectedCpuPickIds, userTeamId, selectedCpuTeamId, mounted]);
 
   const handleApplyProposal = (playerIds: string[], pickIds: string[]) => {
     setSelectedUserIds(playerIds);
@@ -674,33 +688,11 @@ export default function TradesPage() {
             )}
           </div>
 
-          {/* Request Offer Trigger */}
-          {selectedCpuIds.length === 1 && selectedCpuPickIds.length === 0 && (
-            <div className="mt-4 border-t border-zinc-800/60 pt-4">
-              <button
-                onClick={handleRequestOffers}
-                disabled={requestingOffers}
-                className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {requestingOffers ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Analyzing Roster Assets...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowLeftRight className="w-4 h-4" />
-                    <span>Request Trade Offers for {cpuSelectedPlayers[0]?.firstName} {cpuSelectedPlayers[0]?.lastName}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
       {/* CPU Counter-Offers Panel */}
-      {(cpuProposals !== null || proposalsError !== null) && (
+      {(cpuProposals !== null || proposalsError !== null || requestingOffers) && (
         <div className="bg-zinc-900/40 border border-orange-500/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/5 blur-[80px] rounded-full pointer-events-none" />
           <div className="flex justify-between items-center mb-4">
@@ -713,50 +705,55 @@ export default function TradesPage() {
                 The opposing franchise reviewed your roster. Select a package to pre-fill the trade.
               </p>
             </div>
-            <button
-              onClick={() => {
-                setCpuProposals(null);
-                setProposalsError(null);
-              }}
-              className="text-zinc-500 hover:text-zinc-300 text-xs font-bold cursor-pointer"
-            >
-              Clear
-            </button>
+            {(cpuProposals !== null || proposalsError !== null) && (
+              <button
+                onClick={() => {
+                  setCpuProposals(null);
+                  setProposalsError(null);
+                }}
+                className="text-zinc-500 hover:text-zinc-300 text-xs font-bold cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
           </div>
 
-          {proposalsError && (
+          {requestingOffers ? (
+            <div className="flex items-center justify-center py-8 gap-3">
+              <Loader2 className="w-5 h-5 text-orange-500 animate-spin" />
+              <span className="text-zinc-400 text-xs font-bold">Analyzing roster assets for counter-offers...</span>
+            </div>
+          ) : proposalsError ? (
             <p className="text-zinc-400 text-xs italic bg-zinc-950/40 p-4 border border-zinc-900 rounded-xl">
               {proposalsError}
             </p>
-          )}
-
-          {cpuProposals && cpuProposals.length === 0 && (
+          ) : cpuProposals && cpuProposals.length === 0 ? (
             <p className="text-zinc-400 text-xs italic bg-zinc-950/40 p-4 border border-zinc-900 rounded-xl">
-              The opposing team is not interested in trading {cpuSelectedPlayers[0]?.firstName} {cpuSelectedPlayers[0]?.lastName} for any combinations of your current roster players or picks due to salary constraints or value mismatch.
+              The opposing team is not interested in trading the selected assets for any combinations of your current roster players or picks due to salary constraints, roster limits, or value mismatch.
             </p>
-          )}
-
-          {cpuProposals && cpuProposals.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {cpuProposals.map((proposal, idx) => (
-                <div
-                  key={idx}
-                  className="bg-zinc-950/60 border border-zinc-900 hover:border-zinc-800 rounded-2xl p-4 flex justify-between items-center gap-4 transition-all"
-                >
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider block">Option {idx + 1}</span>
-                    <p className="text-zinc-200 text-xs font-semibold">{proposal.description}</p>
-                    <span className="text-[10px] text-zinc-500 block">Combined Value: {Math.round(proposal.value)} pts</span>
-                  </div>
-                  <button
-                    onClick={() => handleApplyProposal(proposal.playerIds, proposal.pickIds)}
-                    className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 hover:text-white font-bold rounded-xl text-xs transition-all cursor-pointer border border-zinc-800 hover:border-zinc-700"
+          ) : (
+            cpuProposals && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {cpuProposals.map((proposal, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-zinc-950/60 border border-zinc-900 hover:border-zinc-800 rounded-2xl p-4 flex justify-between items-center gap-4 transition-all"
                   >
-                    Select Option
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider block">Option {idx + 1}</span>
+                      <p className="text-zinc-200 text-xs font-semibold">{proposal.description}</p>
+                      <span className="text-[10px] text-zinc-500 block">Combined Value: {Math.round(proposal.value)} pts</span>
+                    </div>
+                    <button
+                      onClick={() => handleApplyProposal(proposal.playerIds, proposal.pickIds)}
+                      className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 hover:text-white font-bold rounded-xl text-xs transition-all cursor-pointer border border-zinc-800 hover:border-zinc-700"
+                    >
+                      Select Option
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </div>
       )}

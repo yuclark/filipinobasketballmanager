@@ -921,7 +921,8 @@ export async function rejectTradeProposalAction(proposalId: string): Promise<{ s
 export async function requestTradeOfferForPlayerAction(
   userTeamId: string,
   cpuTeamId: string,
-  cpuPlayerId: string
+  cpuPlayerIds: string[],
+  cpuPickIds: string[] = []
 ): Promise<{
   success: boolean;
   offers?: Array<{
@@ -933,21 +934,39 @@ export async function requestTradeOfferForPlayerAction(
   error?: string;
 }> {
   try {
-    // 1. Fetch CPU player
-    const [cpuPlayer] = await db
-      .select()
-      .from(players)
-      .where(
-        and(
-          eq(players.id, cpuPlayerId),
-          eq(players.teamId, cpuTeamId),
-          eq(players.status, "Active")
-        )
-      )
-      .limit(1);
+    // 1. Fetch CPU assets
+    const cpuPlayers = cpuPlayerIds.length > 0
+      ? await db
+          .select()
+          .from(players)
+          .where(
+            and(
+              inArray(players.id, cpuPlayerIds),
+              eq(players.teamId, cpuTeamId),
+              eq(players.status, "Active")
+            )
+          )
+      : [];
 
-    if (!cpuPlayer) {
-      return { success: false, error: "CPU player not found or no longer active." };
+    if (cpuPlayerIds.length > 0 && cpuPlayers.length !== cpuPlayerIds.length) {
+      return { success: false, error: "One or more CPU players were not found or are no longer active." };
+    }
+
+    const cpuPicks = cpuPickIds.length > 0
+      ? await db
+          .select()
+          .from(draftPicks)
+          .where(
+            and(
+              inArray(draftPicks.id, cpuPickIds),
+              eq(draftPicks.ownerTeamId, cpuTeamId),
+              eq(draftPicks.isUsed, false)
+            )
+          )
+      : [];
+
+    if (cpuPickIds.length > 0 && cpuPicks.length !== cpuPickIds.length) {
+      return { success: false, error: "One or more CPU draft picks were not found or are no longer valid." };
     }
 
     // 2. Fetch rosters and budgets
@@ -981,7 +1000,10 @@ export async function requestTradeOfferForPlayerAction(
     const getVal = (overall: number) => Math.pow(1.09, overall);
     const getPickVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
 
-    const cpuVal = getVal(cpuPlayer.overall);
+    const cpuVal = cpuPlayers.reduce((sum, p) => sum + getVal(p.overall), 0) +
+                   cpuPicks.reduce((sum, pk) => sum + getPickVal(pk.round), 0);
+
+    const cpuPlayerSalarySum = cpuPlayers.reduce((sum, p) => sum + p.salary, 0);
 
     // List of candidate packages
     const candidates: Array<{
@@ -994,8 +1016,8 @@ export async function requestTradeOfferForPlayerAction(
     // Helper to evaluate a specific asset combination
     const evaluateCombination = (pIds: string[], pkIds: string[]) => {
       // Roster counts post-trade
-      const newUserCount = userRoster.length - pIds.length + 1;
-      const newCpuCount = cpuRoster.length - 1 + pIds.length;
+      const newUserCount = userRoster.length - pIds.length + cpuPlayers.length;
+      const newCpuCount = cpuRoster.length - cpuPlayers.length + pIds.length;
 
       if (newUserCount < MIN_ROSTER_SIZE || newUserCount > MAX_ROSTER_SIZE) return;
       if (newCpuCount < MIN_ROSTER_SIZE || newCpuCount > MAX_ROSTER_SIZE) return;
@@ -1006,8 +1028,8 @@ export async function requestTradeOfferForPlayerAction(
 
       const pSalarySum = pList.reduce((sum, p) => sum + p.salary, 0);
 
-      const newUserSalary = userCurrentSalary - pSalarySum + cpuPlayer.salary + (userTeam.deadCap ?? 0);
-      const newCpuSalary = cpuCurrentSalary - cpuPlayer.salary + pSalarySum + (cpuTeam.deadCap ?? 0);
+      const newUserSalary = userCurrentSalary - pSalarySum + cpuPlayerSalarySum + (userTeam.deadCap ?? 0);
+      const newCpuSalary = cpuCurrentSalary - cpuPlayerSalarySum + pSalarySum + (cpuTeam.deadCap ?? 0);
 
       if (newUserSalary > userTeam.budget) return;
       if (newCpuSalary > cpuTeam.budget) return;
@@ -1024,8 +1046,9 @@ export async function requestTradeOfferForPlayerAction(
       const maxUserOvr = pList.length > 0 ? Math.max(...pList.map(p => p.overall)) : 0;
       const hasUserFirstRoundPick = pkList.some(pk => pk.round === 1);
 
-      if (cpuPlayer.overall >= 80) {
-        if (cpuPlayer.overall >= 88) {
+      const maxCpuOvr = cpuPlayers.length > 0 ? Math.max(...cpuPlayers.map(p => p.overall)) : 0;
+      if (maxCpuOvr >= 80) {
+        if (maxCpuOvr >= 88) {
           const hasProperPlayer = maxUserOvr >= 80;
           const hasFallback = maxUserOvr >= 75 && hasUserFirstRoundPick;
           if (!hasProperPlayer && !hasFallback) return;
@@ -1043,7 +1066,7 @@ export async function requestTradeOfferForPlayerAction(
       candidates.push({
         playerIds: pIds,
         pickIds: pkIds,
-        description: descParts.join(" + "),
+        description: descParts.join(" + ") || "No assets (free trade)",
         value: valueUser,
       });
     };
