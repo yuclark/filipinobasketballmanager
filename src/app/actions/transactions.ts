@@ -501,6 +501,24 @@ export async function executeTradeAction(
       return { success: false, error: "Roster discrepancy: some players do not belong to their specified team or are not active." };
     }
 
+    // Check if the trade includes CPU team B's cornerstone (who is untouchable)
+    const activeCpuRoster = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, teamBId), eq(players.status, "Active")));
+
+    const cornerstone = [...activeCpuRoster].sort((a, b) => {
+      if (b.overall !== a.overall) return b.overall - a.overall;
+      return a.age - b.age;
+    })[0];
+
+    if (cornerstone && playerBIds.includes(cornerstone.id)) {
+      return {
+        success: false,
+        error: `Trade rejected: ${cornerstone.firstName} ${cornerstone.lastName} is the franchise cornerstone of the ${teamB.city} ${teamB.name} and is untouchable.`,
+      };
+    }
+
     // Load and validate draft picks
     const picksA = pickAIds && pickAIds.length > 0
       ? await db.select().from(draftPicks).where(inArray(draftPicks.id, pickAIds))

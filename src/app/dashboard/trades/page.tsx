@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/useGameStore";
 import {
@@ -233,6 +233,15 @@ export default function TradesPage() {
     );
   }
 
+  // Find CPU cornerstone
+  const cpuCornerstone = useMemo(() => {
+    if (!cpuCapInfo?.roster || cpuCapInfo.roster.length === 0) return null;
+    return [...cpuCapInfo.roster].sort((a, b) => {
+      if (b.overall !== a.overall) return b.overall - a.overall;
+      return a.age - b.age;
+    })[0];
+  }, [cpuCapInfo?.roster]);
+
   // Checkbox selectors
   const toggleUserPlayer = (playerId: string) => {
     setSelectedUserIds((prev) =>
@@ -241,6 +250,7 @@ export default function TradesPage() {
   };
 
   const toggleCpuPlayer = (playerId: string) => {
+    if (cpuCornerstone && playerId === cpuCornerstone.id) return; // Block selecting CPU cornerstone
     setSelectedCpuIds((prev) =>
       prev.includes(playerId) ? prev.filter((id) => id !== playerId) : [...prev, playerId]
     );
@@ -651,24 +661,39 @@ export default function TradesPage() {
               <tbody className="divide-y divide-zinc-900">
                 {cpuCapInfo?.roster.map((p) => {
                   const isChecked = selectedCpuIds.includes(p.id);
+                  const isCornerstone = cpuCornerstone && p.id === cpuCornerstone.id;
                   return (
                     <tr
                       key={p.id}
                       onClick={() => toggleCpuPlayer(p.id)}
-                      className={`hover:bg-zinc-900/50 cursor-pointer transition-colors ${
-                        isChecked ? "bg-orange-500/5" : ""
-                      }`}
+                      className={`transition-colors ${
+                        isCornerstone
+                          ? "bg-zinc-950/40 opacity-70 cursor-not-allowed"
+                          : "hover:bg-zinc-900/50 cursor-pointer"
+                      } ${isChecked ? "bg-orange-500/5" : ""}`}
+                      title={isCornerstone ? "Franchise Cornerstone (Untouchable)" : undefined}
                     >
                       <td className="py-3.5 px-4 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}} // Controlled via row click
-                          className="w-4.5 h-4.5 accent-orange-500 cursor-pointer"
-                        />
+                        {isCornerstone ? (
+                          <span className="text-zinc-600 block text-center select-none text-xs">🔒</span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // Controlled via row click
+                            className="w-4.5 h-4.5 accent-orange-500 cursor-pointer"
+                          />
+                        )}
                       </td>
                       <td className="py-3.5 px-2 font-bold text-zinc-200">
-                        {p.firstName} {p.lastName}
+                        <div className="flex items-center gap-1.5">
+                          <span>{p.firstName} {p.lastName}</span>
+                          {isCornerstone && (
+                            <span className="px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 text-[9px] font-extrabold text-orange-400 uppercase rounded tracking-wider">
+                              Untouchable
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3.5 px-2 text-center font-bold text-zinc-400">{p.position}</td>
                       <td className="py-3.5 px-2 text-center">

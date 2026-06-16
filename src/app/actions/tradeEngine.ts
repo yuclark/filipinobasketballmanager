@@ -980,6 +980,19 @@ export async function requestTradeOfferForPlayerAction(
       .from(players)
       .where(and(eq(players.teamId, cpuTeamId), eq(players.status, "Active")));
 
+    const cornerstone = [...cpuRoster].sort((a, b) => {
+      if (b.overall !== a.overall) return b.overall - a.overall;
+      return a.age - b.age;
+    })[0];
+
+    const hasCornerstone = cpuPlayers.some((p) => cornerstone && p.id === cornerstone.id);
+    if (hasCornerstone) {
+      return {
+        success: false,
+        error: `Trade rejected: ${cornerstone.firstName} ${cornerstone.lastName} is the franchise cornerstone of the opponent and is untouchable.`,
+      };
+    }
+
     const [userTeam] = await db.select().from(teams).where(eq(teams.id, userTeamId)).limit(1);
     const [cpuTeam] = await db.select().from(teams).where(eq(teams.id, cpuTeamId)).limit(1);
 
