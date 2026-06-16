@@ -917,3 +917,186 @@ export async function rejectTradeProposalAction(proposalId: string): Promise<{ s
     return { success: false, error: error.message || "Failed to reject trade proposal." };
   }
 }
+
+export async function requestTradeOfferForPlayerAction(
+  userTeamId: string,
+  cpuTeamId: string,
+  cpuPlayerId: string
+): Promise<{
+  success: boolean;
+  offers?: Array<{
+    playerIds: string[];
+    pickIds: string[];
+    description: string;
+    value: number;
+  }>;
+  error?: string;
+}> {
+  try {
+    // 1. Fetch CPU player
+    const [cpuPlayer] = await db
+      .select()
+      .from(players)
+      .where(
+        and(
+          eq(players.id, cpuPlayerId),
+          eq(players.teamId, cpuTeamId),
+          eq(players.status, "Active")
+        )
+      )
+      .limit(1);
+
+    if (!cpuPlayer) {
+      return { success: false, error: "CPU player not found or no longer active." };
+    }
+
+    // 2. Fetch rosters and budgets
+    const userRoster = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, userTeamId), eq(players.status, "Active")));
+
+    const cpuRoster = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, cpuTeamId), eq(players.status, "Active")));
+
+    const [userTeam] = await db.select().from(teams).where(eq(teams.id, userTeamId)).limit(1);
+    const [cpuTeam] = await db.select().from(teams).where(eq(teams.id, cpuTeamId)).limit(1);
+
+    if (!userTeam || !cpuTeam) {
+      return { success: false, error: "Team data not found." };
+    }
+
+    // 3. Fetch unused draft picks
+    const userPicks = await db
+      .select()
+      .from(draftPicks)
+      .where(and(eq(draftPicks.ownerTeamId, userTeamId), eq(draftPicks.isUsed, false)));
+
+    // Salary sums
+    const userCurrentSalary = userRoster.reduce((sum, p) => sum + p.salary, 0);
+    const cpuCurrentSalary = cpuRoster.reduce((sum, p) => sum + p.salary, 0);
+
+    const getVal = (overall: number) => Math.pow(1.09, overall);
+    const getPickVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
+
+    const cpuVal = getVal(cpuPlayer.overall);
+
+    // List of candidate packages
+    const candidates: Array<{
+      playerIds: string[];
+      pickIds: string[];
+      description: string;
+      value: number;
+    }> = [];
+
+    // Helper to evaluate a specific asset combination
+    const evaluateCombination = (pIds: string[], pkIds: string[]) => {
+      // Roster counts post-trade
+      const newUserCount = userRoster.length - pIds.length + 1;
+      const newCpuCount = cpuRoster.length - 1 + pIds.length;
+
+      if (newUserCount < MIN_ROSTER_SIZE || newUserCount > MAX_ROSTER_SIZE) return;
+      if (newCpuCount < MIN_ROSTER_SIZE || newCpuCount > MAX_ROSTER_SIZE) return;
+
+      // Salaries post-trade
+      const pList = userRoster.filter(p => pIds.includes(p.id));
+      const pkList = userPicks.filter(pk => pkIds.includes(pk.id));
+
+      const pSalarySum = pList.reduce((sum, p) => sum + p.salary, 0);
+
+      const newUserSalary = userCurrentSalary - pSalarySum + cpuPlayer.salary + (userTeam.deadCap ?? 0);
+      const newCpuSalary = cpuCurrentSalary - cpuPlayer.salary + pSalarySum + (cpuTeam.deadCap ?? 0);
+
+      if (newUserSalary > userTeam.budget) return;
+      if (newCpuSalary > cpuTeam.budget) return;
+
+      // Values
+      const valueUser = pList.reduce((sum, p) => sum + getVal(p.overall), 0) +
+                        pkList.reduce((sum, pk) => sum + getPickVal(pk.round), 0);
+
+      // CPU perspective check
+      if (valueUser < cpuVal * 0.98) return;
+      if (cpuVal < valueUser * 0.75) return; // League balance check
+
+      // Star player check
+      const maxUserOvr = pList.length > 0 ? Math.max(...pList.map(p => p.overall)) : 0;
+      const hasUserFirstRoundPick = pkList.some(pk => pk.round === 1);
+
+      if (cpuPlayer.overall >= 80) {
+        if (cpuPlayer.overall >= 88) {
+          const hasProperPlayer = maxUserOvr >= 80;
+          const hasFallback = maxUserOvr >= 75 && hasUserFirstRoundPick;
+          if (!hasProperPlayer && !hasFallback) return;
+        } else {
+          const hasProperPlayer = maxUserOvr >= 73;
+          if (!hasProperPlayer && !hasUserFirstRoundPick) return;
+        }
+      }
+
+      // Format description
+      const descParts: string[] = [];
+      pList.forEach(p => descParts.push(`${p.firstName} ${p.lastName} (OVR ${p.overall})`));
+      pkList.forEach(pk => descParts.push(`Season ${pk.season} Rd ${pk.round} Pick`));
+
+      candidates.push({
+        playerIds: pIds,
+        pickIds: pkIds,
+        description: descParts.join(" + "),
+        value: valueUser,
+      });
+    };
+
+    // We generate combinations of size 1, 2, and 3
+    // Size 1: 1 player OR 1 pick
+    for (const p of userRoster) {
+      evaluateCombination([p.id], []);
+    }
+    for (const pk of userPicks) {
+      evaluateCombination([], [pk.id]);
+    }
+
+    // Size 2: 2 players, 1 player + 1 pick, 2 picks
+    for (let i = 0; i < userRoster.length; i++) {
+      for (let j = i + 1; j < userRoster.length; j++) {
+        evaluateCombination([userRoster[i].id, userRoster[j].id], []);
+      }
+    }
+    for (const p of userRoster) {
+      for (const pk of userPicks) {
+        evaluateCombination([p.id], [pk.id]);
+      }
+    }
+    for (let i = 0; i < userPicks.length; i++) {
+      for (let j = i + 1; j < userPicks.length; j++) {
+        evaluateCombination([], [userPicks[i].id, userPicks[j].id]);
+      }
+    }
+
+    // Size 3: 2 players + 1 pick, 1 player + 2 picks
+    for (let i = 0; i < userRoster.length; i++) {
+      for (let j = i + 1; j < userRoster.length; j++) {
+        for (const pk of userPicks) {
+          evaluateCombination([userRoster[i].id, userRoster[j].id], [pk.id]);
+        }
+      }
+    }
+    for (const p of userRoster) {
+      for (let i = 0; i < userPicks.length; i++) {
+        for (let j = i + 1; j < userPicks.length; j++) {
+          evaluateCombination([p.id], [userPicks[i].id, userPicks[j].id]);
+        }
+      }
+    }
+
+    // Sort candidate packages by how close they are to CPU value (cheapest fair trade first)
+    candidates.sort((a, b) => a.value - b.value);
+
+    // Limit to top 4 offers
+    return { success: true, offers: candidates.slice(0, 4) };
+  } catch (error: any) {
+    console.error("Error in requestTradeOfferForPlayerAction:", error);
+    return { success: false, error: error.message || "Failed to generate counter offers." };
+  }
+}

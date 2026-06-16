@@ -516,20 +516,53 @@ export async function executeTradeAction(
       return { success: false, error: "One or more draft picks are not owned by the proposing team or have already been used." };
     }
 
-    // Check point deficit (fair trade evaluation)
-    const ovrA = rosterA.reduce((sum, p) => sum + p.overall, 0) + picksA.reduce((sum, p) => sum + (p.round === 1 ? 78 : 65), 0);
-    const ovrB = rosterB.reduce((sum, p) => sum + p.overall, 0) + picksB.reduce((sum, p) => sum + (p.round === 1 ? 78 : 65), 0);
+    // Check point deficit (fair trade evaluation using exponential valuation and star protection)
+    const getVal = (overall: number) => Math.pow(1.09, overall);
+    const getPickVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
 
-    const ovrDiff = Math.abs(ovrA - ovrB);
-    const maxAllowedDiff = Math.max(ovrA, ovrB) * 0.15; // 15% variance
+    const valA = rosterA.reduce((sum, p) => sum + getVal(p.overall), 0) + picksA.reduce((sum, p) => sum + getPickVal(p.round), 0);
+    const valB = rosterB.reduce((sum, p) => sum + getVal(p.overall), 0) + picksB.reduce((sum, p) => sum + getPickVal(p.round), 0);
 
-    if (ovrDiff > maxAllowedDiff) {
+    const valRatio = valA / valB;
+
+    if (valRatio < 0.95) {
       return {
         success: false,
-        error: `Trade rejected: Unfair deal. The difference in overall asset values (${ovrDiff} points) exceeds the 15% league variance limit (max allowed: ${Math.round(
-          maxAllowedDiff
-        )} points).`,
+        error: `Trade rejected: Opposing front office feels the asset value offered is insufficient.`,
       };
+    }
+
+    if (valRatio > 1.4) {
+      return {
+        success: false,
+        error: `Trade rejected: League office blocks this trade as it is excessively lopsided in favor of the opposing team.`,
+      };
+    }
+
+    // Star player protection check
+    const maxCpuOvr = rosterB.length > 0 ? Math.max(...rosterB.map(p => p.overall)) : 0;
+    const maxUserOvr = rosterA.length > 0 ? Math.max(...rosterA.map(p => p.overall)) : 0;
+    const hasUserFirstRoundPick = picksA.some(p => p.round === 1);
+
+    if (maxCpuOvr >= 80) {
+      if (maxCpuOvr >= 88) {
+        const hasProperPlayer = maxUserOvr >= 80;
+        const hasFallback = maxUserOvr >= 75 && hasUserFirstRoundPick;
+        if (!hasProperPlayer && !hasFallback) {
+          return {
+            success: false,
+            error: `Trade rejected: CPU refuses to trade superstar player (OVR ${maxCpuOvr}) without receiving a star player (OVR 80+) or an established starter (OVR 75+) and a first-round draft pick.`,
+          };
+        }
+      } else {
+        const hasProperPlayer = maxUserOvr >= 73;
+        if (!hasProperPlayer && !hasUserFirstRoundPick) {
+          return {
+            success: false,
+            error: `Trade rejected: CPU refuses to trade star player (OVR ${maxCpuOvr}) without receiving at least a solid rotation player (OVR 73+) or a first-round draft pick.`,
+          };
+        }
+      }
     }
 
     // Check salary cap limits

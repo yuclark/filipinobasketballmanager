@@ -9,6 +9,7 @@ import {
   executeTradeAction,
 } from "@/app/actions/transactions";
 import { getUserDraftPicksAction } from "@/app/actions/offseasonEngine";
+import { requestTradeOfferForPlayerAction } from "@/app/actions/tradeEngine";
 import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import {
   ArrowLeftRight,
@@ -80,6 +81,11 @@ export default function TradesPage() {
   const [cpuDraftPicks, setCpuDraftPicks] = useState<any[]>([]);
   const [selectedUserPickIds, setSelectedUserPickIds] = useState<string[]>([]);
   const [selectedCpuPickIds, setSelectedCpuPickIds] = useState<string[]>([]);
+
+  // Counter-offers state
+  const [cpuProposals, setCpuProposals] = useState<any[] | null>(null);
+  const [requestingOffers, setRequestingOffers] = useState(false);
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -238,14 +244,42 @@ export default function TradesPage() {
   const isUserSelected = selectedUserIds.length > 0 || selectedUserPickIds.length > 0;
   const isCpuSelected = selectedCpuIds.length > 0 || selectedCpuPickIds.length > 0;
 
-  // Fairness Check: OVR deficit must be within 15%
-  const ovrDiff = Math.abs(userTotalValue - cpuTotalValue);
-  const maxAllowedOvrDiff = Math.max(userTotalValue, cpuTotalValue) * 0.15;
-  const isOvrFair = ovrDiff <= maxAllowedOvrDiff;
-  const ovrDiffPercent =
-    Math.max(userTotalValue, cpuTotalValue) > 0
-      ? Math.round((ovrDiff / Math.max(userTotalValue, cpuTotalValue)) * 100)
-      : 0;
+  // Strict CPU Rationality checks (Exponential Values & Star Protections)
+  const getExponentialVal = (overall: number) => Math.pow(1.09, overall);
+  const getPickExponentialVal = (round: number) => Math.pow(1.09, round === 1 ? 77 : 64);
+
+  const userExpValue = userSelectedPlayers.reduce((sum, p) => sum + getExponentialVal(p.overall), 0) +
+                       userDraftPicks.filter(p => selectedUserPickIds.includes(p.id)).reduce((sum, p) => sum + getPickExponentialVal(p.round), 0);
+
+  const cpuExpValue = cpuSelectedPlayers.reduce((sum, p) => sum + getExponentialVal(p.overall), 0) +
+                       cpuDraftPicks.filter(p => selectedCpuPickIds.includes(p.id)).reduce((sum, p) => sum + getPickExponentialVal(p.round), 0);
+
+  const isValSufficient = userExpValue >= cpuExpValue * 0.95;
+  const isValExcessive = userExpValue > cpuExpValue * 1.4;
+
+  const maxCpuOvrSelected = cpuSelectedPlayers.length > 0 ? Math.max(...cpuSelectedPlayers.map(p => p.overall)) : 0;
+  const maxUserOvrSelected = userSelectedPlayers.length > 0 ? Math.max(...userSelectedPlayers.map(p => p.overall)) : 0;
+  const hasUserFirstRoundPickSelected = userDraftPicks.filter(p => selectedUserPickIds.includes(p.id)).some(p => p.round === 1);
+
+  let starCheckPassed = true;
+  let starCheckReason = "";
+
+  if (maxCpuOvrSelected >= 80) {
+    if (maxCpuOvrSelected >= 88) {
+      const hasProperPlayer = maxUserOvrSelected >= 80;
+      const hasFallback = maxUserOvrSelected >= 75 && hasUserFirstRoundPickSelected;
+      if (!hasProperPlayer && !hasFallback) {
+        starCheckPassed = false;
+        starCheckReason = `CPU refuses to trade superstar player (OVR ${maxCpuOvrSelected}) without receiving a star player (OVR 80+) or an established starter (OVR 75+) and a first-round draft pick.`;
+      }
+    } else {
+      const hasProperPlayer = maxUserOvrSelected >= 73;
+      if (!hasProperPlayer && !hasUserFirstRoundPickSelected) {
+        starCheckPassed = false;
+        starCheckReason = `CPU refuses to trade star player (OVR ${maxCpuOvrSelected}) without receiving at least a solid rotation player (OVR 73+) or a first-round draft pick.`;
+      }
+    }
+  }
 
   // Validation Flags
   const isUserCapSpaceOk = userNewPayroll <= (userCapInfo?.budget || 50000000);
@@ -258,9 +292,15 @@ export default function TradesPage() {
 
   if (!isUserSelected || !isCpuSelected) {
     tradeStatus = "pending";
-  } else if (!isOvrFair) {
+  } else if (!isValSufficient) {
     tradeStatus = "rejected";
-    rejectionReason = `Opponent rejected: Value deficit too large (Difference is ${ovrDiffPercent}%, must be within 15%).`;
+    rejectionReason = `Opponent rejected: The asset value offered is insufficient.`;
+  } else if (!starCheckPassed) {
+    tradeStatus = "rejected";
+    rejectionReason = `Opponent rejected: ${starCheckReason}`;
+  } else if (isValExcessive) {
+    tradeStatus = "rejected";
+    rejectionReason = `League office blocked: The trade is excessively lopsided in favor of the opponent.`;
   } else if (!isUserRosterCountOk) {
     tradeStatus = "rejected";
     rejectionReason = `Trade blocked: Your team exceeds the ${MAX_ROSTER_SIZE}-player roster limit.`;
@@ -315,6 +355,39 @@ export default function TradesPage() {
     } finally {
       setTradeExecuting(false);
     }
+  };
+
+  const handleRequestOffers = async () => {
+    if (selectedCpuIds.length !== 1 || selectedCpuPickIds.length !== 0 || !userTeamId || !selectedCpuTeamId) return;
+
+    setRequestingOffers(true);
+    setCpuProposals(null);
+    setProposalsError(null);
+
+    try {
+      const res = await requestTradeOfferForPlayerAction(
+        userTeamId,
+        selectedCpuTeamId,
+        selectedCpuIds[0]
+      );
+
+      if (res.success && res.offers) {
+        setCpuProposals(res.offers);
+      } else {
+        setProposalsError(res.error || "Failed to query opposing front office.");
+      }
+    } catch (err) {
+      console.error(err);
+      setProposalsError("Failed to communicate with opposing franchise.");
+    } finally {
+      setRequestingOffers(false);
+    }
+  };
+
+  const handleApplyProposal = (playerIds: string[], pickIds: string[]) => {
+    setSelectedUserIds(playerIds);
+    setSelectedUserPickIds(pickIds);
+    setCpuProposals(null); // Clear once selected
   };
 
   const formatPHP = (amount: number) => {
@@ -600,8 +673,93 @@ export default function TradesPage() {
               </div>
             )}
           </div>
+
+          {/* Request Offer Trigger */}
+          {selectedCpuIds.length === 1 && selectedCpuPickIds.length === 0 && (
+            <div className="mt-4 border-t border-zinc-800/60 pt-4">
+              <button
+                onClick={handleRequestOffers}
+                disabled={requestingOffers}
+                className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {requestingOffers ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Analyzing Roster Assets...</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeftRight className="w-4 h-4" />
+                    <span>Request Trade Offers for {cpuSelectedPlayers[0]?.firstName} {cpuSelectedPlayers[0]?.lastName}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* CPU Counter-Offers Panel */}
+      {(cpuProposals !== null || proposalsError !== null) && (
+        <div className="bg-zinc-900/40 border border-orange-500/20 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-orange-500/5 blur-[80px] rounded-full pointer-events-none" />
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h4 className="text-md font-bold text-white flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                CPU Franchise Counter-Offers
+              </h4>
+              <p className="text-zinc-500 text-xs mt-0.5">
+                The opposing franchise reviewed your roster. Select a package to pre-fill the trade.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setCpuProposals(null);
+                setProposalsError(null);
+              }}
+              className="text-zinc-500 hover:text-zinc-300 text-xs font-bold cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+
+          {proposalsError && (
+            <p className="text-zinc-400 text-xs italic bg-zinc-950/40 p-4 border border-zinc-900 rounded-xl">
+              {proposalsError}
+            </p>
+          )}
+
+          {cpuProposals && cpuProposals.length === 0 && (
+            <p className="text-zinc-400 text-xs italic bg-zinc-950/40 p-4 border border-zinc-900 rounded-xl">
+              The opposing team is not interested in trading {cpuSelectedPlayers[0]?.firstName} {cpuSelectedPlayers[0]?.lastName} for any combinations of your current roster players or picks due to salary constraints or value mismatch.
+            </p>
+          )}
+
+          {cpuProposals && cpuProposals.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {cpuProposals.map((proposal, idx) => (
+                <div
+                  key={idx}
+                  className="bg-zinc-950/60 border border-zinc-900 hover:border-zinc-800 rounded-2xl p-4 flex justify-between items-center gap-4 transition-all"
+                >
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider block">Option {idx + 1}</span>
+                    <p className="text-zinc-200 text-xs font-semibold">{proposal.description}</p>
+                    <span className="text-[10px] text-zinc-500 block">Combined Value: {Math.round(proposal.value)} pts</span>
+                  </div>
+                  <button
+                    onClick={() => handleApplyProposal(proposal.playerIds, proposal.pickIds)}
+                    className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 hover:text-white font-bold rounded-xl text-xs transition-all cursor-pointer border border-zinc-800 hover:border-zinc-700"
+                  >
+                    Select Option
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Real-time Trade Evaluation Meter */}
       <div className="bg-zinc-900/40 border border-zinc-900 rounded-3xl p-6 md:p-8 shadow-xl">
@@ -613,16 +771,16 @@ export default function TradesPage() {
             <div className="space-y-2">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Package Value Balance</span>
               <div className="flex items-end gap-2">
-                <span className="text-xl font-extrabold text-white">{userTotalValue}</span>
+                <span className="text-xl font-extrabold text-white">{Math.round(userExpValue)}</span>
                 <span className="text-xs text-zinc-500 mb-1">VS</span>
-                <span className="text-xl font-extrabold text-white">{cpuTotalValue}</span>
+                <span className="text-xl font-extrabold text-white">{Math.round(cpuExpValue)}</span>
               </div>
               <span className="text-[10px] text-zinc-400 block mt-0.5">
-                ({userSelectedOvr} players + {userSelectedPickValue} picks) vs ({cpuSelectedOvr} players + {cpuSelectedPickValue} picks)
+                (Based on strict CPU talent valuation)
               </span>
               {isUserSelected && isCpuSelected && (
-                <span className={`text-[11px] font-semibold block ${isOvrFair ? "text-emerald-400" : "text-red-400"}`}>
-                  Difference: {ovrDiffPercent}% {isOvrFair ? "(Fair deal, <= 15%)" : "(Unbalanced, > 15%)"}
+                <span className={`text-[11px] font-semibold block ${tradeStatus === "approved" ? "text-emerald-400" : "text-red-400"}`}>
+                  {tradeStatus === "approved" ? "✓ Fair Value Deal" : "✗ Value Mismatch / Star Rule"}
                 </span>
               )}
             </div>
