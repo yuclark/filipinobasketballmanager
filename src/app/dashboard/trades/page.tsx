@@ -163,6 +163,47 @@ export default function TradesPage() {
     loadCpuRoster();
   }, [selectedCpuTeamId, mounted]);
 
+  // Auto-update counter-offers when CPU assets selection changes
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (selectedCpuIds.length === 0 && selectedCpuPickIds.length === 0) {
+      setCpuProposals(null);
+      setProposalsError(null);
+      return;
+    }
+
+    if (!userTeamId || !selectedCpuTeamId) return;
+
+    const fetchOffers = async () => {
+      setRequestingOffers(true);
+      setProposalsError(null);
+      try {
+        const res = await requestTradeOfferForPlayerAction(
+          userTeamId,
+          selectedCpuTeamId,
+          selectedCpuIds,
+          selectedCpuPickIds
+        );
+        if (res.success && res.offers) {
+          setCpuProposals(res.offers);
+        } else {
+          setCpuProposals([]);
+          setProposalsError(res.error || "Failed to query opposing front office.");
+        }
+      } catch (err) {
+        console.error(err);
+        setProposalsError("Failed to communicate with opposing franchise.");
+      } finally {
+        setRequestingOffers(false);
+      }
+    };
+
+    // Debounce slightly to prevent double execution on fast clicks
+    const timer = setTimeout(fetchOffers, 250);
+    return () => clearTimeout(timer);
+  }, [selectedCpuIds, selectedCpuPickIds, userTeamId, selectedCpuTeamId, mounted]);
+
   if (!mounted || loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -356,47 +397,6 @@ export default function TradesPage() {
       setTradeExecuting(false);
     }
   };
-
-  // Auto-update counter-offers when CPU assets selection changes
-  useEffect(() => {
-    if (!mounted) return;
-
-    if (selectedCpuIds.length === 0 && selectedCpuPickIds.length === 0) {
-      setCpuProposals(null);
-      setProposalsError(null);
-      return;
-    }
-
-    if (!userTeamId || !selectedCpuTeamId) return;
-
-    const fetchOffers = async () => {
-      setRequestingOffers(true);
-      setProposalsError(null);
-      try {
-        const res = await requestTradeOfferForPlayerAction(
-          userTeamId,
-          selectedCpuTeamId,
-          selectedCpuIds,
-          selectedCpuPickIds
-        );
-        if (res.success && res.offers) {
-          setCpuProposals(res.offers);
-        } else {
-          setCpuProposals([]);
-          setProposalsError(res.error || "Failed to query opposing front office.");
-        }
-      } catch (err) {
-        console.error(err);
-        setProposalsError("Failed to communicate with opposing franchise.");
-      } finally {
-        setRequestingOffers(false);
-      }
-    };
-
-    // Debounce slightly to prevent double execution on fast clicks
-    const timer = setTimeout(fetchOffers, 250);
-    return () => clearTimeout(timer);
-  }, [selectedCpuIds, selectedCpuPickIds, userTeamId, selectedCpuTeamId, mounted]);
 
   const handleApplyProposal = (playerIds: string[], pickIds: string[]) => {
     setSelectedUserIds(playerIds);
