@@ -731,7 +731,7 @@ export async function simulateRemainingDayGames(day: number, userTeamId?: string
 
     // Trigger trade proposal generation during single-day simulation
     if (userTeamId) {
-      await generateTradeProposalsAction(seasonYear, userTeamId);
+      await generateTradeProposalsAction(seasonYear, userTeamId, day);
     }
 
     return {
@@ -849,7 +849,7 @@ export async function simulateBatchDaysAction(
         }
 
         if (userTeamId) {
-          await generateTradeProposalsAction(seasonYear, userTeamId);
+          await generateTradeProposalsAction(seasonYear, userTeamId, day);
         }
 
         // Refresh rosters mapping from local memory state
@@ -1171,7 +1171,7 @@ export async function simulateWeekChunkAction(
       }
 
       if (userTeamId) {
-        await generateTradeProposalsAction(seasonYear, userTeamId);
+        await generateTradeProposalsAction(seasonYear, userTeamId, day);
       }
 
       // Populate rosters from local memory array

@@ -482,27 +482,40 @@ function checkTradeViability(
 /**
  * Generates CPU-to-user trade proposals based on roster deficits and surpluses.
  */
-export async function generateTradeProposalsAction(seasonYear: number, userTeamId: string) {
+export async function generateTradeProposalsAction(seasonYear: number, userTeamId: string, currentDay?: number) {
   try {
-    const nextScheduled = await db
-      .select({ day: games.gameNumber })
-      .from(games)
-      .where(and(
-        eq(games.seasonYear, seasonYear),
-        eq(games.status, "Scheduled"),
-        eq(games.stage, "Regular")
-      ))
-      .orderBy(games.gameNumber)
-      .limit(1);
-    const currentDay = nextScheduled[0]?.day ?? 82;
+    let day = currentDay;
+    if (day === undefined) {
+      const nextScheduled = await db
+        .select({ day: games.gameNumber })
+        .from(games)
+        .where(and(
+          eq(games.seasonYear, seasonYear),
+          eq(games.status, "Scheduled"),
+          eq(games.stage, "Regular")
+        ))
+        .orderBy(games.gameNumber)
+        .limit(1);
+      day = nextScheduled[0]?.day ?? 82;
 
-    if (currentDay > 50) {
-      // Trade deadline passed, expire all pending proposals
-      await db
-        .update(tradeProposals)
-        .set({ status: "Expired" })
-        .where(eq(tradeProposals.status, "Pending"));
-      return { success: true, count: 0 };
+      if (day > 50) {
+        // Trade deadline passed, expire all pending proposals
+        await db
+          .update(tradeProposals)
+          .set({ status: "Expired" })
+          .where(eq(tradeProposals.status, "Pending"));
+        return { success: true, count: 0 };
+      }
+    } else {
+      // If day has just completed simulation, we check if the next day (day + 1) exceeds the deadline (50).
+      // So if day >= 50, the deadline has passed.
+      if (day >= 50) {
+        await db
+          .update(tradeProposals)
+          .set({ status: "Expired" })
+          .where(eq(tradeProposals.status, "Pending"));
+        return { success: true, count: 0 };
+      }
     }
 
     // Auto-expire proposals whose real-world time expiresAt < now
@@ -677,7 +690,35 @@ export async function generateTradeProposalsAction(seasonYear: number, userTeamI
  */
 export async function getTradeProposalsAction(teamId: string) {
   try {
-    // Auto-expire proposals
+    // 1. Check if the trade deadline has passed
+    const nextScheduled = await db
+      .select({ day: games.gameNumber })
+      .from(games)
+      .where(and(
+        eq(games.status, "Scheduled"),
+        eq(games.stage, "Regular")
+      ))
+      .orderBy(games.gameNumber)
+      .limit(1);
+
+    let isDeadlinePassed = false;
+    if (nextScheduled.length === 0) {
+      // No regular games scheduled means we are in playoffs or offseason
+      isDeadlinePassed = true;
+    } else if (nextScheduled[0].day > 50) {
+      isDeadlinePassed = true;
+    }
+
+    if (isDeadlinePassed) {
+      // Auto-expire all pending proposals
+      await db
+        .update(tradeProposals)
+        .set({ status: "Expired" })
+        .where(eq(tradeProposals.status, "Pending"));
+      return { success: true, proposals: [] };
+    }
+
+    // Auto-expire proposals whose real-world time expiresAt < now
     await db
       .update(tradeProposals)
       .set({ status: "Expired" })
