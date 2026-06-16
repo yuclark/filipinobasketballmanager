@@ -14,7 +14,9 @@ import {
   draftPicks,
   draftSessions,
   tradeProposals,
-  saveSlots
+  saveSlots,
+  playerSalaryHistory,
+  playerEvolutions
 } from "@/db/schema";
 import { seedDatabase } from "@/db/seed";
 
@@ -42,7 +44,7 @@ export async function getSaveSlotsAction() {
 }
 
 export async function saveGameAction(
-  slotName: string,
+  slotName: string | null,
   userTeamId: string | null,
   currentLeagueDay: number,
   slotId?: string
@@ -67,6 +69,8 @@ export async function saveGameAction(
     const allPicks = await db.select().from(draftPicks);
     const allSessions = await db.select().from(draftSessions);
     const allProposals = await db.select().from(tradeProposals);
+    const allSalaryHistory = await db.select().from(playerSalaryHistory);
+    const allEvolutions = await db.select().from(playerEvolutions);
 
     // 2. Package everything into a JSON object
     const gameStateJson = JSON.stringify({
@@ -81,6 +85,8 @@ export async function saveGameAction(
       draftPicks: allPicks,
       draftSessions: allSessions,
       tradeProposals: allProposals,
+      playerSalaryHistory: allSalaryHistory,
+      playerEvolutions: allEvolutions,
     });
 
     let managedTeamName = "";
@@ -94,10 +100,20 @@ export async function saveGameAction(
     }
 
     if (slotId) {
+      let finalName = slotName;
+      if (!finalName) {
+        const [existing] = await db
+          .select({ name: saveSlots.name })
+          .from(saveSlots)
+          .where(eq(saveSlots.id, slotId))
+          .limit(1);
+        finalName = existing?.name ?? "Autosave Slot";
+      }
+
       await db
         .update(saveSlots)
         .set({
-          name: slotName,
+          name: finalName,
           userTeamId,
           managedTeamName,
           managedTeamCity,
@@ -107,20 +123,26 @@ export async function saveGameAction(
           updatedAt: new Date(),
         })
         .where(eq(saveSlots.id, slotId));
+      
+      return { success: true, id: slotId };
     } else {
-      await db.insert(saveSlots).values({
-        name: slotName,
-        userTeamId,
-        managedTeamName,
-        managedTeamCity,
-        currentLeagueDay,
-        currentSeasonYear,
-        gameStateJson,
-        updatedAt: new Date(),
-      });
-    }
+      const finalName = slotName || "Autosave Slot";
+      const [inserted] = await db
+        .insert(saveSlots)
+        .values({
+          name: finalName,
+          userTeamId,
+          managedTeamName,
+          managedTeamCity,
+          currentLeagueDay,
+          currentSeasonYear,
+          gameStateJson,
+          updatedAt: new Date(),
+        })
+        .returning({ id: saveSlots.id });
 
-    return { success: true };
+      return { success: true, id: inserted.id };
+    }
   } catch (error: any) {
     console.error("Failed to save game:", error);
     return { success: false, error: error.message };
@@ -149,6 +171,34 @@ export async function loadGameAction(slotId: string) {
 
     const data = JSON.parse(slot.gameStateJson);
 
+    // Deserialize Date objects from JSON string representation
+    if (data.transactions) {
+      data.transactions = data.transactions.map((tx: any) => ({
+        ...tx,
+        createdAt: tx.createdAt ? new Date(tx.createdAt) : new Date(),
+      }));
+    }
+    if (data.draftSessions) {
+      data.draftSessions = data.draftSessions.map((ds: any) => ({
+        ...ds,
+        createdAt: ds.createdAt ? new Date(ds.createdAt) : new Date(),
+        updatedAt: ds.updatedAt ? new Date(ds.updatedAt) : new Date(),
+      }));
+    }
+    if (data.tradeProposals) {
+      data.tradeProposals = data.tradeProposals.map((tp: any) => ({
+        ...tp,
+        createdAt: tp.createdAt ? new Date(tp.createdAt) : new Date(),
+        expiresAt: tp.expiresAt ? new Date(tp.expiresAt) : new Date(),
+      }));
+    }
+    if (data.playerEvolutions) {
+      data.playerEvolutions = data.playerEvolutions.map((pe: any) => ({
+        ...pe,
+        createdAt: pe.createdAt ? new Date(pe.createdAt) : new Date(),
+      }));
+    }
+
     // 2. Perform table swaps sequentially (neon-http doesn't support persistent transactions)
     // Clear dependent tables first
     await db.delete(tradeProposals);
@@ -159,6 +209,8 @@ export async function loadGameAction(slotId: string) {
     await db.delete(seasonChampions);
     await db.delete(transactions);
     await db.delete(playerGameStats);
+    await db.delete(playerSalaryHistory);
+    await db.delete(playerEvolutions);
     await db.delete(games);
     await db.delete(players);
     await db.delete(teams);
@@ -196,6 +248,12 @@ export async function loadGameAction(slotId: string) {
     }
     if (data.tradeProposals && data.tradeProposals.length > 0) {
       await chunkedInsert(db, tradeProposals, data.tradeProposals);
+    }
+    if (data.playerSalaryHistory && data.playerSalaryHistory.length > 0) {
+      await chunkedInsert(db, playerSalaryHistory, data.playerSalaryHistory);
+    }
+    if (data.playerEvolutions && data.playerEvolutions.length > 0) {
+      await chunkedInsert(db, playerEvolutions, data.playerEvolutions);
     }
 
     return {

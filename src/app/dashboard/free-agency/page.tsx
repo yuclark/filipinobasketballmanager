@@ -46,7 +46,7 @@ type OfferStatus = "none" | "pending" | "accepted" | "rejected";
 
 export default function FreeAgencyPage() {
   const router = useRouter();
-  const { userTeamId } = useGameStore();
+  const { userTeamId, triggerAutosave } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [freeAgents, setFreeAgents] = useState<Player[]>([]);
@@ -121,6 +121,7 @@ export default function FreeAgencyPage() {
         // Refresh cap info inline — no page reload
         await loadData();
         router.refresh();
+        triggerAutosave();
       } else if (result.reason) {
         setInlineErrors((prev) => ({ ...prev, [playerId]: result.reason! }));
       }

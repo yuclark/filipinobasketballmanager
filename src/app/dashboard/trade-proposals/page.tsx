@@ -52,7 +52,7 @@ interface Proposal {
 
 export default function TradeProposalsPage() {
   const router = useRouter();
-  const { userTeamId } = useGameStore();
+  const { userTeamId, triggerAutosave } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -112,6 +112,7 @@ export default function TradeProposalsPage() {
         setSuccessMsg("Trade accepted! Rosters have been updated.");
         await loadProposals();
         router.refresh();
+        triggerAutosave();
       } else {
         setError(res.error || "Failed to accept trade.");
       }
@@ -132,6 +133,7 @@ export default function TradeProposalsPage() {
       if (res.success) {
         setSuccessMsg("Proposal rejected and removed.");
         await loadProposals();
+        triggerAutosave();
       } else {
         setError(res.error || "Failed to reject proposal.");
       }

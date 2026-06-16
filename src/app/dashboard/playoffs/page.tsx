@@ -56,7 +56,7 @@ interface BracketNode {
 
 export default function PlayoffsPage() {
   const router = useRouter();
-  const { userTeamId } = useGameStore();
+  const { userTeamId, triggerAutosave } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -176,6 +176,7 @@ export default function PlayoffsPage() {
       const res = await initializePlayoffsAction();
       if (res.success) {
         await loadPlayoffData();
+        triggerAutosave();
       } else {
         setError("Failed to seed playoff matchups. Please try again.");
       }
@@ -202,6 +203,7 @@ export default function PlayoffsPage() {
         }
         await loadPlayoffData();
         router.refresh();
+        triggerAutosave();
       } else {
         setError("Failed to simulate playoff day. Please try again.");
       }
@@ -223,6 +225,7 @@ export default function PlayoffsPage() {
         setPlayoffNotification("Playoffs advanced to the Grand Finals! Matchups generated.");
         await loadPlayoffData();
         router.refresh();
+        triggerAutosave();
       } else {
         setError("Failed to fast-forward playoffs. Please try again.");
       }

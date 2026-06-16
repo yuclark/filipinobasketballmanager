@@ -74,7 +74,7 @@ type SortKey =
 
 export default function RosterPage() {
   const router = useRouter();
-  const { userTeamId } = useGameStore();
+  const { userTeamId, triggerAutosave } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [playersList, setPlayersList] = useState<Player[]>([]);
@@ -177,6 +177,7 @@ export default function RosterPage() {
       if (res.success) {
         await loadRoster();
         router.refresh();
+        triggerAutosave();
       } else {
         setReleaseError(res.error || "Failed to release player. Roster minimum may be violated.");
       }

@@ -102,7 +102,7 @@ const SALARY_CAP = 50000000;
 
 export default function OffseasonWizardPage() {
   const router = useRouter();
-  const { userTeamId, setLeagueDay } = useGameStore();
+  const { userTeamId, setLeagueDay, triggerAutosave } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -515,6 +515,7 @@ export default function OffseasonWizardPage() {
           }
         }
         setWizardSuccess("Player re-signed successfully!");
+        triggerAutosave();
       } else {
         setWizardError("Failed to re-sign player. Please verify that your team has enough budget or roster space.");
       }
@@ -545,6 +546,7 @@ export default function OffseasonWizardPage() {
           cpuReSignLogs: res.logs,
           cpuReSignSimulated: true
         });
+        triggerAutosave();
       } else {
         setWizardError("Failed to run CPU extensions. Please try again.");
       }
@@ -563,6 +565,7 @@ export default function OffseasonWizardPage() {
       if (res.success) {
         setCurrentPhase(2);
         saveWizardState({ currentPhase: 2 });
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to proceed to Phase 2 on server.");
       }
@@ -606,6 +609,7 @@ export default function OffseasonWizardPage() {
           evolutionSimulated: true,
           evolutionResults: res.evolutionResults,
         });
+        triggerAutosave();
       } else {
         setWizardError("Failed to run player evolution. Please try again.");
       }
@@ -624,6 +628,7 @@ export default function OffseasonWizardPage() {
       if (res.success) {
         setCurrentPhase(3);
         saveWizardState({ currentPhase: 3 });
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to proceed to Phase 3 on server.");
       }
@@ -712,6 +717,7 @@ export default function OffseasonWizardPage() {
         setDraftInitError(null);
         setCurrentPhase(4);
         saveWizardState({ currentPhase: 4 });
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to finalize lottery picks in database.");
       }
@@ -738,6 +744,7 @@ export default function OffseasonWizardPage() {
         } else if (res.status === "COMPLETED") {
           setWizardSuccess("Draft completed successfully.");
         }
+        triggerAutosave();
       } else {
         setWizardError(res.error || res.message || "Simulation failed.");
       }
@@ -775,6 +782,7 @@ export default function OffseasonWizardPage() {
             setWizardSuccess("Draft completed successfully.");
           }
         }
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to execute auto-draft pick.");
       }
@@ -796,6 +804,7 @@ export default function OffseasonWizardPage() {
       if (res.success) {
         await refreshDraftState();
         setWizardSuccess("Draft completed successfully.");
+        triggerAutosave();
       } else {
         setWizardError(res.error || res.message || "Simulation failed.");
       }
@@ -834,6 +843,7 @@ export default function OffseasonWizardPage() {
             setWizardSuccess("Draft completed successfully.");
           }
         }
+        triggerAutosave();
       } else {
         setWizardError("Failed to draft selected player. Please check your selection and try again.");
       }
@@ -852,6 +862,7 @@ export default function OffseasonWizardPage() {
       if (res.success) {
         setCurrentPhase(5);
         saveWizardState({ currentPhase: 5 });
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to proceed to Phase 5 on server.");
       }
@@ -870,6 +881,7 @@ export default function OffseasonWizardPage() {
       if (res.success) {
         setCurrentPhase(6);
         saveWizardState({ currentPhase: 6 });
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to proceed to Phase 6 on server.");
       }
@@ -897,6 +909,7 @@ export default function OffseasonWizardPage() {
           freeAgencyLogs: res.cpuSignings,
         });
         setWizardSuccess("CPU free agency simulation complete!");
+        triggerAutosave();
       } else {
         setWizardError(res.error || "Failed to simulate CPU free agency.");
       }
@@ -917,6 +930,7 @@ export default function OffseasonWizardPage() {
         localStorage.removeItem("filipino-basketball-manager-offseason-wizard");
         setLeagueDay(1);
         setWizardSuccess(`Season ${res.nextYear} launched! Redirecting to dashboard...`);
+        triggerAutosave();
         setTimeout(() => router.push("/dashboard"), 1500);
       } else {
         setWizardError("Failed to launch season. Please check your roster requirements (12-18 players) and try again.");

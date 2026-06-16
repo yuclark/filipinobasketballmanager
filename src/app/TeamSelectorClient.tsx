@@ -19,6 +19,7 @@ import {
   AlertTriangle
 } from "lucide-react";
 import {
+  saveGameAction,
   getSaveSlotsAction,
   loadGameAction,
   deleteSaveSlotAction,
@@ -153,16 +154,20 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
             const newTeam = res.teams.find(
               (t: any) => t.city === selectedTeam.city && t.name === selectedTeam.name
             );
-            if (newTeam) {
-              setTeam(newTeam.id);
-            } else {
-              setTeam(teamId);
-            }
-            // Reset client Zustand store states back to day 1 fresh game
+            const finalTeamId = newTeam ? newTeam.id : teamId;
+            setTeam(finalTeamId);
+
+            // Automatically create the initial save slot for this new franchise run
+            const slotName = `${selectedTeam.city} ${selectedTeam.name} Run`;
+            const saveRes = await saveGameAction(slotName, finalTeamId, 1);
+
+            // Reset client Zustand store states back to day 1 fresh game, and record slot ID
             useGameStore.setState({
+              userTeamId: finalTeamId,
               currentLeagueDay: 1,
               tradeDeadlinePassed: false,
               isSimulating: false,
+              activeSaveSlotId: saveRes.success && saveRes.id ? saveRes.id : null,
             });
             router.push("/dashboard");
           } else {
@@ -185,6 +190,7 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
         useGameStore.setState({
           userTeamId: res.userTeamId,
           currentLeagueDay: res.currentLeagueDay,
+          activeSaveSlotId: slotId,
         });
         router.push("/dashboard");
       } else {

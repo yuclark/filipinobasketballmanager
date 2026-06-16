@@ -83,7 +83,7 @@ export default function SchedulePage() {
   const stopSimulationRef = useRef(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const { userTeamId, currentLeagueDay, advanceDay, setSimulating: storeSetSimulating, setTradeDeadlinePassed, setLeagueDay } = useGameStore();
+  const { userTeamId, currentLeagueDay, advanceDay, setSimulating: storeSetSimulating, setTradeDeadlinePassed, setLeagueDay, triggerAutosave } = useGameStore();
 
   const setSimulating = (val: boolean) => {
     setIsSimulating(val);
@@ -198,6 +198,7 @@ export default function SchedulePage() {
       if (res.success) {
         setToastMessage("Full 82-game schedule generated successfully!");
         loadDayGames();
+        triggerAutosave();
       } else {
         setToastMessage("Failed to generate schedule. Please try again.");
       }
@@ -217,9 +218,11 @@ export default function SchedulePage() {
       if (res.success) {
         if (res.status === "REGULAR_SEASON_COMPLETE") {
           router.push("/dashboard/awards");
+          triggerAutosave();
           return;
         }
         loadDayGames();
+        triggerAutosave();
       } else {
         setToastMessage("Simulation failed.");
       }
@@ -239,9 +242,11 @@ export default function SchedulePage() {
       if (res.success) {
         if (res.status === "REGULAR_SEASON_COMPLETE") {
           router.push("/dashboard/awards");
+          triggerAutosave();
           return;
         }
         advanceDay();
+        triggerAutosave();
       } else {
         setToastMessage("Simulation failed.");
       }
@@ -267,6 +272,7 @@ export default function SchedulePage() {
 
       if (res.status === "REGULAR_SEASON_COMPLETE") {
         router.push("/dashboard/awards");
+        triggerAutosave();
         return;
       }
 
@@ -291,6 +297,7 @@ export default function SchedulePage() {
         const schedule = await getTeamScheduleAction(userTeamId);
         setTeamSchedule(schedule);
       }
+      triggerAutosave();
     } catch (err) {
       console.error(err);
       setToastMessage("Error executing batch simulation.");
@@ -322,6 +329,7 @@ export default function SchedulePage() {
         if (res.status === "REGULAR_SEASON_COMPLETE") {
           setLeagueDay(82);
           router.push("/dashboard/awards");
+          triggerAutosave();
           return;
         }
 
@@ -356,6 +364,7 @@ export default function SchedulePage() {
         const schedule = await getTeamScheduleAction(userTeamId);
         setTeamSchedule(schedule);
       }
+      triggerAutosave();
     } catch (err) {
       console.error(err);
       setToastMessage("Error executing simulation.");
@@ -370,6 +379,7 @@ export default function SchedulePage() {
       const res = await initializePlayoffsAction();
       if (res.success) {
         router.push("/dashboard/playoffs");
+        triggerAutosave();
       } else {
         setToastMessage("Failed to initialize playoffs. Please try again.");
       }

@@ -54,7 +54,7 @@ interface CapInfo {
 
 export default function TradesPage() {
   const router = useRouter();
-  const { userTeamId, currentLeagueDay } = useGameStore();
+  const { userTeamId, currentLeagueDay, triggerAutosave } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [opposingTeams, setOpposingTeams] = useState<Team[]>([]);
@@ -408,6 +408,7 @@ export default function TradesPage() {
         setSelectedUserPickIds([]);
         setSelectedCpuPickIds([]);
         router.refresh();
+        triggerAutosave();
       } else {
         setTradeError(res.error || "Trade proposal failed. Check roster size and salary requirements.");
       }
