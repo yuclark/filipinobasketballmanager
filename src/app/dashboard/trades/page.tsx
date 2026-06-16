@@ -86,6 +86,7 @@ export default function TradesPage() {
   const [cpuProposals, setCpuProposals] = useState<any[] | null>(null);
   const [requestingOffers, setRequestingOffers] = useState(false);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -138,6 +139,9 @@ export default function TradesPage() {
         setLoadingCpuRoster(true);
         setSelectedCpuIds([]); // Clear previous trade selection
         setSelectedCpuPickIds([]); // Clear previous trade selection
+        setCpuProposals(null);
+        setProposalsError(null);
+        setAutoUpdateEnabled(false);
         const cpuCap = await getTeamSalarySpace(selectedCpuTeamId);
         if (cpuCap.success) {
           setCpuCapInfo({
@@ -165,7 +169,7 @@ export default function TradesPage() {
 
   // Auto-update counter-offers when CPU assets selection changes
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !autoUpdateEnabled) return;
 
     if (selectedCpuIds.length === 0 && selectedCpuPickIds.length === 0) {
       setCpuProposals(null);
@@ -202,7 +206,7 @@ export default function TradesPage() {
     // Debounce slightly to prevent double execution on fast clicks
     const timer = setTimeout(fetchOffers, 250);
     return () => clearTimeout(timer);
-  }, [selectedCpuIds, selectedCpuPickIds, userTeamId, selectedCpuTeamId, mounted]);
+  }, [selectedCpuIds, selectedCpuPickIds, userTeamId, selectedCpuTeamId, autoUpdateEnabled, mounted]);
 
   if (!mounted || loading) {
     return (
@@ -398,10 +402,41 @@ export default function TradesPage() {
     }
   };
 
+  const handleRequestOffers = async () => {
+    if ((selectedCpuIds.length === 0 && selectedCpuPickIds.length === 0) || !userTeamId || !selectedCpuTeamId) return;
+
+    setRequestingOffers(true);
+    setCpuProposals(null);
+    setProposalsError(null);
+    setAutoUpdateEnabled(true);
+
+    try {
+      const res = await requestTradeOfferForPlayerAction(
+        userTeamId,
+        selectedCpuTeamId,
+        selectedCpuIds,
+        selectedCpuPickIds
+      );
+
+      if (res.success && res.offers) {
+        setCpuProposals(res.offers);
+      } else {
+        setCpuProposals([]);
+        setProposalsError(res.error || "Failed to query opposing front office.");
+      }
+    } catch (err) {
+      console.error(err);
+      setProposalsError("Failed to communicate with opposing franchise.");
+    } finally {
+      setRequestingOffers(false);
+    }
+  };
+
   const handleApplyProposal = (playerIds: string[], pickIds: string[]) => {
     setSelectedUserIds(playerIds);
     setSelectedUserPickIds(pickIds);
     setCpuProposals(null); // Clear once selected
+    setAutoUpdateEnabled(false);
   };
 
   const formatPHP = (amount: number) => {
@@ -688,6 +723,28 @@ export default function TradesPage() {
             )}
           </div>
 
+          {/* Request Offer Trigger */}
+          {(selectedCpuIds.length > 0 || selectedCpuPickIds.length > 0) && !autoUpdateEnabled && (
+            <div className="mt-4 border-t border-zinc-800/60 pt-4">
+              <button
+                onClick={handleRequestOffers}
+                disabled={requestingOffers}
+                className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {requestingOffers ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Analyzing Roster Assets...</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeftRight className="w-4 h-4" />
+                    <span>Request Counter-Offers</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
