@@ -236,6 +236,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   { name: "Active Roster", path: "/dashboard", icon: Users },
                   { name: "Team Schedule", path: "/dashboard/schedule", icon: Calendar },
                   { name: "Transactions Office", path: "/dashboard/trades", icon: ArrowLeftRight },
+                  { name: "Team Finances", path: "/dashboard/finances", icon: Coins },
                   { name: "Free Agency Market", path: "/dashboard/free-agency", icon: Briefcase },
                   { name: "Trade Proposals", path: "/dashboard/trade-proposals", icon: RefreshCw },
                 ],
@@ -345,6 +346,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Link href="/dashboard" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Roster</Link>
             <Link href="/dashboard/schedule" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Games</Link>
             <Link href="/dashboard/trades" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Trades</Link>
+            <Link href="/dashboard/finances" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Finances</Link>
             <Link href="/dashboard/free-agency" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">FA</Link>
             <Link href="/dashboard/trade-proposals" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap flex items-center gap-1">
               <span>Proposals</span>
