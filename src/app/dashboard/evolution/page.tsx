@@ -416,20 +416,27 @@ export default function PlayerEvolutionPage() {
                   </div>
                   <span
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold border ${
-                      isProg
+                      delta > 0
                         ? "bg-green-500/10 text-green-400 border-green-500/15"
-                        : "bg-red-500/10 text-red-400 border-red-500/15"
+                        : delta < 0
+                        ? "bg-red-500/10 text-red-400 border-red-500/15"
+                        : "bg-zinc-500/10 text-zinc-400 border-zinc-500/15"
                     }`}
                   >
-                    {isProg ? (
+                    {delta > 0 ? (
                       <>
                         <ArrowUpRight className="w-3.5 h-3.5" />
                         <span>+{delta} OVR</span>
                       </>
-                    ) : (
+                    ) : delta < 0 ? (
                       <>
                         <ArrowDownRight className="w-3.5 h-3.5" />
                         <span>{delta} OVR</span>
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>0 OVR</span>
                       </>
                     )}
                   </span>
@@ -685,18 +692,27 @@ export default function PlayerEvolutionPage() {
                       <span className="text-zinc-500">Overall Rating Adjustment</span>
                       <span
                         className={`inline-flex items-center gap-1 ${
-                          isProgression ? "text-green-400" : "text-red-400"
+                          delta > 0
+                            ? "text-green-400"
+                            : delta < 0
+                            ? "text-red-400"
+                            : "text-zinc-400"
                         }`}
                       >
-                        {isProgression ? (
+                        {delta > 0 ? (
                           <>
                             <ArrowUpRight className="w-3.5 h-3.5" />
                             <span>Progression (+{delta})</span>
                           </>
-                        ) : (
+                        ) : delta < 0 ? (
                           <>
                             <ArrowDownRight className="w-3.5 h-3.5" />
                             <span>Regression ({delta})</span>
+                          </>
+                        ) : (
+                          <>
+                            <Activity className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>No Net Change (0)</span>
                           </>
                         )}
                       </span>
