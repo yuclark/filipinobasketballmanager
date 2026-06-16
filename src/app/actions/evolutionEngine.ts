@@ -44,7 +44,8 @@ const SKILL_LABELS: Record<string, string> = {
 export async function evolvePlayersListInMemory(
   localPlayers: any[],
   seasonYear: number,
-  gameDay: number
+  gameDay: number,
+  userTeamId?: string | null
 ) {
   const evolutionsToInsert: any[] = [];
   const evolutionTransactions: any[] = [];
@@ -62,19 +63,47 @@ export async function evolvePlayersListInMemory(
     };
   }
 
-  // Choose a small subset of players to evolve today (approx. 5 random players daily)
-  const targetCount = Math.min(activeLeaguePlayers.length, 5);
   const selectedPlayers: typeof players.$inferSelect[] = [];
-  const indices = new Set<number>();
 
-  while (indices.size < targetCount) {
-    const randomIndex = Math.floor(Math.random() * activeLeaguePlayers.length);
-    indices.add(randomIndex);
+  // 1. Separate user team players from CPU players
+  const userTeamPlayers = activeLeaguePlayers.filter(
+    (p) => userTeamId && p.teamId === userTeamId
+  );
+  const cpuTeamPlayers = activeLeaguePlayers.filter(
+    (p) => !userTeamId || p.teamId !== userTeamId
+  );
+
+  // 2. Select 1 random user player to evolve daily (guaranteeing user team progression checks)
+  if (userTeamPlayers.length > 0) {
+    const randomUserIdx = Math.floor(Math.random() * userTeamPlayers.length);
+    selectedPlayers.push(userTeamPlayers[randomUserIdx]);
   }
 
-  indices.forEach((idx) => {
-    selectedPlayers.push(activeLeaguePlayers[idx]);
-  });
+  // 3. Select 4 random CPU players to evolve daily for league balance
+  if (cpuTeamPlayers.length > 0) {
+    const cpuTargetCount = Math.min(cpuTeamPlayers.length, 4);
+    const cpuIndices = new Set<number>();
+    while (cpuIndices.size < cpuTargetCount) {
+      const randomIndex = Math.floor(Math.random() * cpuTeamPlayers.length);
+      cpuIndices.add(randomIndex);
+    }
+    cpuIndices.forEach((idx) => {
+      selectedPlayers.push(cpuTeamPlayers[idx]);
+    });
+  }
+
+  // Fallback: If no userTeamId is active, select 5 random players across the entire league
+  if (!userTeamId && selectedPlayers.length === 0) {
+    const targetCount = Math.min(activeLeaguePlayers.length, 5);
+    const indices = new Set<number>();
+    while (indices.size < targetCount) {
+      const randomIndex = Math.floor(Math.random() * activeLeaguePlayers.length);
+      indices.add(randomIndex);
+    }
+    indices.forEach((idx) => {
+      selectedPlayers.push(activeLeaguePlayers[idx]);
+    });
+  }
 
   // Fetch team names for transaction log descriptions
   const allTeams = await db.select({ id: teams.id, name: teams.name, city: teams.city }).from(teams);
@@ -199,7 +228,8 @@ export async function evolvePlayersListInMemory(
  */
 export async function processWithinSeasonEvolutionAction(
   seasonYear: number,
-  gameDay: number
+  gameDay: number,
+  userTeamId?: string | null
 ) {
   try {
     const activePlayers = await db
@@ -208,7 +238,7 @@ export async function processWithinSeasonEvolutionAction(
       .where(eq(players.status, "Active"));
 
     const { updatedPlayers, evolutionsToInsert, evolutionTransactions } =
-      await evolvePlayersListInMemory(activePlayers, seasonYear, gameDay);
+      await evolvePlayersListInMemory(activePlayers, seasonYear, gameDay, userTeamId);
 
     if (evolutionsToInsert.length === 0) {
       return { success: true, count: 0 };

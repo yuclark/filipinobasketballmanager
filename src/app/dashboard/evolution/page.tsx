@@ -68,11 +68,10 @@ export default function PlayerEvolutionPage() {
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [feedLoading, setFeedLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"league" | "team" | "player">("league");
+  const [activeTab, setActiveTab] = useState<"team" | "player">("team");
   const [error, setError] = useState<string | null>(null);
 
   // Evolutions lists
-  const [leagueEvolutions, setLeagueEvolutions] = useState<EvolutionItem[]>([]);
   const [teamEvolutions, setTeamEvolutions] = useState<EvolutionItem[]>([]);
 
   // Player search & career history states
@@ -93,13 +92,7 @@ export default function PlayerEvolutionPage() {
     const loadInitialData = async () => {
       try {
         setLoading(true);
-        // 1. Fetch league evolution logs
-        const leagueRes = await getPlayerEvolutionsAction({ limit: 40 });
-        if (leagueRes.success && leagueRes.evolutions) {
-          setLeagueEvolutions(leagueRes.evolutions as unknown as EvolutionItem[]);
-        }
-
-        // 2. Fetch user team evolution logs if team exists
+        // 1. Fetch user team evolution logs if team exists
         if (userTeamId) {
           const teamRes = await getPlayerEvolutionsAction({ teamId: userTeamId, limit: 30 });
           if (teamRes.success && teamRes.evolutions) {
@@ -107,7 +100,7 @@ export default function PlayerEvolutionPage() {
           }
         }
 
-        // 3. Fetch search directory
+        // 2. Fetch search directory
         const dirRes = await getActivePlayersListAction();
         if (dirRes.success && dirRes.players) {
           setPlayersList(dirRes.players as SearchPlayer[]);
@@ -151,10 +144,6 @@ export default function PlayerEvolutionPage() {
   const handleRefreshFeed = async () => {
     try {
       setFeedLoading(true);
-      const leagueRes = await getPlayerEvolutionsAction({ limit: 40 });
-      if (leagueRes.success && leagueRes.evolutions) {
-        setLeagueEvolutions(leagueRes.evolutions as unknown as EvolutionItem[]);
-      }
       if (userTeamId) {
         const teamRes = await getPlayerEvolutionsAction({ teamId: userTeamId, limit: 30 });
         if (teamRes.success && teamRes.evolutions) {
@@ -453,7 +442,7 @@ export default function PlayerEvolutionPage() {
     );
   }, [careerHistory, selectedPlayer]);
 
-  const activeEvolutions = activeTab === "league" ? leagueEvolutions : teamEvolutions;
+  const activeEvolutions = teamEvolutions;
 
   return (
     <div className="flex flex-col gap-8">
@@ -486,27 +475,15 @@ export default function PlayerEvolutionPage() {
       {/* Tabs */}
       <div className="flex bg-zinc-950 p-1 rounded-2xl border border-zinc-900 self-start">
         <button
-          onClick={() => setActiveTab("league")}
+          onClick={() => setActiveTab("team")}
           className={`px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
-            activeTab === "league"
+            activeTab === "team"
               ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
               : "text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          League Evolution Feed
+          My Team Development
         </button>
-        {userTeamId && (
-          <button
-            onClick={() => setActiveTab("team")}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
-              activeTab === "team"
-                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            My Team Development
-          </button>
-        )}
         <button
           onClick={() => setActiveTab("player")}
           className={`px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all duration-200 cursor-pointer ${
@@ -624,17 +601,15 @@ export default function PlayerEvolutionPage() {
           </div>
         </div>
       ) : (
-        /* --- TIMELINE FEEDS (LEAGUE OR TEAM) --- */
+        /* --- TIMELINE FEEDS --- */
         <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 md:p-8 shadow-2xl backdrop-blur-sm relative overflow-hidden">
           <div className="flex items-center justify-between border-b border-zinc-900/60 pb-4 mb-6">
             <div>
               <h3 className="text-xl font-bold text-white">
-                {activeTab === "league" ? "League-Wide Evolution Log" : "Franchise Development History"}
+                Franchise Development History
               </h3>
               <p className="text-zinc-500 text-xs mt-0.5">
-                {activeTab === "league"
-                  ? "Real-time updates of all rating progressions and regressions happening across the league."
-                  : "Track progressions for athletes assigned to your front-office roster."}
+                Track progressions for athletes assigned to your front-office roster.
               </p>
             </div>
           </div>

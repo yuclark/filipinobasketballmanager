@@ -838,7 +838,7 @@ export async function simulateBatchDaysAction(
         localTeams = aiResult.updatedTeams;
 
         // Run daily within-season player evolution in local memory state
-        const evoResult = await evolvePlayersListInMemory(localPlayers, seasonYear, day);
+        const evoResult = await evolvePlayersListInMemory(localPlayers, seasonYear, day, userTeamId);
         localPlayers = evoResult.updatedPlayers;
 
         if (evoResult.evolutionsToInsert.length > 0) {
@@ -1160,7 +1160,7 @@ export async function simulateWeekChunkAction(
       localTeams = aiResult.updatedTeams;
 
       // Run daily within-season player evolution in local memory state
-      const evoResult = await evolvePlayersListInMemory(localPlayers, seasonYear, day);
+      const evoResult = await evolvePlayersListInMemory(localPlayers, seasonYear, day, userTeamId);
       localPlayers = evoResult.updatedPlayers;
 
       if (evoResult.evolutionsToInsert.length > 0) {
