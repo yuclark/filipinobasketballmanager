@@ -88,6 +88,15 @@ export default function TradesPage() {
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
 
+  // Find CPU cornerstone
+  const cpuCornerstone = useMemo(() => {
+    if (!cpuCapInfo?.roster || cpuCapInfo.roster.length === 0) return null;
+    return [...cpuCapInfo.roster].sort((a, b) => {
+      if (b.overall !== a.overall) return b.overall - a.overall;
+      return a.age - b.age;
+    })[0];
+  }, [cpuCapInfo?.roster]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -232,15 +241,6 @@ export default function TradesPage() {
       </div>
     );
   }
-
-  // Find CPU cornerstone
-  const cpuCornerstone = useMemo(() => {
-    if (!cpuCapInfo?.roster || cpuCapInfo.roster.length === 0) return null;
-    return [...cpuCapInfo.roster].sort((a, b) => {
-      if (b.overall !== a.overall) return b.overall - a.overall;
-      return a.age - b.age;
-    })[0];
-  }, [cpuCapInfo?.roster]);
 
   // Checkbox selectors
   const toggleUserPlayer = (playerId: string) => {
