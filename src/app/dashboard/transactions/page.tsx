@@ -12,6 +12,7 @@ import {
   Calendar,
   Activity,
   GraduationCap,
+  Sparkles
 } from "lucide-react";
 import React from "react";
 
@@ -202,6 +203,11 @@ export default function TransactionsPage() {
                 minute: "2-digit",
               });
 
+              const isBlockbuster = tx.description.startsWith("BLOCKBUSTER:");
+              const cleanDescription = isBlockbuster 
+                ? tx.description.replace(/^BLOCKBUSTER:\s*/, "") 
+                : tx.description;
+
               return (
                 <div key={tx.id} className="relative pl-8 group">
                   {/* Timeline point */}
@@ -212,9 +218,17 @@ export default function TransactionsPage() {
                   <div className="bg-zinc-950/40 border border-zinc-900 hover:border-zinc-800 rounded-2xl p-5 transition-all shadow-md">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                       {/* Badge and Title */}
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border self-start ${bg}`}>
-                        {label}
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border self-start ${bg}`}>
+                          {label}
+                        </span>
+                        {isBlockbuster && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[9px] font-extrabold uppercase tracking-wider animate-pulse">
+                            <Sparkles className="w-2.5 h-2.5 text-yellow-400" />
+                            Blockbuster
+                          </span>
+                        )}
+                      </div>
                       {/* Day / Date Meta */}
                       <div className="flex items-center gap-2.5 text-zinc-500 text-xs font-bold uppercase tracking-wider">
                         <span>Season {tx.seasonYear} • Day {tx.gameDay}</span>
@@ -225,7 +239,7 @@ export default function TransactionsPage() {
 
                     {/* Details content */}
                     <p className="text-zinc-200 text-sm leading-relaxed font-semibold">
-                      {tx.description}
+                      {cleanDescription}
                     </p>
                   </div>
                 </div>

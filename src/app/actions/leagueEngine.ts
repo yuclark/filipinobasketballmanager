@@ -134,7 +134,9 @@ export async function simulateCpuTradesAction(
                 )
               );
 
-            const description = `TRADE: The ${teamA.city} ${teamA.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}) to the ${teamB.city} ${teamB.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}).`;
+            const isBlockbuster = playerA.overall >= 80 || playerB.overall >= 80;
+            const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+            const description = `${prefix}TRADE: The ${teamA.city} ${teamA.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}) to the ${teamB.city} ${teamB.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}).`;
             await db.insert(transactions).values({
               type: "Trade",
               description,

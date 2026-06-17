@@ -435,7 +435,9 @@ export async function executeUserTradeAction(
       receivedDescs.push(`a ${cp.season} Round ${cp.round} pick`);
     }
 
-    const descStr = `🔄 TRADE: The ${userTeam.city} ${userTeam.name} traded ${userAssetDesc} to the ${cpuTeam.city} ${cpuTeam.name} in exchange for ${receivedDescs.join(" and ")}.`;
+    const isBlockbuster = (userPlayer && userPlayer.overall >= 80) || matchedCpuPlayers.some((p) => p.overall >= 80);
+    const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+    const descStr = `${prefix}🔄 TRADE: The ${userTeam.city} ${userTeam.name} traded ${userAssetDesc} to the ${cpuTeam.city} ${cpuTeam.name} in exchange for ${receivedDescs.join(" and ")}.`;
 
     await db.insert(transactions).values({
       type: "Trade",
@@ -927,7 +929,9 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
 
     const outgoingDescs = outgoingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
     const incomingDescs = incomingPlayersList.map((p) => `${p.firstName} ${p.lastName} (OVR ${p.overall})`).join(", ");
-    const descStr = `🤝 TRADE ACCEPTED: The ${receiverTeam.city} ${receiverTeam.name} accepted a CPU trade proposal from the ${proposerTeam.city} ${proposerTeam.name}. Received: ${outgoingDescs}. Traded away: ${incomingDescs}.`;
+    const isBlockbuster = outgoingPlayersList.some((p) => p.overall >= 80) || incomingPlayersList.some((p) => p.overall >= 80);
+    const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+    const descStr = `${prefix}🤝 TRADE ACCEPTED: The ${receiverTeam.city} ${receiverTeam.name} accepted a CPU trade proposal from the ${proposerTeam.city} ${proposerTeam.name}. Received: ${outgoingDescs}. Traded away: ${incomingDescs}.`;
 
     await db.insert(transactions).values({
       type: "Trade",

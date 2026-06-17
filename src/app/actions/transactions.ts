@@ -182,7 +182,9 @@ export async function signFreeAgentAction(playerId: string, teamId: string) {
         )
       );
 
-    const description = `${team.city} ${team.name} signed free agent ${player.firstName} ${player.lastName} for ${new Intl.NumberFormat(
+    const isBlockbuster = player.overall >= 80;
+    const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+    const description = `${prefix}${team.city} ${team.name} signed free agent ${player.firstName} ${player.lastName} for ${new Intl.NumberFormat(
       "en-PH",
       { style: "currency", currency: "PHP", maximumFractionDigits: 0 }
     ).format(player.salary)}.`;
@@ -304,12 +306,12 @@ export async function sendOfferAction(
     // Age factor (older vets are more easily bought)
     const ageFactor = player.age >= 31 ? Math.min(0.15, (player.age - 30) * 0.02) : 0;
 
-    // OVR-tiered base acceptance probability
+    // OVR-tiered base acceptance probability - higher OVR has higher base chance of signing when met
     const baseChance =
-      player.overall >= 85 ? 0.55
-      : player.overall >= 75 ? 0.72
-      : player.overall >= 65 ? 0.85
-      : 0.95;
+      player.overall >= 85 ? 0.88
+      : player.overall >= 75 ? 0.82
+      : player.overall >= 65 ? 0.75
+      : 0.65;
 
     // Offer ratio bonus/penalty
     const ratioFactor = offerRatio >= 1 
@@ -346,9 +348,11 @@ export async function sendOfferAction(
             eq(playerSalaryHistory.seasonYear, year)
           )
         );
+      const isBlockbuster = player.overall >= 80;
+      const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
       await db.insert(transactions).values({
         type: "Signing",
-        description: `${team.city} ${team.name} signed free agent ${playerName} for ₱${actualOffer.toLocaleString("en-PH")}/yr (OVR ${player.overall}).`,
+        description: `${prefix}${team.city} ${team.name} signed free agent ${playerName} for ₱${actualOffer.toLocaleString("en-PH")}/yr (OVR ${player.overall}).`,
         seasonYear: year,
         gameDay: day,
       });
@@ -712,7 +716,9 @@ export async function executeTradeAction(
       ...picksB.map((p) => `${p.season} ${p.round === 1 ? "1st" : "2nd"} Round Pick`)
     ].join(", ");
 
-    const tradeDesc = `TRADE: ${teamA.city} ${teamA.name} sent ${namesA} to ${teamB.city} ${teamB.name} in exchange for ${namesB}.`;
+    const isBlockbuster = rosterA.some((p) => p.overall >= 80) || rosterB.some((p) => p.overall >= 80);
+    const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+    const tradeDesc = `${prefix}TRADE: ${teamA.city} ${teamA.name} sent ${namesA} to ${teamB.city} ${teamB.name} in exchange for ${namesB}.`;
 
     await db.insert(transactions).values({
       type: "Trade",

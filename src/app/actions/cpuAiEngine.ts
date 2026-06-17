@@ -276,13 +276,29 @@ export async function runCpuDailyAiEngineAction(
           .sort((a, b) => b.overall - a.overall)
           .slice(0, 100);
 
-        // Find qualifying player in FA pool
-        const qualifyingFA = freeAgents.find((fa) => {
+        const qualifyingFAs = freeAgents.filter((fa) => {
           const faGroup = getPositionGroup(fa.position);
           return faGroup === group && teamTotalSalary + fa.salary <= team.budget;
         });
 
-        if (qualifyingFA) {
+        if (qualifyingFAs.length > 0) {
+          // Select one of the qualifying FAs with probability biased towards higher OVR.
+          const candidates = qualifyingFAs.slice(0, 10);
+          const weights = candidates.map((fa) => Math.pow(1.25, fa.overall - 50));
+          const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+          let roll = Math.random() * totalWeight;
+          let selectedFA = candidates[0];
+
+          for (let idx = 0; idx < candidates.length; idx++) {
+            roll -= weights[idx];
+            if (roll <= 0) {
+              selectedFA = candidates[idx];
+              break;
+            }
+          }
+          const qualifyingFA = selectedFA;
+
           // Mutate the state object directly in memory
           qualifyingFA.teamId = team.id;
           qualifyingFA.contractYearsRemaining = 2;
@@ -298,7 +314,9 @@ export async function runCpuDailyAiEngineAction(
               )
             );
 
-          const descStr = `✍️ Front Office: The ${team.city} ${team.name} signed Free Agent ${qualifyingFA.firstName} ${qualifyingFA.lastName} (${qualifyingFA.position}, OVR ${qualifyingFA.overall}) to a 2-year contract of ₱${qualifyingFA.salary.toLocaleString("en-PH")}/yr to address a positional deficit.`;
+          const isBlockbuster = qualifyingFA.overall >= 80;
+          const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+          const descStr = `${prefix}✍️ Front Office: The ${team.city} ${team.name} signed Free Agent ${qualifyingFA.firstName} ${qualifyingFA.lastName} (${qualifyingFA.position}, OVR ${qualifyingFA.overall}) to a 2-year contract of ₱${qualifyingFA.salary.toLocaleString("en-PH")}/yr to address a positional deficit.`;
           await db.insert(transactions).values({
             type: "Signing",
             description: descStr,
@@ -404,7 +422,9 @@ export async function runCpuDailyAiEngineAction(
                       )
                     );
 
-                  const descStr = `🔄 TRADE: The ${teamA.team.city} ${teamA.team.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${teamB.team.city} ${teamB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}) to balance rosters.`;
+                  const isBlockbuster = playerA.overall >= 80 || playerB.overall >= 80;
+                  const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+                  const descStr = `${prefix}🔄 TRADE: The ${teamA.team.city} ${teamA.team.name} traded ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${teamB.team.city} ${teamB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}) to balance rosters.`;
                   await db.insert(transactions).values({
                     type: "Trade",
                     description: descStr,
@@ -509,14 +529,16 @@ export async function runCpuDailyAiEngineAction(
                     )
                   );
 
-                const descStr = `🔄 TRADE: The ${tA.team.city} ${tA.team.name} cleared cap space by sending ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${tB.team.city} ${tB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}).`;
+                 const isBlockbuster = playerA.overall >= 80 || playerB.overall >= 80;
+                 const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
+                 const descStr = `${prefix}🔄 TRADE: The ${tA.team.city} ${tA.team.name} cleared cap space by sending ${playerA.firstName} ${playerA.lastName} (${playerA.position}, OVR ${playerA.overall}) to the ${tB.team.city} ${tB.team.name} in exchange for ${playerB.firstName} ${playerB.lastName} (${playerB.position}, OVR ${playerB.overall}).`;
 
-                await db.insert(transactions).values({
-                  type: "Trade",
-                  description: descStr,
-                  seasonYear,
-                  gameDay,
-                });
+                 await db.insert(transactions).values({
+                   type: "Trade",
+                   description: descStr,
+                   seasonYear,
+                   gameDay,
+                 });
 
                 console.log(`[CPU Daily AI Engine] Asset Optimization Trade Executed: ${descStr}`);
 
