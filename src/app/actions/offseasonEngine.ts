@@ -474,13 +474,24 @@ export async function executeDraftPickAction(teamId: string, playerId: string, p
     const [team] = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);
     if (!team) return { success: false, error: "Team not found." };
 
-    // Update player to active, assign to team, set contract to 3 years
+    // Get draft round
+    const [pick] = await db
+      .select({ round: draftPicks.round })
+      .from(draftPicks)
+      .where(and(eq(draftPicks.pickNumber, pickNumber), eq(draftPicks.season, season)))
+      .limit(1);
+    const draftRound = pick?.round ?? (pickNumber <= 20 ? 1 : 2);
+
+    // Update player to active, assign to team, set contract to 3 years, record draft info
     await db
       .update(players)
       .set({
         teamId,
         status: "Active",
         contractYearsRemaining: 3,
+        draftRound,
+        draftPick: pickNumber,
+        draftYear: season,
       })
       .where(eq(players.id, playerId));
 
@@ -1285,13 +1296,24 @@ async function processSingleDraftPick(
     return { success: false, status: "NO_PROSPECTS", error: "No prospects remaining in the draft pool." };
   }
 
-  // 2. Assign prospect to team and activate
+  // Get draft round
+  const [pick] = await db
+    .select({ round: draftPicks.round })
+    .from(draftPicks)
+    .where(eq(draftPicks.id, pickId))
+    .limit(1);
+  const draftRound = pick?.round ?? (pickNumber <= 20 ? 1 : 2);
+
+  // 2. Assign prospect to team and activate, record draft info
   await db
     .update(players)
     .set({
       teamId: draftingTeamId,
       status: "Active",
       contractYearsRemaining: 3,
+      draftRound,
+      draftPick: pickNumber,
+      draftYear: currentYear,
     })
     .where(eq(players.id, prospect.id));
 

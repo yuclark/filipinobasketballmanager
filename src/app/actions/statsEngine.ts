@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, or } from "drizzle-orm";
-import { players, playerGameStats, games, teams, playerAwards, allLeagueTeams, playerSalaryHistory } from "@/db/schema";
+import { players, playerGameStats, games, teams, playerAwards, allLeagueTeams, playerSalaryHistory, playerEvolutions } from "@/db/schema";
 
 
 export async function getPlayerStatsAction(playerId: string) {
@@ -542,6 +542,9 @@ export async function getPlayerProfileAction(playerId: string) {
         injuryType: players.injuryType,
         isOnTradeBlock: players.isOnTradeBlock,
         yearsPlayed: players.yearsPlayed,
+        draftRound: players.draftRound,
+        draftPick: players.draftPick,
+        draftYear: players.draftYear,
         
         teamName: sql<string>`coalesce(concat(${teams.city}, ' ', ${teams.name}), 'Free Agent')`,
         teamCity: teams.city,
@@ -921,6 +924,19 @@ export async function getPlayerProfileAction(playerId: string) {
       .where(eq(playerSalaryHistory.playerId, playerId))
       .orderBy(desc(playerSalaryHistory.seasonYear));
 
+    const evolutions = await db
+      .select({
+        id: playerEvolutions.id,
+        seasonYear: playerEvolutions.seasonYear,
+        gameDay: playerEvolutions.gameDay,
+        oldOverall: playerEvolutions.oldOverall,
+        newOverall: playerEvolutions.newOverall,
+        attributeChangesJson: playerEvolutions.attributeChangesJson,
+      })
+      .from(playerEvolutions)
+      .where(eq(playerEvolutions.playerId, playerId))
+      .orderBy(desc(playerEvolutions.seasonYear), desc(playerEvolutions.gameDay));
+
     return {
       success: true,
       player: {
@@ -940,6 +956,7 @@ export async function getPlayerProfileAction(playerId: string) {
       logs: formattedLogs,
       awards: formattedAwards,
       salaryHistory,
+      evolutions,
       currentSeasonYear,
     };
   } catch (error: any) {

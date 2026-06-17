@@ -358,17 +358,7 @@ export async function getDraftLotteryPicksAction() {
 // Phase 5: Finalize Offseason Action
 export async function finalizeOffseasonAction() {
   try {
-    // 1. Move unselected prospects (status = 'DraftPool') to Free Agency pool (status = 'Active', teamId = null)
-    await db
-      .update(players)
-      .set({
-        status: "Active",
-        teamId: null,
-        contractYearsRemaining: 3
-      })
-      .where(eq(players.status, "DraftPool"));
-
-    // 2. Fetch current year
+    // Fetch current year
     const lastGame = await db
       .select({ year: games.seasonYear })
       .from(games)
@@ -376,6 +366,17 @@ export async function finalizeOffseasonAction() {
       .limit(1);
     const currentYear = lastGame[0]?.year ?? 2026;
     const nextYear = currentYear + 1;
+
+    // 1. Move unselected prospects (status = 'DraftPool') to Free Agency pool (status = 'Active', teamId = null)
+    await db
+      .update(players)
+      .set({
+        status: "Active",
+        teamId: null,
+        contractYearsRemaining: 3,
+        draftYear: currentYear,
+      })
+      .where(eq(players.status, "DraftPool"));
 
     // Reset dead cap for all teams at start of the new season
     await db.update(teams).set({ deadCap: 0 });

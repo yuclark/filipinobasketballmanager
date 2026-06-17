@@ -12,6 +12,7 @@ interface ClientTabsProps {
   logs: any[];
   currentSeasonYear: number;
   salaryHistory: any[];
+  evolutions: any[];
 }
 
 export default function ClientTabs({
@@ -23,8 +24,9 @@ export default function ClientTabs({
   logs,
   currentSeasonYear,
   salaryHistory = [],
+  evolutions = [],
 }: ClientTabsProps) {
-  const [activeTab, setActiveTab] = useState<"stats" | "attributes" | "logs" | "contract">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "attributes" | "logs" | "contract" | "evolution">("stats");
   const [splitTab, setSplitTab] = useState<"regular" | "playoffs">("regular");
   const [selectedYear, setSelectedYear] = useState<number>(currentSeasonYear);
 
@@ -106,6 +108,16 @@ export default function ClientTabs({
             }`}
           >
             Contract & Salary History
+          </button>
+          <button
+            onClick={() => setActiveTab("evolution")}
+            className={`px-4 py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+              activeTab === "evolution"
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Progression History
           </button>
         </div>
       </div>
@@ -479,6 +491,100 @@ export default function ClientTabs({
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Progression & Evolution History Tab Content */}
+      {activeTab === "evolution" && (
+        <div className="bg-zinc-900/30 border border-zinc-900 rounded-3xl p-6 shadow-2xl">
+          <div className="mb-6">
+            <h3 className="text-lg font-bold text-white mb-1">OVR Progression & Regression History</h3>
+            <p className="text-zinc-550 text-xs font-medium">Historical snapshot of player attribute evolution and overall rating shifts.</p>
+          </div>
+
+          {evolutions.length === 0 ? (
+            <div className="bg-zinc-950/20 border border-zinc-900 rounded-2xl p-12 text-center text-zinc-500 text-sm italic">
+              No progression or regression records found for this player yet.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {evolutions.map((evo: any) => {
+                const delta = evo.newOverall - evo.oldOverall;
+                const isPositive = delta > 0;
+                const isNegative = delta < 0;
+                
+                let changeBadge = (
+                  <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-black uppercase bg-zinc-800 text-zinc-400 border border-zinc-700">
+                    No Change (+0)
+                  </span>
+                );
+                if (isPositive) {
+                  changeBadge = (
+                    <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                      Improved (+{delta})
+                    </span>
+                  );
+                } else if (isNegative) {
+                  changeBadge = (
+                    <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-black uppercase bg-red-500/10 text-red-400 border border-red-500/25">
+                      Regressed ({delta})
+                    </span>
+                  );
+                }
+
+                // Parse attributes changes
+                let attributeChanges: Record<string, number> = {};
+                try {
+                  attributeChanges = typeof evo.attributeChangesJson === "string" 
+                    ? JSON.parse(evo.attributeChangesJson) 
+                    : evo.attributeChangesJson || {};
+                } catch (e) {
+                  attributeChanges = {};
+                }
+
+                const attrList = Object.entries(attributeChanges);
+
+                return (
+                  <div key={evo.id} className="p-4 bg-zinc-950/50 border border-zinc-900 rounded-2xl hover:border-zinc-800 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-sm font-extrabold text-zinc-200">
+                          Season {evo.seasonYear} {evo.gameDay === 0 ? "Offseason" : `Day ${evo.gameDay}`}
+                        </span>
+                        {changeBadge}
+                      </div>
+                      <p className="text-xs text-zinc-550 font-medium">
+                        Overall Rating changed from <span className="font-bold text-zinc-300">{evo.oldOverall}</span> to <span className="font-bold text-zinc-200">{evo.newOverall}</span>
+                      </p>
+                    </div>
+
+                    {attrList.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 md:max-w-md">
+                        {attrList.map(([attrKey, attrVal]) => {
+                          const valNum = Number(attrVal);
+                          const isAttrPos = valNum > 0;
+                          return (
+                            <span
+                              key={attrKey}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                                isAttrPos
+                                  ? "bg-emerald-500/5 text-emerald-400 border-emerald-500/15"
+                                  : "bg-red-500/5 text-red-400 border-red-500/15"
+                              }`}
+                            >
+                              {attrKey}: {isAttrPos ? `+${valNum}` : valNum}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-zinc-650 italic">No attribute changes recorded.</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

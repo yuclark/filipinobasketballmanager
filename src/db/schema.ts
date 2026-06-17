@@ -37,6 +37,9 @@ export const players = pgTable("players", {
   isOnTradeBlock: boolean("is_on_trade_block").default(false).notNull(),
   yearsPlayed: integer("years_played").default(0).notNull(),
   isStarter: boolean("is_starter").default(false).notNull(),
+  draftRound: integer("draft_round"),
+  draftPick: integer("draft_pick"),
+  draftYear: integer("draft_year"),
 });
 
 export const games = pgTable("games", {

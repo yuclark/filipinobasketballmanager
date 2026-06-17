@@ -45,7 +45,7 @@ export default async function PlayerProfilePage({ params }: PageProps) {
     );
   }
 
-  const { player, regularSeasonHistory, playoffHistory, careerRegular, careerPlayoffs, logs, awards, salaryHistory, currentSeasonYear } = profileRes;
+  const { player, regularSeasonHistory, playoffHistory, careerRegular, careerPlayoffs, logs, awards, salaryHistory, evolutions, currentSeasonYear } = profileRes;
 
   const getOverallBadgeClass = (overall: number) => {
     if (overall >= 90) return "bg-orange-500/10 text-orange-400 border border-orange-500/30 shadow-lg shadow-orange-500/10";
@@ -180,6 +180,18 @@ export default async function PlayerProfilePage({ params }: PageProps) {
                   <Award className="w-3.5 h-3.5 text-zinc-500" />
                   <span>College: <b className="text-zinc-200">{college}</b></span>
                 </div>
+                <div className="flex items-center gap-1.5 col-span-2">
+                  <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Draft: <b className="text-zinc-200">{
+                    player.draftPick ? (
+                      `Round ${player.draftRound}, Pick ${player.draftPick} (${player.draftYear})`
+                    ) : player.draftYear ? (
+                      `Undrafted (${player.draftYear})`
+                    ) : (
+                      "Undrafted (2026 Seeded)"
+                    )
+                  }</b></span>
+                </div>
               </div>
             </div>
           </div>
@@ -268,6 +280,7 @@ export default async function PlayerProfilePage({ params }: PageProps) {
             careerPlayoffs={careerPlayoffs}
             logs={logs}
             salaryHistory={salaryHistory || []}
+            evolutions={evolutions || []}
             currentSeasonYear={currentSeasonYear ?? 2026}
           />
         </div>
