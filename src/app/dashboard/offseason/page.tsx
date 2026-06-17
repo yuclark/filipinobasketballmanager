@@ -129,6 +129,7 @@ export default function OffseasonWizardPage() {
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [wizardSuccess, setWizardSuccess] = useState<string | null>(null);
   const [userTeamDetails, setUserTeamDetails] = useState<any>(null);
+  const [dbRoster, setDbRoster] = useState<any[]>([]);
 
   // Phase 2: Evolution State
   const [evolutionLogs, setEvolutionLogs] = useState<string[]>([]);
@@ -173,6 +174,14 @@ export default function OffseasonWizardPage() {
   const [freeAgencyLogs, setFreeAgencyLogs] = useState<string[]>([]);
   const [freeAgencyRunning, setFreeAgencyRunning] = useState<boolean>(false);
   const [freeAgentsCount, setFreeAgentsCount] = useState<number>(0);
+
+  // Derived state for offseason re-signings
+  const pendingExpiringSalary = expiringPlayers
+    .filter(p => !reSignedPlayerIds.includes(p.id))
+    .reduce((sum, p) => sum + p.salary, 0);
+  const displayTotalSalaries = totalSalaries - pendingExpiringSalary;
+
+  const guaranteedCount = dbRoster.filter(p => p.contractYearsRemaining > 1).length;
 
   useEffect(() => {
     setMounted(true);
@@ -378,6 +387,7 @@ export default function OffseasonWizardPage() {
         const rosterRes = await getTeamRoster(userTeamId);
         if (rosterRes) {
           setUserTeamDetails(rosterRes.team);
+          setDbRoster(rosterRes.players);
         }
         // Fetch expiring players
         const expRes = await getExpiringPlayersAction(userTeamId);
@@ -512,6 +522,7 @@ export default function OffseasonWizardPage() {
             setUserBudget(capRes.budget!);
             setTotalSalaries(capRes.totalSalaries!);
             setUserDeadCap(capRes.deadCap!);
+            setDbRoster(capRes.roster || []);
           }
         }
         setWizardSuccess("Player re-signed successfully!");
@@ -1164,20 +1175,59 @@ export default function OffseasonWizardPage() {
               
               <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 space-y-4">
                 <div>
-                  <span className="text-zinc-500 font-bold text-[10px] uppercase block mb-1">Payroll / Cap Ceiling</span>
+                  <span className="text-zinc-550 font-bold text-[10px] uppercase block mb-1">Payroll / Cap Ceiling</span>
                   <span className="text-lg font-extrabold text-white">
-                    ₱{(totalSalaries + userDeadCap).toLocaleString("en-PH")} / ₱{userBudget.toLocaleString("en-PH")}
+                    ₱{(displayTotalSalaries + userDeadCap).toLocaleString("en-PH")} / ₱{userBudget.toLocaleString("en-PH")}
                   </span>
                   {userDeadCap > 0 && (
-                    <span className="text-[9px] text-zinc-500 block">Includes ₱{userDeadCap.toLocaleString("en-PH")} dead cap</span>
+                    <span className="text-[9px] text-zinc-550 block">Includes ₱{userDeadCap.toLocaleString("en-PH")} dead cap</span>
                   )}
                 </div>
                 
                 <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-orange-500" 
-                    style={{ width: `${Math.min(((totalSalaries + userDeadCap) / userBudget) * 100, 100)}%` }}
+                    style={{ width: `${Math.min(((displayTotalSalaries + userDeadCap) / userBudget) * 100, 100)}%` }}
                   />
+                </div>
+              </div>
+
+              {/* Roster Summary Section */}
+              <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 space-y-4">
+                <div>
+                  <span className="text-zinc-550 font-bold text-[10px] uppercase block mb-1">Guaranteed Roster Spots</span>
+                  <span className="text-lg font-extrabold text-white">
+                    {guaranteedCount} / 18 <span className="text-xs text-zinc-500 font-medium">players under contract</span>
+                  </span>
+                </div>
+
+                <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-500" 
+                    style={{ width: `${Math.min((guaranteedCount / 18) * 100, 100)}%` }}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5 pt-1 text-xs font-semibold">
+                  <div className="flex justify-between text-zinc-400">
+                    <span>Total Current Roster:</span>
+                    <span className="text-zinc-200">{dbRoster.length} players</span>
+                  </div>
+                  <div className="flex justify-between text-zinc-400">
+                    <span>Expiring Contracts:</span>
+                    <span className="text-zinc-200">{expiringPlayers.length} players</span>
+                  </div>
+                  {guaranteedCount < 12 ? (
+                    <div className="mt-2 px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-[11px] font-bold flex items-center justify-between">
+                      <span>Below Minimum (12):</span>
+                      <span>Must sign {12 - guaranteedCount} more</span>
+                    </div>
+                  ) : (
+                    <div className="mt-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[11px] font-bold flex items-center justify-between">
+                      <span>Roster Minimum Met!</span>
+                      <span>Available spots: {18 - guaranteedCount}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

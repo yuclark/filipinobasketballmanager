@@ -50,7 +50,9 @@ export async function reSignPlayerAction(playerId: string, years: number, salary
     if (!team) return { success: false, error: "Team not found." };
 
     const teamPlayers = await db.select().from(players).where(eq(players.teamId, player.teamId));
-    const totalSalaries = teamPlayers.reduce((sum, p) => sum + p.salary, 0);
+    // Filter active salaries list to only include non-expiring players or the player being re-signed
+    const activeSalariesList = teamPlayers.filter(p => p.id === playerId || p.contractYearsRemaining > 1);
+    const totalSalaries = activeSalariesList.reduce((sum, p) => sum + p.salary, 0);
     const newTotal = totalSalaries - player.salary + salary;
 
     if (newTotal > team.budget) {
@@ -150,7 +152,10 @@ export async function runCpuReSigningsAction() {
 
     for (const team of allTeams) {
       const teamPlayers = await db.select().from(players).where(eq(players.teamId, team.id));
-      let currentSalaries = teamPlayers.reduce((sum, p) => sum + p.salary, 0);
+      // Initialize active salaries to only include non-expiring players (excl. expiring ones)
+      let currentSalaries = teamPlayers
+        .filter(p => p.contractYearsRemaining > 1)
+        .reduce((sum, p) => sum + p.salary, 0);
 
       const expiring = playersByTeam[team.id] || [];
       for (const p of expiring) {
@@ -169,15 +174,14 @@ export async function runCpuReSigningsAction() {
 
         if (shouldAttemptExtension) {
           const newSalary = p.overall * 40000;
-          const salaryDiff = newSalary - p.salary;
-          if (currentSalaries + salaryDiff <= team.budget) {
+          if (currentSalaries + newSalary <= team.budget) {
             const contractYears = p.overall >= 80 ? 3 : 2;
             updates.push({
               id: p.id,
               contractYearsRemaining: contractYears,
               salary: newSalary
             });
-            currentSalaries += salaryDiff;
+            currentSalaries += newSalary;
             const logMsg = `✍️ [${team.city} ${team.name}] re-signed ${p.overall >= 80 ? "star " : ""}${p.firstName} ${p.lastName} (OVR ${p.overall}) to a ${contractYears}-year extension worth ₱${newSalary.toLocaleString("en-PH")}/yr.`;
             logs.push(logMsg);
             transactionInserts.push({
