@@ -733,3 +733,18 @@ export async function executeTradeAction(
     return { success: false, error: error.message || "Failed to execute trade." };
   }
 }
+
+export async function getLeagueHistoryContextAction() {
+  try {
+    const allTeams = await db
+      .select({ id: teams.id, name: teams.name, city: teams.city })
+      .from(teams);
+    const allPlayers = await db
+      .select({ id: players.id, firstName: players.firstName, lastName: players.lastName })
+      .from(players);
+    return { success: true, teams: allTeams, players: allPlayers };
+  } catch (error: any) {
+    console.error("Failed to fetch league history context:", error);
+    return { success: false, error: error.message || "Failed to load context." };
+  }
+}

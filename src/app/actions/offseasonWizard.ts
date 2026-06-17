@@ -2,10 +2,11 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, inArray, isNull, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory, playerAwards, allLeagueTeams, playerEvolutions } from "@/db/schema";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { generateRookiePoolAction, replenishLeagueRostersAction, getOrCreateActiveDraftSessionBySeason, initializeDraftSessionAction } from "@/app/actions/offseasonEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
+import { calculateContractDemand } from "@/lib/salaryHelper";
 
 // Dynamic team budget cap replaces SALARY_CAP
 
@@ -23,7 +24,69 @@ export async function getExpiringPlayersAction(teamId: string) {
         )
       )
       .orderBy(desc(players.overall));
-    return { success: true, players: expiring };
+
+    const lastGame = await db
+      .select({ year: games.seasonYear })
+      .from(games)
+      .orderBy(desc(games.seasonYear))
+      .limit(1);
+    const currentYear = lastGame[0]?.year ?? 2026;
+
+    const playerIds = expiring.map((p) => p.id);
+
+    let evolutions: any[] = [];
+    let awards: any[] = [];
+    let allLeague: any[] = [];
+
+    if (playerIds.length > 0) {
+      evolutions = await db
+        .select()
+        .from(playerEvolutions)
+        .where(
+          and(
+            inArray(playerEvolutions.playerId, playerIds),
+            eq(playerEvolutions.seasonYear, currentYear)
+          )
+        );
+
+      awards = await db
+        .select()
+        .from(playerAwards)
+        .where(
+          and(
+            inArray(playerAwards.playerId, playerIds),
+            eq(playerAwards.seasonYear, currentYear)
+          )
+        );
+
+      allLeague = await db
+        .select()
+        .from(allLeagueTeams)
+        .where(
+          and(
+            inArray(allLeagueTeams.playerId, playerIds),
+            eq(allLeagueTeams.seasonYear, currentYear)
+          )
+        );
+    }
+
+    const evolutionsMap = new Map(evolutions.map((e) => [e.playerId, e]));
+    const awardsSet = new Set(awards.map((a) => a.playerId));
+    const allLeagueSet = new Set(allLeague.map((al) => al.playerId));
+
+    const playersWithDemands = expiring.map((p) => {
+      const evo = evolutionsMap.get(p.id);
+      const deltaOvr = evo ? evo.newOverall - evo.oldOverall : 0;
+      const hasAward = awardsSet.has(p.id);
+      const hasAllLeague = allLeagueSet.has(p.id);
+      const demand = calculateContractDemand(p, deltaOvr, hasAward, hasAllLeague);
+      return {
+        ...p,
+        demand,
+      };
+    });
+
+    return { success: true, players: playersWithDemands };
   } catch (error: any) {
     console.error("Failed to fetch expiring players:", error);
     return { success: false, error: error.message || "Failed to fetch expiring players." };
@@ -139,6 +202,48 @@ export async function runCpuReSigningsAction() {
       .limit(1);
     const currentYear = lastGame[0]?.year ?? 2026;
 
+    const playerIds = expiringCpuPlayers.map((p) => p.id);
+
+    let evolutions: any[] = [];
+    let awards: any[] = [];
+    let allLeague: any[] = [];
+
+    if (playerIds.length > 0) {
+      evolutions = await db
+        .select()
+        .from(playerEvolutions)
+        .where(
+          and(
+            inArray(playerEvolutions.playerId, playerIds),
+            eq(playerEvolutions.seasonYear, currentYear)
+          )
+        );
+
+      awards = await db
+        .select()
+        .from(playerAwards)
+        .where(
+          and(
+            inArray(playerAwards.playerId, playerIds),
+            eq(playerAwards.seasonYear, currentYear)
+          )
+        );
+
+      allLeague = await db
+        .select()
+        .from(allLeagueTeams)
+        .where(
+          and(
+            inArray(allLeagueTeams.playerId, playerIds),
+            eq(allLeagueTeams.seasonYear, currentYear)
+          )
+        );
+    }
+
+    const evolutionsMap = new Map(evolutions.map((e) => [e.playerId, e]));
+    const awardsSet = new Set(awards.map((a) => a.playerId));
+    const allLeagueSet = new Set(allLeague.map((al) => al.playerId));
+
     // Group expiring players by team
     const playersByTeam: Record<string, typeof expiringCpuPlayers> = {};
     for (const player of expiringCpuPlayers) {
@@ -173,7 +278,12 @@ export async function runCpuReSigningsAction() {
         }
 
         if (shouldAttemptExtension) {
-          const newSalary = p.overall * 40000;
+          const evo = evolutionsMap.get(p.id);
+          const deltaOvr = evo ? evo.newOverall - evo.oldOverall : 0;
+          const hasAward = awardsSet.has(p.id);
+          const hasAllLeague = allLeagueSet.has(p.id);
+          const newSalary = calculateContractDemand(p, deltaOvr, hasAward, hasAllLeague);
+
           if (currentSalaries + newSalary <= team.budget) {
             const contractYears = p.overall >= 80 ? 3 : 2;
             updates.push({

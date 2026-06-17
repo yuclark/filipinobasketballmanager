@@ -70,6 +70,7 @@ interface Player {
   contractYearsRemaining: number;
   status: string;
   yearsPlayed?: number;
+  demand?: number;
 }
 
 interface Prospect {
@@ -1089,7 +1090,7 @@ export default function OffseasonWizardPage() {
                 {expiringPlayers
                   .filter(p => !reSignedPlayerIds.includes(p.id) && !declinedPlayerIds.includes(p.id))
                   .map((player) => {
-                    const demand = player.overall * 40000;
+                    const demand = player.demand || (player.overall * 40000);
                     return (
                       <div 
                         key={player.id}

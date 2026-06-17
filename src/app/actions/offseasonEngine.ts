@@ -2,11 +2,12 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory, playerEvolutions } from "@/db/schema";
+import { players, teams, games, transactions, draftPicks, draftSessions, playerSalaryHistory, playerEvolutions, playerAwards, allLeagueTeams } from "@/db/schema";
 import { MIN_ROSTER_SIZE } from "@/lib/constants";
 import { generateScheduleAction } from "@/app/actions/leagueEngine";
 import { enforceLeagueRosterLimitsAction } from "@/app/actions/cpuAiEngine";
 import { revalidatePath } from "next/cache";
+import { calculateContractDemand, calculateRookieSalary } from "@/lib/salaryHelper";
 
 import {
   FILIPINO_FIRST_NAMES as FIRST_NAMES,
@@ -93,7 +94,7 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
         (threePoint + insideScoring + playmaking + perimeterDefense + interiorDefense + rebounding + speed + stamina) / 8
       );
 
-      const salary = overall * 40000;
+      const salary = calculateRookieSalary(overall);
 
       prospects.push({
         teamId: null,
@@ -147,6 +148,20 @@ export async function processPlayerEvolutionAction() {
       .orderBy(desc(games.seasonYear))
       .limit(1);
     const currentYear = lastGame[0]?.year ?? 2026;
+
+    // Fetch awards and all-league selections for the completed season (currentYear)
+    const completedSeasonAwards = await db
+      .select({ playerId: playerAwards.playerId })
+      .from(playerAwards)
+      .where(eq(playerAwards.seasonYear, currentYear));
+      
+    const completedSeasonAllLeague = await db
+      .select({ playerId: allLeagueTeams.playerId })
+      .from(allLeagueTeams)
+      .where(eq(allLeagueTeams.seasonYear, currentYear));
+
+    const awardsSet = new Set(completedSeasonAwards.map(a => a.playerId));
+    const allLeagueSet = new Set(completedSeasonAllLeague.map(al => al.playerId));
 
     const evolutionLogs: string[] = [];
     const updatedPlayers: any[] = [];
@@ -366,11 +381,21 @@ export async function processPlayerEvolutionAction() {
         status: statusTag,
       });
 
+      let nextSalary = player.salary;
+      const isFreeAgent = player.teamId === null;
+      const isExpiring = nextContractYears <= 0 && player.teamId !== null;
+
+      if (isFreeAgent || isExpiring) {
+        const hasAward = awardsSet.has(player.id);
+        const hasAllLeague = allLeagueSet.has(player.id);
+        nextSalary = calculateContractDemand(player, deltaOverall, hasAward, hasAllLeague);
+      }
+
       updatedPlayers.push({
         ...player,
         age: nextAge,
         overall: nextOverall,
-        salary: nextOverall * 40000,
+        salary: nextSalary,
         threePoint: nextThreePoint,
         insideScoring: nextInsideScoring,
         playmaking: nextPlaymaking,
@@ -920,6 +945,166 @@ export async function runOffseasonFreeAgencyAction(userTeamId: string) {
         budget: team.budget,
       };
     }
+
+    // Pass 0: Superstar Signings & Cap Clearing (OVR >= 80)
+    const superstars = freeAgents.filter(fa => fa.overall >= 80);
+    for (const superstar of superstars) {
+      let bestSuitorId: string | null = null;
+      let suitorWaivePlayerIds: string[] = [];
+      let suitorClearedPayrollDiff = 0;
+      let bestTeamScore = -99999999;
+
+      for (const team of cpuTeams) {
+        const state = teamState[team.id];
+        if (state.size >= 18) continue;
+
+        const capRemaining = state.budget - state.payroll;
+
+        if (superstar.salary <= capRemaining) {
+          const score = capRemaining;
+          if (score > bestTeamScore) {
+            bestTeamScore = score;
+            bestSuitorId = team.id;
+            suitorWaivePlayerIds = [];
+            suitorClearedPayrollDiff = 0;
+          }
+        } else {
+          // Can sign by waiving players?
+          const teamPlayers = rosters[team.id] || [];
+          const waiveCandidates = teamPlayers
+            .filter(p => p.overall <= 70 && !p.isStarter)
+            .sort((a, b) => a.overall - b.overall);
+
+          let waivedSalaries = 0;
+          let waivedCount = 0;
+          const candidatesToWaive: typeof teamPlayers = [];
+
+          for (const candidate of waiveCandidates) {
+            waivedSalaries += candidate.salary;
+            waivedCount++;
+            candidatesToWaive.push(candidate);
+
+            const netSavings = Math.round(candidate.salary * 0.5);
+            const projectedCapRemaining = capRemaining + netSavings;
+            const projectedSize = state.size - waivedCount + 1;
+
+            if (superstar.salary <= projectedCapRemaining && projectedSize >= 12) {
+              const score = projectedCapRemaining - superstar.salary;
+              if (score > bestTeamScore) {
+                bestTeamScore = score;
+                bestSuitorId = team.id;
+                suitorWaivePlayerIds = candidatesToWaive.map(c => c.id);
+                suitorClearedPayrollDiff = candidatesToWaive.reduce((sum, c) => sum - Math.round(c.salary * 0.5), 0);
+              }
+              break;
+            }
+            if (waivedCount >= 2) break;
+          }
+        }
+      }
+
+      if (bestSuitorId) {
+        const teamObj = allTeams.find(t => t.id === bestSuitorId)!;
+        const state = teamState[bestSuitorId];
+
+        if (suitorWaivePlayerIds.length > 0) {
+          const waivedPlayersList = (rosters[bestSuitorId] || []).filter(p => suitorWaivePlayerIds.includes(p.id));
+
+          for (const wp of waivedPlayersList) {
+            const penalty = Math.round(wp.salary * 0.5);
+
+            await db
+              .update(players)
+              .set({ teamId: null, isStarter: false, contractYearsRemaining: 1 })
+              .where(eq(players.id, wp.id));
+
+            await db
+              .update(teams)
+              .set({ deadCap: sql`dead_cap + ${penalty}` })
+              .where(eq(teams.id, bestSuitorId));
+
+            await db
+              .update(playerSalaryHistory)
+              .set({ teamId: null })
+              .where(
+                and(
+                  eq(playerSalaryHistory.playerId, wp.id),
+                  eq(playerSalaryHistory.seasonYear, currentYear + 1)
+                )
+              );
+
+            freeAgents.push({
+              ...wp,
+              teamId: null,
+              contractYearsRemaining: 1
+            });
+
+            const waiveMsg = `🔄 [Cap Clearing] [${teamObj.city} ${teamObj.name}] waived ${wp.firstName} ${wp.lastName} (OVR ${wp.overall}) to clear cap space (penalty: ₱${penalty.toLocaleString("en-PH")} dead cap).`;
+            logs.push(waiveMsg);
+            await db.insert(transactions).values({
+              type: "Release",
+              description: waiveMsg,
+              seasonYear: currentYear,
+              gameDay: 82,
+            });
+          }
+
+          rosters[bestSuitorId] = (rosters[bestSuitorId] || []).filter(p => !suitorWaivePlayerIds.includes(p.id));
+          state.payroll += suitorClearedPayrollDiff;
+          state.size -= suitorWaivePlayerIds.length;
+        }
+
+        const contractYears = 3;
+        await db
+          .update(players)
+          .set({
+            teamId: bestSuitorId,
+            contractYearsRemaining: contractYears,
+            salary: superstar.salary,
+          })
+          .where(eq(players.id, superstar.id));
+
+        const upcomingYear = currentYear + 1;
+        await db
+          .delete(playerSalaryHistory)
+          .where(
+            and(
+              eq(playerSalaryHistory.playerId, superstar.id),
+              eq(playerSalaryHistory.seasonYear, upcomingYear)
+            )
+          );
+        await db.insert(playerSalaryHistory).values({
+          playerId: superstar.id,
+          seasonYear: upcomingYear,
+          teamId: bestSuitorId,
+          salary: superstar.salary,
+        });
+
+        const signMsg = `🔥 [Superstar] [${teamObj.city} ${teamObj.name}] signed superstar free agent ${superstar.firstName} ${superstar.lastName} (OVR ${superstar.overall}) for ₱${superstar.salary.toLocaleString("en-PH")}/yr.`;
+        logs.push(signMsg);
+        await db.insert(transactions).values({
+          type: "Signing",
+          description: signMsg,
+          seasonYear: currentYear,
+          gameDay: 82,
+        });
+
+        const faIndex = freeAgents.findIndex(fa => fa.id === superstar.id);
+        if (faIndex !== -1) freeAgents.splice(faIndex, 1);
+
+        const signedPlayerObj = {
+          ...superstar,
+          teamId: bestSuitorId,
+          contractYearsRemaining: contractYears
+        };
+        rosters[bestSuitorId].push(signedPlayerObj);
+
+        state.payroll += superstar.salary;
+        state.size++;
+      }
+    }
+
+    freeAgents.sort((a, b) => b.overall - a.overall);
 
     // Pass 1: CPU teams sign players to enforce minimum roster size of 12
     for (const team of cpuTeams) {

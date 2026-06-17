@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTransactionsAction } from "@/app/actions/transactions";
+import { getTransactionsAction, getLeagueHistoryContextAction } from "@/app/actions/transactions";
+import Link from "next/link";
 import {
   FileText,
   Loader2,
@@ -25,7 +26,117 @@ interface Transaction {
   createdAt: string | Date;
 }
 
-type FilterType = "All" | "Trade" | "Signing" | "Injury" | "Draft";
+function renderDescription(text: string, teamsList: any[], playersList: any[]) {
+  if (!text) return "";
+  if (teamsList.length === 0 && playersList.length === 0) return text;
+
+  // Sort teams and players by name length descending to avoid partial matches
+  const sortedTeams = [...teamsList].sort((a, b) => {
+    const nameA = `${a.city} ${a.name}`;
+    const nameB = `${b.city} ${b.name}`;
+    return nameB.length - nameA.length;
+  });
+
+  const sortedPlayers = [...playersList].sort((a, b) => {
+    const nameA = `${a.firstName} ${a.lastName}`;
+    const nameB = `${b.firstName} ${b.lastName}`;
+    return nameB.length - nameA.length;
+  });
+
+  interface Match {
+    index: number;
+    length: number;
+    type: "team" | "player";
+    id: string;
+    text: string;
+  }
+
+  const matches: Match[] = [];
+
+  // Find team matches
+  for (const t of sortedTeams) {
+    const fullName = `${t.city} ${t.name}`;
+    let pos = text.indexOf(fullName);
+    while (pos !== -1) {
+      const overlaps = matches.some(m => pos < m.index + m.length && pos + fullName.length > m.index);
+      if (!overlaps) {
+        matches.push({
+          index: pos,
+          length: fullName.length,
+          type: "team",
+          id: t.id,
+          text: fullName
+        });
+      }
+      pos = text.indexOf(fullName, pos + 1);
+    }
+  }
+
+  // Find player matches
+  for (const p of sortedPlayers) {
+    const fullName = `${p.firstName} ${p.lastName}`;
+    let pos = text.indexOf(fullName);
+    while (pos !== -1) {
+      const overlaps = matches.some(m => pos < m.index + m.length && pos + fullName.length > m.index);
+      if (!overlaps) {
+        matches.push({
+          index: pos,
+          length: fullName.length,
+          type: "player",
+          id: p.id,
+          text: fullName
+        });
+      }
+      pos = text.indexOf(fullName, pos + 1);
+    }
+  }
+
+  // Sort matches by index ascending
+  matches.sort((a, b) => a.index - b.index);
+
+  if (matches.length === 0) {
+    return text;
+  }
+
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  matches.forEach((m, idx) => {
+    if (m.index > lastIndex) {
+      elements.push(text.substring(lastIndex, m.index));
+    }
+    if (m.type === "team") {
+      elements.push(
+        <Link
+          key={`team-${m.id}-${idx}`}
+          href={`/dashboard/teams/${m.id}`}
+          className="text-orange-400 hover:text-orange-300 font-bold hover:underline transition-all"
+        >
+          {m.text}
+        </Link>
+      );
+    } else {
+      elements.push(
+        <Link
+          key={`player-${m.id}-${idx}`}
+          href={`/dashboard/players/${m.id}`}
+          className="text-blue-400 hover:text-blue-300 font-bold hover:underline transition-all"
+        >
+          {m.text}
+        </Link>
+      );
+    }
+    lastIndex = m.index + m.length;
+  });
+
+  if (lastIndex < text.length) {
+    elements.push(text.substring(lastIndex));
+  }
+
+  return <>{elements}</>;
+}
+
+type FilterType = "All" | "Trade" | "Signing" | "Release" | "Injury" | "Draft";
 
 export default function TransactionsPage() {
   const [mounted, setMounted] = useState(false);
@@ -34,6 +145,8 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<FilterType>("All");
   const [error, setError] = useState<string | null>(null);
+  const [teamsList, setTeamsList] = useState<any[]>([]);
+  const [playersList, setPlayersList] = useState<any[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -49,6 +162,12 @@ export default function TransactionsPage() {
       setError(null);
       const res = await getTransactionsAction();
       setTransactions((res as unknown as Transaction[]) || []);
+
+      const contextRes = await getLeagueHistoryContextAction();
+      if (contextRes.success) {
+        setTeamsList(contextRes.teams || []);
+        setPlayersList(contextRes.players || []);
+      }
     } catch (err: any) {
       console.error(err);
       setError("Failed to load transactions history.");
@@ -239,7 +358,7 @@ export default function TransactionsPage() {
 
                     {/* Details content */}
                     <p className="text-zinc-200 text-sm leading-relaxed font-semibold">
-                      {cleanDescription}
+                      {renderDescription(cleanDescription, teamsList, playersList)}
                     </p>
                   </div>
                 </div>
