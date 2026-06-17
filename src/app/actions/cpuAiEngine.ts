@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { eq, and, desc, sql, isNull, inArray, isNotNull } from "drizzle-orm";
-import { players, teams, games, transactions, playerSalaryHistory } from "@/db/schema";
+import { players, teams, games, transactions, playerSalaryHistory, saveSlots } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 
 
@@ -571,14 +571,21 @@ export async function ensureTeamStarters(teamId: string, tx: any = db) {
 
   if (teamPlayers.length === 0) return;
 
+  // Query userTeamId from active save slot to see if this is the user's team
+  const [activeSave] = await tx
+    .select({ userTeamId: saveSlots.userTeamId })
+    .from(saveSlots)
+    .limit(1);
+  const isUserTeam = activeSave?.userTeamId === teamId;
+
   // Filter healthy players (injuryDaysRemaining <= 0 or null)
   const healthyPlayers = teamPlayers.filter((p: any) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
 
   // Group healthy players who are currently starters
   const healthyStarters = healthyPlayers.filter((p: any) => p.isStarter);
 
-  if (healthyStarters.length === 5) {
-    // Make sure all other players on the team are NOT starters
+  // Preserve manual user adjustments if exactly 5 starters are healthy
+  if (isUserTeam && healthyStarters.length === 5) {
     const starterIds = new Set(healthyStarters.map((p: any) => p.id));
     const toClear = teamPlayers.filter((p: any) => p.isStarter && !starterIds.has(p.id));
     if (toClear.length > 0) {
@@ -590,12 +597,35 @@ export async function ensureTeamStarters(teamId: string, tx: any = db) {
     return;
   }
 
-  // If we don't have exactly 5 healthy starters, let's select the top 5 overall healthy players as starters
-  const sortedHealthy = [...healthyPlayers].sort((a: any, b: any) => b.overall - a.overall);
-  const targetStarters = sortedHealthy.slice(0, 5);
-  const targetStarterIds = new Set(targetStarters.map((p: any) => p.id));
+  // CPU team (or user team with injury/imbalance): Always pick a position-balanced lineup (2 Guards, 2 Forwards, 1 Center) of top players
+  const guards = healthyPlayers.filter((p: any) => getPositionGroup(p.position) === "G").sort((a: any, b: any) => b.overall - a.overall);
+  const forwards = healthyPlayers.filter((p: any) => getPositionGroup(p.position) === "F").sort((a: any, b: any) => b.overall - a.overall);
+  const centers = healthyPlayers.filter((p: any) => getPositionGroup(p.position) === "C").sort((a: any, b: any) => b.overall - a.overall);
 
-  // If we don't even have 5 healthy players total, add fallback active players sorted by overall rating
+  const selectedStarters: any[] = [];
+
+  // 1. Top 2 Guards
+  selectedStarters.push(...guards.slice(0, 2));
+  // 2. Top 2 Forwards
+  selectedStarters.push(...forwards.slice(0, 2));
+  // 3. Top 1 Center
+  selectedStarters.push(...centers.slice(0, 1));
+
+  const targetStarterIds = new Set(selectedStarters.map((p: any) => p.id));
+
+  // 4. Fill remaining spots with highest overall healthy players not yet selected if shortage
+  if (targetStarterIds.size < 5) {
+    const remainingHealthy = healthyPlayers
+      .filter((p: any) => !targetStarterIds.has(p.id))
+      .sort((a: any, b: any) => b.overall - a.overall);
+    
+    for (const p of remainingHealthy) {
+      if (targetStarterIds.size >= 5) break;
+      targetStarterIds.add(p.id);
+    }
+  }
+
+  // 5. Fallback: If we still don't have 5 healthy players total, add fallback active players sorted by overall rating
   if (targetStarterIds.size < 5) {
     const sortedAllActive = [...teamPlayers].sort((a: any, b: any) => b.overall - a.overall);
     for (const p of sortedAllActive) {

@@ -75,15 +75,19 @@ export async function generateRookiePoolAction(seasonYear: number, forceRegenera
         ? LUZON_HOMETOWNS[Math.floor(Math.random() * LUZON_HOMETOWNS.length)]
         : VISMIN_HOMETOWNS[Math.floor(Math.random() * VISMIN_HOMETOWNS.length)];
 
-      // Skills between 45 and 82
-      const threePoint = Math.floor(Math.random() * 38) + 45;
-      const insideScoring = Math.floor(Math.random() * 38) + 45;
-      const playmaking = Math.floor(Math.random() * 38) + 45;
-      const perimeterDefense = Math.floor(Math.random() * 38) + 45;
-      const interiorDefense = Math.floor(Math.random() * 38) + 45;
-      const rebounding = Math.floor(Math.random() * 38) + 45;
-      const speed = Math.floor(Math.random() * 38) + 45;
-      const stamina = Math.floor(Math.random() * 38) + 45;
+      // 10% chance to generate an elite prospect with high base skills (65 to 87 OVR)
+      const isElite = Math.random() < 0.10;
+      const minAttr = isElite ? 65 : 45;
+      const rangeAttr = isElite ? 22 : 38;
+
+      const threePoint = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const insideScoring = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const playmaking = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const perimeterDefense = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const interiorDefense = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const rebounding = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const speed = Math.floor(Math.random() * rangeAttr) + minAttr;
+      const stamina = Math.floor(Math.random() * rangeAttr) + minAttr;
 
       const overall = Math.round(
         (threePoint + insideScoring + playmaking + perimeterDefense + interiorDefense + rebounding + speed + stamina) / 8
