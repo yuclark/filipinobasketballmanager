@@ -375,7 +375,7 @@ export async function processPlayerEvolutionAction() {
         rebounding: nextRebounding,
         speed: nextSpeed,
         stamina: nextStamina,
-        contractYearsRemaining: nextContractYears <= 0 ? 3 : nextContractYears,
+        contractYearsRemaining: nextContractYears <= 0 ? 1 : nextContractYears,
         teamId: nextTeamId,
         yearsPlayed: player.yearsPlayed + 1,
       });

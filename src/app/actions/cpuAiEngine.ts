@@ -157,12 +157,13 @@ export async function enforceLeagueRosterLimitsAction() {
             teamRoster.push(chosenPlayer);
           } else {
             // Assign existing free agent to team (bypassing salary cap check!)
+            const contractYears = bestFa.overall >= 78 ? 3 : 2;
             const [updated] = await db
               .update(players)
               .set({
                 teamId: team.id,
                 salary: 500000,
-                contractYearsRemaining: 2,
+                contractYearsRemaining: contractYears,
               })
               .where(eq(players.id, bestFa.id))
               .returning();
@@ -301,7 +302,8 @@ export async function runCpuDailyAiEngineAction(
 
           // Mutate the state object directly in memory
           qualifyingFA.teamId = team.id;
-          qualifyingFA.contractYearsRemaining = 2;
+          const contractYears = qualifyingFA.overall >= 78 ? 3 : 2;
+          qualifyingFA.contractYearsRemaining = contractYears;
 
           // Also update playerSalaryHistory table in the database for the current season
           await db
@@ -316,7 +318,7 @@ export async function runCpuDailyAiEngineAction(
 
           const isBlockbuster = qualifyingFA.overall >= 80;
           const prefix = isBlockbuster ? "BLOCKBUSTER: " : "";
-          const descStr = `${prefix}✍️ Front Office: The ${team.city} ${team.name} signed Free Agent ${qualifyingFA.firstName} ${qualifyingFA.lastName} (${qualifyingFA.position}, OVR ${qualifyingFA.overall}) to a 2-year contract of ₱${qualifyingFA.salary.toLocaleString("en-PH")}/yr to address a positional deficit.`;
+          const descStr = `${prefix}✍️ Front Office: The ${team.city} ${team.name} signed Free Agent ${qualifyingFA.firstName} ${qualifyingFA.lastName} (${qualifyingFA.position}, OVR ${qualifyingFA.overall}) to a ${contractYears}-year contract of ₱${qualifyingFA.salary.toLocaleString("en-PH")}/yr to address a positional deficit.`;
           await db.insert(transactions).values({
             type: "Signing",
             description: descStr,
@@ -330,8 +332,8 @@ export async function runCpuDailyAiEngineAction(
       }
     }
 
-    // ─── 2. CPU-TO-CPU TRADES (Only before Day 50) ───
-    if (gameDay < 50) {
+    // ─── 2. CPU-TO-CPU TRADES (Only before Day 50, with a 5% daily check gate) ───
+    if (gameDay < 50 && Math.random() < 0.05) {
       const tradeMatchingTeams = [];
 
       for (const team of cpuTeams) {

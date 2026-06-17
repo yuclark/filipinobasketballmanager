@@ -154,17 +154,31 @@ export async function runCpuReSigningsAction() {
 
       const expiring = playersByTeam[team.id] || [];
       for (const p of expiring) {
-        if (p.overall >= 80) {
+        let shouldAttemptExtension = false;
+        const roll = Math.random();
+
+        if (p.overall >= 82) {
+          shouldAttemptExtension = roll < 0.90; // 90% chance for superstars
+        } else if (p.overall >= 75) {
+          shouldAttemptExtension = roll < 0.70; // 70% chance for starters/key rotation
+        } else if (p.overall >= 70) {
+          shouldAttemptExtension = roll < 0.45; // 45% chance for solid bench
+        } else {
+          shouldAttemptExtension = roll < 0.15; // 15% chance for low-rated bench
+        }
+
+        if (shouldAttemptExtension) {
           const newSalary = p.overall * 40000;
           const salaryDiff = newSalary - p.salary;
           if (currentSalaries + salaryDiff <= team.budget) {
+            const contractYears = p.overall >= 80 ? 3 : 2;
             updates.push({
               id: p.id,
-              contractYearsRemaining: 3,
+              contractYearsRemaining: contractYears,
               salary: newSalary
             });
             currentSalaries += salaryDiff;
-            const logMsg = `✍️ [${team.city} ${team.name}] re-signed star ${p.firstName} ${p.lastName} (OVR ${p.overall}) to a 3-year extension worth ₱${newSalary.toLocaleString("en-PH")}/yr.`;
+            const logMsg = `✍️ [${team.city} ${team.name}] re-signed ${p.overall >= 80 ? "star " : ""}${p.firstName} ${p.lastName} (OVR ${p.overall}) to a ${contractYears}-year extension worth ₱${newSalary.toLocaleString("en-PH")}/yr.`;
             logs.push(logMsg);
             transactionInserts.push({
               type: "Signing",
@@ -173,7 +187,7 @@ export async function runCpuReSigningsAction() {
               gameDay: 82,
             });
           } else {
-            const logMsg = `💔 [${team.city} ${team.name}] let star ${p.firstName} ${p.lastName} (OVR ${p.overall}) walk due to salary cap constraints.`;
+            const logMsg = `💔 [${team.city} ${team.name}] let ${p.overall >= 80 ? "star " : ""}${p.firstName} ${p.lastName} (OVR ${p.overall}) walk due to salary cap constraints.`;
             logs.push(logMsg);
             transactionInserts.push({
               type: "Release",
