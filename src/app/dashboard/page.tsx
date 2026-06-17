@@ -9,6 +9,7 @@ import { MAX_ROSTER_SIZE } from "@/lib/constants";
 import { releasePlayerAction } from "@/app/actions/transactions";
 import { getUserDraftPicksAction } from "@/app/actions/offseasonEngine";
 import { getTeamSeasonStatsAction } from "@/app/actions/statsEngine";
+import { togglePlayerStarterAction } from "@/app/actions/cpuAiEngine";
 import {
   Users,
   Search,
@@ -45,6 +46,7 @@ interface Player {
   stamina: number;
   isRookie?: boolean;
   yearsPlayed: number;
+  isStarter?: boolean;
 }
 
 type SortKey =
@@ -74,7 +76,7 @@ type SortKey =
 
 export default function RosterPage() {
   const router = useRouter();
-  const { userTeamId, triggerAutosave } = useGameStore();
+  const { userTeamId, triggerAutosave, autoReplaceInjured, setAutoReplaceInjured } = useGameStore();
 
   const [mounted, setMounted] = useState(false);
   const [playersList, setPlayersList] = useState<Player[]>([]);
@@ -189,6 +191,25 @@ export default function RosterPage() {
     }
   };
 
+  const handleToggleStarter = async (playerId: string, currentIsStarter: boolean) => {
+    setReleaseError(null);
+    try {
+      setReloading(true);
+      const res = await togglePlayerStarterAction(playerId, !currentIsStarter);
+      if (res.success) {
+        await loadRoster();
+        triggerAutosave();
+      } else {
+        setReleaseError(res.error || "Failed to update starting status.");
+      }
+    } catch (err) {
+      console.error(err);
+      setReleaseError("Error updating starting status.");
+    } finally {
+      setReloading(false);
+    }
+  };
+
   const getOverallBadgeClass = (overall: number) => {
     if (overall >= 90) return "bg-orange-500/10 text-orange-400 border border-orange-500/30";
     if (overall >= 80) return "bg-purple-500/10 text-purple-400 border border-purple-500/30";
@@ -272,6 +293,8 @@ export default function RosterPage() {
       return 0;
     });
 
+  const startersCount = playersList.filter((p) => p.isStarter).length;
+
   const teamOvr = playersList.length > 0
     ? Math.round(playersList.reduce((sum, p) => sum + p.overall, 0) / playersList.length)
     : 0;
@@ -293,18 +316,41 @@ export default function RosterPage() {
 
       {/* Header Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           <div>
             <h3 className="text-xl font-bold text-white mb-1">Roster Sheet</h3>
             <p className="text-zinc-500 text-sm">Active squad of {playersList.length} players (limit 12-18). Manage ratings, contracts and stats.</p>
           </div>
           <div className="bg-zinc-950 px-4 py-2 rounded-2xl border border-zinc-900 flex flex-col justify-center min-w-[90px]">
-            <span className="text-[9px] font-bold text-zinc-550 uppercase tracking-widest block">Team OVR</span>
+            <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest block">Team OVR</span>
             <span className="text-xl font-black text-orange-500 block mt-0.5">{teamOvr}</span>
+          </div>
+          <div className="bg-zinc-950 px-4 py-2 rounded-2xl border border-zinc-900 flex flex-col justify-center min-w-[95px]">
+            <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest block">Starters</span>
+            <span className={`text-xl font-black block mt-0.5 ${startersCount === 5 ? 'text-green-500' : 'text-amber-500 animate-pulse'}`}>{startersCount}/5</span>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+          {/* Auto Replace Toggle */}
+          <div className="flex items-center gap-3 bg-zinc-950/80 px-4 py-2 rounded-2xl border border-zinc-900">
+            <span className="text-xs text-zinc-400 font-bold select-none whitespace-nowrap">Auto-replace Injured</span>
+            <button
+              onClick={() => {
+                setAutoReplaceInjured(!autoReplaceInjured);
+                triggerAutosave();
+              }}
+              className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-all duration-300 ${
+                autoReplaceInjured ? "bg-orange-500" : "bg-zinc-800"
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-all duration-300 ${
+                  autoReplaceInjured ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
           {/* Attributes vs Season Stats Toggle */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 self-start sm:self-auto">
@@ -386,6 +432,7 @@ export default function RosterPage() {
         <table className="w-full min-w-[1000px] text-left border-collapse">
           <thead>
             <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-400 font-bold text-xs uppercase tracking-wider select-none">
+              <th className="py-4.5 px-4 text-center w-[85px]">Starter</th>
               <th
                 onClick={() => handleSort("name")}
                 className="py-4.5 px-6 cursor-pointer hover:bg-zinc-900 transition-colors w-1/4"
@@ -534,6 +581,15 @@ export default function RosterPage() {
 
                 return (
                   <tr key={player.id} className="hover:bg-zinc-900/30 transition-all group">
+                    {/* Starter Checkbox */}
+                    <td className="py-4 px-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={player.isStarter || false}
+                        onChange={() => handleToggleStarter(player.id, player.isStarter || false)}
+                        className="w-4 h-4 rounded text-orange-500 focus:ring-orange-500 border-zinc-700 bg-zinc-950 cursor-pointer accent-orange-500"
+                      />
+                    </td>
                     {/* Name */}
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
@@ -684,7 +740,7 @@ export default function RosterPage() {
               })
             ) : (
               <tr>
-                <td colSpan={viewMode === "attributes" ? 14 : 18} className="py-12 text-center text-zinc-500">
+                <td colSpan={viewMode === "attributes" ? 15 : 19} className="py-12 text-center text-zinc-500">
                   No active players found.
                 </td>
               </tr>

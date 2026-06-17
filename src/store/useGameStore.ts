@@ -8,12 +8,14 @@ interface GameState {
   isSimulating: boolean;
   tradeDeadlinePassed: boolean;
   activeSaveSlotId: string | null;
+  autoReplaceInjured: boolean;
   setTeam: (teamId: string) => void;
   advanceDay: () => void;
   setSimulating: (isSimulating: boolean) => void;
   setTradeDeadlinePassed: (passed: boolean) => void;
   setLeagueDay: (day: number) => void;
   setActiveSaveSlotId: (id: string | null) => void;
+  setAutoReplaceInjured: (val: boolean) => void;
   triggerAutosave: () => Promise<void>;
 }
 
@@ -25,6 +27,7 @@ export const useGameStore = create<GameState>()(
       isSimulating: false,
       tradeDeadlinePassed: false,
       activeSaveSlotId: null,
+      autoReplaceInjured: false,
       setTeam: (teamId) => set({ userTeamId: teamId }),
       advanceDay: () =>
         set((state) => {
@@ -38,6 +41,7 @@ export const useGameStore = create<GameState>()(
       setTradeDeadlinePassed: (passed) => set({ tradeDeadlinePassed: passed }),
       setLeagueDay: (day) => set({ currentLeagueDay: day, tradeDeadlinePassed: day > 50 }),
       setActiveSaveSlotId: (id) => set({ activeSaveSlotId: id }),
+      setAutoReplaceInjured: (val) => set({ autoReplaceInjured: val }),
       triggerAutosave: async () => {
         const { userTeamId, currentLeagueDay, activeSaveSlotId } = get();
         if (!activeSaveSlotId) {

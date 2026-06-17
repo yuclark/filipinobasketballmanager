@@ -82,8 +82,10 @@ export default function SchedulePage() {
   const [isSimulating, setIsSimulating] = useState(false);
   const stopSimulationRef = useRef(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showInjuryModal, setShowInjuryModal] = useState(false);
+  const [injuredStarter, setInjuredStarter] = useState<any>(null);
 
-  const { userTeamId, currentLeagueDay, advanceDay, setSimulating: storeSetSimulating, setTradeDeadlinePassed, setLeagueDay, triggerAutosave } = useGameStore();
+  const { userTeamId, currentLeagueDay, advanceDay, setSimulating: storeSetSimulating, setTradeDeadlinePassed, setLeagueDay, triggerAutosave, autoReplaceInjured, setAutoReplaceInjured } = useGameStore();
 
   const setSimulating = (val: boolean) => {
     setIsSimulating(val);
@@ -264,7 +266,7 @@ export default function SchedulePage() {
     setSimulating(true);
     stopSimulationRef.current = false;
     try {
-      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline, userTeamId);
+      const res = await simulateBatchDaysAction(days, bypass || hasConfirmedDeadline, userTeamId, autoReplaceInjured);
       
       if (res.currentDay) {
         setLeagueDay(res.currentDay);
@@ -283,8 +285,13 @@ export default function SchedulePage() {
         setPendingDays(days - simulated);
       }
 
+      if (res.status === "STARTER_INJURED") {
+        setInjuredStarter(res.injuredPlayer);
+        setShowInjuryModal(true);
+      }
+
       if (res.status === "ERROR") {
-        setToastMessage("Simulation failed. Please check team states and try again.");
+        setToastMessage(res.error || "Simulation failed. Please check team states and try again.");
       }
 
       // Refresh games list in client
@@ -323,7 +330,8 @@ export default function SchedulePage() {
           currentDay,
           seasonYear,
           bypass || hasConfirmedDeadline,
-          userTeamId
+          userTeamId,
+          autoReplaceInjured
         );
 
         if (res.status === "REGULAR_SEASON_COMPLETE") {
@@ -340,8 +348,21 @@ export default function SchedulePage() {
           break;
         }
 
+        if (res.status === "STARTER_INJURED") {
+          setInjuredStarter(res.injuredPlayer);
+          setShowInjuryModal(true);
+          if (res.nextDay) {
+            currentDay = res.nextDay;
+            setLeagueDay(currentDay);
+            const data = (await getLeagueDayGames(currentDay)) as unknown as Game[];
+            setGamesList(data);
+            setViewingDay(currentDay);
+          }
+          break;
+        }
+
         if (res.status === "ERROR") {
-          setToastMessage("Simulation failed. Please check team states and try again.");
+          setToastMessage(res.error || "Simulation failed. Please check team states and try again.");
           break;
         }
 
@@ -352,7 +373,6 @@ export default function SchedulePage() {
           setGamesList(data);
           setViewingDay(currentDay);
         } else {
-
           break;
         }
 
@@ -473,7 +493,28 @@ export default function SchedulePage() {
         </div>
 
         {hasSchedule && (
-          <div className="flex flex-wrap gap-3 w-full md:w-auto">
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            {/* Auto Replace Toggle */}
+            {!isSimulating && (
+              <div className="flex items-center gap-2 bg-zinc-950/80 px-4 py-2.5 rounded-xl border border-zinc-800 self-start md:self-auto">
+                <span className="text-xs text-zinc-400 font-bold select-none whitespace-nowrap">Auto-replace Injured</span>
+                <button
+                  onClick={() => {
+                    setAutoReplaceInjured(!autoReplaceInjured);
+                    triggerAutosave();
+                  }}
+                  className={`w-9 h-5 flex items-center rounded-full p-1 cursor-pointer transition-all duration-300 ${
+                    autoReplaceInjured ? "bg-orange-500" : "bg-zinc-800"
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-3 h-3 rounded-full shadow transform transition-all duration-300 ${
+                      autoReplaceInjured ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
             {isSimulating ? (
               <div className="flex items-center gap-3">
                 <button
@@ -952,6 +993,42 @@ export default function SchedulePage() {
                 className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 text-zinc-400 rounded-xl font-bold text-sm border border-zinc-850 transition-all cursor-pointer"
               >
                 Review Trade Options
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Starter Injury Interruption Modal */}
+      {showInjuryModal && injuredStarter && (
+        <div className="fixed inset-0 bg-zinc-950/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md p-6 md:p-8 shadow-2xl text-center space-y-6 relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-red-500/5 blur-[60px] rounded-full pointer-events-none" />
+            <span className="text-red-500 text-4xl block animate-pulse">🤕</span>
+            <div>
+              <h4 className="text-xl font-extrabold text-white tracking-tight">STARTER INJURED!</h4>
+              <p className="text-zinc-400 text-sm mt-3 leading-relaxed">
+                <strong className="text-zinc-200">{injuredStarter.firstName} {injuredStarter.lastName}</strong> ({injuredStarter.position}) has suffered a <strong className="text-red-400">{injuredStarter.injuryType}</strong> and is expected to miss <strong className="text-amber-500">{injuredStarter.injuryDaysRemaining} days</strong>.
+              </p>
+              <p className="text-zinc-500 text-xs mt-2">
+                Simulation has been paused on Day {currentLeagueDay} so you can adjust your starting lineup.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowInjuryModal(false);
+                  router.push("/dashboard");
+                }}
+                className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-extrabold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                Go to Active Roster
+              </button>
+              <button
+                onClick={() => setShowInjuryModal(false)}
+                className="w-full py-3 bg-zinc-950 hover:bg-zinc-800 text-zinc-400 rounded-xl font-bold text-sm border border-zinc-850 transition-all cursor-pointer"
+              >
+                Dismiss
               </button>
             </div>
           </div>

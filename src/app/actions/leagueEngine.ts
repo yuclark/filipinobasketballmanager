@@ -311,6 +311,7 @@ export interface DBPlayer {
   status: string;
   injuryDaysRemaining?: number;
   injuryType?: string | null;
+  isStarter?: boolean;
 }
 
 export async function simulateGameLogic(
@@ -318,8 +319,18 @@ export async function simulateGameLogic(
   homePlayersList: DBPlayer[],
   awayPlayersList: DBPlayer[]
 ) {
-  const homePlayers = [...homePlayersList].sort((a, b) => b.overall - a.overall);
-  const awayPlayers = [...awayPlayersList].sort((a, b) => b.overall - a.overall);
+  const homePlayers = [...homePlayersList].sort((a, b) => {
+    const aStarter = a.isStarter ? 1 : 0;
+    const bStarter = b.isStarter ? 1 : 0;
+    if (aStarter !== bStarter) return bStarter - aStarter;
+    return b.overall - a.overall;
+  });
+  const awayPlayers = [...awayPlayersList].sort((a, b) => {
+    const aStarter = a.isStarter ? 1 : 0;
+    const bStarter = b.isStarter ? 1 : 0;
+    if (aStarter !== bStarter) return bStarter - aStarter;
+    return b.overall - a.overall;
+  });
 
   if (homePlayers.length === 0 || awayPlayers.length === 0) {
     throw new Error(`Rosters cannot be empty.`);
@@ -622,11 +633,21 @@ export async function simulateGameLogic(
     overtimes: otPeriods,
   };
 }
-export async function simulateGameAction(gameId: string) {
+export async function simulateGameAction(gameId: string, userTeamId?: string | null) {
   try {
     const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
     if (!game) throw new Error("Game not found.");
     if (game.status === "Completed") return { success: true, game };
+
+    if (userTeamId && (game.homeTeamId === userTeamId || game.awayTeamId === userTeamId)) {
+      const userStarters = await db
+        .select()
+        .from(players)
+        .where(and(eq(players.teamId, userTeamId), eq(players.status, "Active"), eq(players.isStarter, true)));
+      if (userStarters.length !== 5) {
+        return { success: false, error: "Your team must have exactly 5 starting players. Please adjust your starting lineup on the Active Roster page." };
+      }
+    }
 
     const homePlayersList = await db
       .select()
@@ -717,7 +738,10 @@ export async function simulateRemainingDayGames(day: number, userTeamId?: string
     const results = [];
     let isComplete = false;
     for (const game of scheduledGames) {
-      const res = await simulateGameAction(game.id);
+      const res = await simulateGameAction(game.id, userTeamId);
+      if (!res.success) {
+        return { success: false, error: res.error || "Simulation failed." };
+      }
       results.push(res);
       if (res.status === "REGULAR_SEASON_COMPLETE") {
         isComplete = true;
@@ -761,11 +785,28 @@ export async function getStandingsDataAction() {
 export async function simulateBatchDaysAction(
   daysToSimulate: number,
   bypassDeadline: boolean = false,
-  userTeamId?: string | null
+  userTeamId?: string | null,
+  autoReplaceInjured: boolean = false
 ) {
   try {
+    if (userTeamId) {
+      const userStarters = await db
+        .select()
+        .from(players)
+        .where(and(eq(players.teamId, userTeamId), eq(players.status, "Active"), eq(players.isStarter, true)));
+      if (userStarters.length !== 5) {
+        return {
+          status: "ERROR",
+          error: "Your team must have exactly 5 starting players. Please adjust your starting lineup on the Active Roster page.",
+          daysSimulated: 0,
+          currentDay: 1
+        };
+      }
+    }
     // Enforce strict roster limits (12-18) at the start of the batch run
     await enforceLeagueRosterLimitsAction();
+
+    let userStarterInjuredThisDay: any = null;
 
     let localTeams = await db.select().from(teams);
     let localPlayers = await db
@@ -911,12 +952,74 @@ export async function simulateBatchDaysAction(
               const teamObj = localTeams.find((t) => t.id === injuredPlayer.teamId);
               const teamName = teamObj ? `${teamObj.city} ${teamObj.name}` : "Unknown Team";
 
-              injuryTransactionsToInsert.push({
-                type: "Injury",
-                description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
-                seasonYear,
-                gameDay: day,
-              });
+              // Check if the injured player is a starter
+              if (injuredPlayer.isStarter) {
+                if (userTeamId && injuredPlayer.teamId === userTeamId) {
+                  if (autoReplaceInjured) {
+                    // Auto-replace injured user starter in memory
+                    injuredPlayer.isStarter = false;
+                    const userPlayers = localPlayers.filter((p) => p.teamId === userTeamId);
+                    const healthyBench = userPlayers.filter(
+                      (p) => (!p.injuryDaysRemaining || p.injuryDaysRemaining <= 0) && !p.isStarter && p.id !== injuredPlayer.id
+                    );
+                    if (healthyBench.length > 0) {
+                      healthyBench.sort((a, b) => b.overall - a.overall);
+                      const replacement = healthyBench[0];
+                      replacement.isStarter = true;
+                      
+                      injuryTransactionsToInsert.push({
+                        type: "Injury",
+                        description: `🤕 AUTO-REPLACE: Starter ${injuredPlayer.firstName} ${injuredPlayer.lastName} suffered a ${injuryType} (expected to miss ${injuryDays} days). Automatically replaced by ${replacement.firstName} ${replacement.lastName} (${replacement.position}, OVR ${replacement.overall}).`,
+                        seasonYear,
+                        gameDay: day,
+                      });
+                    } else {
+                      injuryTransactionsToInsert.push({
+                        type: "Injury",
+                        description: `🤕 INJURY: Starter ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                        seasonYear,
+                        gameDay: day,
+                      });
+                    }
+                  } else {
+                    // Halt simulation
+                    userStarterInjuredThisDay = { ...injuredPlayer, injuryDay: day };
+                    
+                    injuryTransactionsToInsert.push({
+                      type: "Injury",
+                      description: `🤕 INJURY: Starter ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days. Simulation paused.`,
+                      seasonYear,
+                      gameDay: day,
+                    });
+                  }
+                } else if (injuredPlayer.teamId) {
+                  // CPU team starter auto-replacement
+                  injuredPlayer.isStarter = false;
+                  const cpuPlayers = localPlayers.filter((p) => p.teamId === injuredPlayer.teamId);
+                  const healthyBench = cpuPlayers.filter(
+                    (p) => (!p.injuryDaysRemaining || p.injuryDaysRemaining <= 0) && !p.isStarter && p.id !== injuredPlayer.id
+                  );
+                  if (healthyBench.length > 0) {
+                    healthyBench.sort((a, b) => b.overall - a.overall);
+                    healthyBench[0].isStarter = true;
+                  }
+
+                  injuryTransactionsToInsert.push({
+                    type: "Injury",
+                    description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                    seasonYear,
+                    gameDay: day,
+                  });
+                }
+              } else {
+                // Non-starter injury
+                injuryTransactionsToInsert.push({
+                  type: "Injury",
+                  description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                  seasonYear,
+                  gameDay: day,
+                });
+              }
             }
           }
         }
@@ -930,6 +1033,10 @@ export async function simulateBatchDaysAction(
               player.injuryType = null;
             }
           }
+        }
+
+        if (userStarterInjuredThisDay) {
+          break; // Stop simulating subsequent days!
         }
       }
 
@@ -999,6 +1106,7 @@ export async function simulateBatchDaysAction(
               rebounding: p.rebounding,
               speed: p.speed,
               stamina: p.stamina,
+              isStarter: p.isStarter,
             })
             .where(eq(players.id, p.id))
         );
@@ -1007,6 +1115,22 @@ export async function simulateBatchDaysAction(
           await db.batch(playerUpdateQueries.slice(i, i + playerChunkSize) as any);
         }
       }
+    }
+
+    if (userStarterInjuredThisDay) {
+      return {
+        status: "STARTER_INJURED",
+        daysSimulated,
+        currentDay: userStarterInjuredThisDay.injuryDay,
+        injuredPlayer: {
+          id: userStarterInjuredThisDay.id,
+          firstName: userStarterInjuredThisDay.firstName,
+          lastName: userStarterInjuredThisDay.lastName,
+          position: userStarterInjuredThisDay.position,
+          injuryType: userStarterInjuredThisDay.injuryType,
+          injuryDaysRemaining: userStarterInjuredThisDay.injuryDaysRemaining,
+        }
+      };
     }
 
     if (hitDeadline) {
@@ -1042,7 +1166,8 @@ export async function simulateBatchDaysAction(
 
 export async function simulateUntilPlayoffsAction(
   bypassDeadline: boolean = false,
-  userTeamId?: string | null
+  userTeamId?: string | null,
+  autoReplaceInjured: boolean = false
 ) {
   try {
     const nextGame = await db
@@ -1059,7 +1184,7 @@ export async function simulateUntilPlayoffsAction(
     const startDay = nextGame[0].day;
     const seasonYear = nextGame[0].seasonYear;
     const daysToSimulate = 82 - startDay + 1;
-    const res = await simulateBatchDaysAction(daysToSimulate, bypassDeadline, userTeamId);
+    const res = await simulateBatchDaysAction(daysToSimulate, bypassDeadline, userTeamId, autoReplaceInjured);
 
     // If regular season concludes, execute awards calculation
     const remainingGames = await db
@@ -1088,9 +1213,23 @@ export async function simulateWeekChunkAction(
   startDay: number,
   seasonYear: number,
   bypassDeadline: boolean = false,
-  userTeamId?: string | null
+  userTeamId?: string | null,
+  autoReplaceInjured: boolean = false
 ) {
   try {
+    if (userTeamId) {
+      const userStarters = await db
+        .select()
+        .from(players)
+        .where(and(eq(players.teamId, userTeamId), eq(players.status, "Active"), eq(players.isStarter, true)));
+      if (userStarters.length !== 5) {
+        return {
+          status: "ERROR",
+          error: "Your team must have exactly 5 starting players. Please adjust your starting lineup on the Active Roster page.",
+          nextDay: startDay
+        };
+      }
+    }
     console.log(`[League Engine] Simulating week chunk starting from Day ${startDay}, Season ${seasonYear}...`);
 
     if (startDay > 82) {
@@ -1120,6 +1259,8 @@ export async function simulateWeekChunkAction(
 
     // Enforce roster limits (12-18) once at start of chunk
     await enforceLeagueRosterLimitsAction();
+
+    let userStarterInjuredThisDay: any = null;
 
     let localTeams = await db.select().from(teams);
     let localPlayers = await db
@@ -1230,12 +1371,73 @@ export async function simulateWeekChunkAction(
             const teamObj = localTeams.find((t) => t.id === injuredPlayer.teamId);
             const teamName = teamObj ? `${teamObj.city} ${teamObj.name}` : "Unknown Team";
 
-            injuryTransactionsToInsert.push({
-              type: "Injury",
-              description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
-              seasonYear,
-              gameDay: day,
-            });
+            // Check if starter
+            if (injuredPlayer.isStarter) {
+              if (userTeamId && injuredPlayer.teamId === userTeamId) {
+                if (autoReplaceInjured) {
+                  // Auto-replace user starter
+                  injuredPlayer.isStarter = false;
+                  const userPlayers = localPlayers.filter((p) => p.teamId === userTeamId);
+                  const healthyBench = userPlayers.filter(
+                    (p) => (!p.injuryDaysRemaining || p.injuryDaysRemaining <= 0) && !p.isStarter && p.id !== injuredPlayer.id
+                  );
+                  if (healthyBench.length > 0) {
+                    healthyBench.sort((a, b) => b.overall - a.overall);
+                    const replacement = healthyBench[0];
+                    replacement.isStarter = true;
+
+                    injuryTransactionsToInsert.push({
+                      type: "Injury",
+                      description: `🤕 AUTO-REPLACE: Starter ${injuredPlayer.firstName} ${injuredPlayer.lastName} suffered a ${injuryType} (expected to miss ${injuryDays} days). Automatically replaced by ${replacement.firstName} ${replacement.lastName} (${replacement.position}, OVR ${replacement.overall}).`,
+                      seasonYear,
+                      gameDay: day,
+                    });
+                  } else {
+                    injuryTransactionsToInsert.push({
+                      type: "Injury",
+                      description: `🤕 INJURY: Starter ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                      seasonYear,
+                      gameDay: day,
+                    });
+                  }
+                } else {
+                  // Pause simulation
+                  userStarterInjuredThisDay = { ...injuredPlayer, injuryDay: day };
+
+                  injuryTransactionsToInsert.push({
+                    type: "Injury",
+                    description: `🤕 INJURY: Starter ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days. Simulation paused.`,
+                    seasonYear,
+                    gameDay: day,
+                  });
+                }
+              } else if (injuredPlayer.teamId) {
+                // CPU team auto-replacement
+                injuredPlayer.isStarter = false;
+                const cpuPlayers = localPlayers.filter((p) => p.teamId === injuredPlayer.teamId);
+                const healthyBench = cpuPlayers.filter(
+                  (p) => (!p.injuryDaysRemaining || p.injuryDaysRemaining <= 0) && !p.isStarter && p.id !== injuredPlayer.id
+                  );
+                if (healthyBench.length > 0) {
+                  healthyBench.sort((a, b) => b.overall - a.overall);
+                  healthyBench[0].isStarter = true;
+                }
+
+                injuryTransactionsToInsert.push({
+                  type: "Injury",
+                  description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                  seasonYear,
+                  gameDay: day,
+                });
+              }
+            } else {
+              injuryTransactionsToInsert.push({
+                type: "Injury",
+                description: `🤕 INJURY: ${injuredPlayer.firstName} ${injuredPlayer.lastName} (${injuredPlayer.position}, ${teamName}) has suffered a ${injuryType} and is expected to miss ${injuryDays} days.`,
+                seasonYear,
+                gameDay: day,
+              });
+            }
           }
         }
       }
@@ -1248,6 +1450,10 @@ export async function simulateWeekChunkAction(
             player.injuryType = null;
           }
         }
+      }
+
+      if (userStarterInjuredThisDay) {
+        break; // Stop simulating subsequent days!
       }
     }
 
@@ -1314,6 +1520,7 @@ export async function simulateWeekChunkAction(
               rebounding: p.rebounding,
               speed: p.speed,
               stamina: p.stamina,
+              isStarter: p.isStarter,
             })
             .where(eq(players.id, p.id))
         );
@@ -1321,6 +1528,21 @@ export async function simulateWeekChunkAction(
       for (let i = 0; i < playerUpdateQueries.length; i += playerChunkSize) {
         await db.batch(playerUpdateQueries.slice(i, i + playerChunkSize) as any);
       }
+    }
+
+    if (userStarterInjuredThisDay) {
+      return {
+        status: "STARTER_INJURED",
+        nextDay: userStarterInjuredThisDay.injuryDay,
+        injuredPlayer: {
+          id: userStarterInjuredThisDay.id,
+          firstName: userStarterInjuredThisDay.firstName,
+          lastName: userStarterInjuredThisDay.lastName,
+          position: userStarterInjuredThisDay.position,
+          injuryType: userStarterInjuredThisDay.injuryType,
+          injuryDaysRemaining: userStarterInjuredThisDay.injuryDaysRemaining,
+        }
+      };
     }
 
     if (hitDeadline) {

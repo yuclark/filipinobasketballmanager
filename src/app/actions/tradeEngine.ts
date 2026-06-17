@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { players, teams, transactions, games, draftPicks, tradeProposals, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
+import { ensureTeamStarters } from "@/app/actions/cpuAiEngine";
 
 export type TradeAsset =
   | { type: "PLAYER"; playerId: string }
@@ -863,7 +864,7 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
     for (const p of outgoingPlayersList) {
       await db
         .update(players)
-        .set({ teamId: proposal.receiverTeamId, isOnTradeBlock: false })
+        .set({ teamId: proposal.receiverTeamId, isOnTradeBlock: false, isStarter: false })
         .where(eq(players.id, p.id));
     }
 
@@ -882,7 +883,7 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
     for (const p of incomingPlayersList) {
       await db
         .update(players)
-        .set({ teamId: proposal.proposerTeamId, isOnTradeBlock: false })
+        .set({ teamId: proposal.proposerTeamId, isOnTradeBlock: false, isStarter: false })
         .where(eq(players.id, p.id));
     }
 
@@ -897,6 +898,9 @@ export async function acceptTradeProposalAction(proposalId: string): Promise<{ s
           )
         );
     }
+
+    await ensureTeamStarters(proposal.receiverTeamId);
+    await ensureTeamStarters(proposal.proposerTeamId);
 
     await db
       .update(tradeProposals)

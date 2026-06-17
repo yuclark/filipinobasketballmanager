@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { eq, inArray, isNull, isNotNull, desc, and } from "drizzle-orm";
 import { teams, players, transactions, games, draftPicks, playerSalaryHistory } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
+import { ensureTeamStarters } from "@/app/actions/cpuAiEngine";
 
 
 
@@ -333,6 +334,8 @@ export async function sendOfferAction(
         .set({ teamId, contractYearsRemaining: 3, salary: actualOffer })
         .where(eq(players.id, playerId));
 
+      await ensureTeamStarters(teamId);
+
       // Update playerSalaryHistory record for current season
       await db
         .update(playerSalaryHistory)
@@ -415,8 +418,10 @@ export async function releasePlayerAction(playerId: string) {
 
     await db
       .update(players)
-      .set({ teamId: null })
+      .set({ teamId: null, isStarter: false })
       .where(eq(players.id, playerId));
+
+    await ensureTeamStarters(player.teamId);
 
     const { day, year } = await getCurrentLeagueDayAndYear();
 
@@ -649,7 +654,7 @@ export async function executeTradeAction(
     if (playerAIds.length > 0) {
       await db
         .update(players)
-        .set({ teamId: teamBId })
+        .set({ teamId: teamBId, isStarter: false })
         .where(inArray(players.id, playerAIds));
 
       await db
@@ -666,7 +671,7 @@ export async function executeTradeAction(
     if (playerBIds.length > 0) {
       await db
         .update(players)
-        .set({ teamId: teamAId })
+        .set({ teamId: teamAId, isStarter: false })
         .where(inArray(players.id, playerBIds));
 
       await db
@@ -693,6 +698,9 @@ export async function executeTradeAction(
         .set({ ownerTeamId: teamAId })
         .where(inArray(draftPicks.id, pickBIds));
     }
+
+    await ensureTeamStarters(teamAId);
+    await ensureTeamStarters(teamBId);
 
     const namesA = [
       ...rosterA.map((p) => `${p.firstName} ${p.lastName}`),

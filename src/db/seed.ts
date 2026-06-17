@@ -263,11 +263,18 @@ export async function seedDatabase(db: any) {
         salaries = salaries.map((s) => Math.round((s * factor) / 10000) * 10000);
       }
 
+      // Sort team players by overall rating descending to identify top 5
+      const sortedIndices = teamPlayers
+        .map((p, idx) => ({ overall: p.overall, idx }))
+        .sort((a, b) => b.overall - a.overall);
+      const starterIndices = new Set(sortedIndices.slice(0, 5).map(item => item.idx));
+
       // Attach final compliant salaries and push to array
       for (let i = 0; i < 15; i++) {
         playersToInsert.push({
           ...teamPlayers[i],
           salary: salaries[i],
+          isStarter: starterIndices.has(i),
         });
       }
     }

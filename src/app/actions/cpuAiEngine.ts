@@ -205,6 +205,11 @@ export async function enforceLeagueRosterLimitsAction() {
       }
     }
 
+    // Ensure all teams have exactly 5 starters
+    for (const team of allTeams) {
+      await ensureTeamStarters(team.id);
+    }
+
     console.log("[Roster Balancing Agent] Roster limits enforcement completed.");
     return { success: true };
   } catch (error: any) {
@@ -532,3 +537,92 @@ export async function runCpuDailyAiEngineAction(
     return { updatedPlayers: currentPlayersState, updatedTeams: currentTeamsState };
   }
 }
+
+export async function ensureTeamStarters(teamId: string, tx: any = db) {
+  // Fetch active players for this team
+  const teamPlayers = await tx
+    .select()
+    .from(players)
+    .where(and(eq(players.teamId, teamId), eq(players.status, "Active")));
+
+  if (teamPlayers.length === 0) return;
+
+  // Filter healthy players (injuryDaysRemaining <= 0 or null)
+  const healthyPlayers = teamPlayers.filter((p: any) => !p.injuryDaysRemaining || p.injuryDaysRemaining <= 0);
+
+  // Group healthy players who are currently starters
+  const healthyStarters = healthyPlayers.filter((p: any) => p.isStarter);
+
+  if (healthyStarters.length === 5) {
+    // Make sure all other players on the team are NOT starters
+    const starterIds = new Set(healthyStarters.map((p: any) => p.id));
+    const toClear = teamPlayers.filter((p: any) => p.isStarter && !starterIds.has(p.id));
+    if (toClear.length > 0) {
+      await tx
+        .update(players)
+        .set({ isStarter: false })
+        .where(inArray(players.id, toClear.map((p: any) => p.id)));
+    }
+    return;
+  }
+
+  // If we don't have exactly 5 healthy starters, let's select the top 5 overall healthy players as starters
+  const sortedHealthy = [...healthyPlayers].sort((a: any, b: any) => b.overall - a.overall);
+  const targetStarters = sortedHealthy.slice(0, 5);
+  const targetStarterIds = new Set(targetStarters.map((p: any) => p.id));
+
+  // If we don't even have 5 healthy players total, add fallback active players sorted by overall rating
+  if (targetStarterIds.size < 5) {
+    const sortedAllActive = [...teamPlayers].sort((a: any, b: any) => b.overall - a.overall);
+    for (const p of sortedAllActive) {
+      if (targetStarterIds.size >= 5) break;
+      targetStarterIds.add(p.id);
+    }
+  }
+
+  // Update in DB
+  await tx
+    .update(players)
+    .set({ isStarter: true })
+    .where(inArray(players.id, Array.from(targetStarterIds)));
+
+  // Clear isStarter for all other players
+  const restIds = teamPlayers.filter((p: any) => !targetStarterIds.has(p.id)).map((p: any) => p.id);
+  if (restIds.length > 0) {
+    await tx
+      .update(players)
+      .set({ isStarter: false })
+      .where(inArray(players.id, restIds));
+  }
+}
+
+export async function togglePlayerStarterAction(playerId: string, isStarter: boolean) {
+  try {
+    const [player] = await db.select().from(players).where(eq(players.id, playerId)).limit(1);
+    if (!player) throw new Error("Player not found.");
+    if (!player.teamId) throw new Error("Player is not on a team.");
+    if (player.status !== "Active") throw new Error("Player is not active.");
+
+    if (isStarter) {
+      // Check how many starters they currently have
+      const activeStarters = await db
+        .select()
+        .from(players)
+        .where(and(eq(players.teamId, player.teamId), eq(players.status, "Active"), eq(players.isStarter, true)));
+      if (activeStarters.length >= 5) {
+        return { success: false, error: "You can only select exactly 5 starters. Uncheck a starter first." };
+      }
+    }
+
+    await db
+      .update(players)
+      .set({ isStarter })
+      .where(eq(players.id, playerId));
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to toggle player starter:", error);
+    return { success: false, error: error.message || "Failed to toggle starter status." };
+  }
+}
+
