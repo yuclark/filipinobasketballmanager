@@ -28,7 +28,8 @@ import {
   GraduationCap,
   Save,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  Search
 } from "lucide-react";
 import Link from "next/link";
 
@@ -204,6 +205,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   { name: "Conference Standings", path: "/dashboard/standings", icon: BarChart3 },
                   { name: "Playoffs", path: "/dashboard/playoffs", icon: Trophy },
                   { name: "Statistical Leaders", path: "/dashboard/leaders", icon: TrendingUp },
+                  { name: "Player Directory", path: "/dashboard/player-directory", icon: Search },
                   { name: "League Directory", path: "/dashboard/teams", icon: Globe },
                   { name: "Draft Prospects", path: "/dashboard/prospects", icon: GraduationCap },
                 ],
@@ -312,6 +314,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Link href="/dashboard/standings" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Standings</Link>
             <Link href="/dashboard/playoffs" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Playoffs</Link>
             <Link href="/dashboard/leaders" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Leaders</Link>
+            <Link href="/dashboard/player-directory" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Players</Link>
             <Link href="/dashboard/teams" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Teams</Link>
             <Link href="/dashboard/prospects" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Prospects</Link>
             <Link href="/dashboard/history" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">History</Link>
