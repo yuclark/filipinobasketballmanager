@@ -100,6 +100,7 @@ export default function LiveGamePage() {
 
   const commentaryEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const wasAtBottomRef = useRef(true);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep tactical coaching refs to avoid re-binding during loop ticks
@@ -178,16 +179,19 @@ export default function LiveGamePage() {
 
   // Scroll commentary feed to bottom only if user is already near the bottom
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    // Check if user is within 80px of the bottom (or container hasn't overflowed yet)
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 80;
-
-    if (isAtBottom) {
+    if (wasAtBottomRef.current) {
       commentaryEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [commentaryList]);
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Check if user is within 100px of the bottom (or container hasn't overflowed yet)
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 100;
+    wasAtBottomRef.current = isAtBottom;
+  };
 
   // Commentary phrases repository
   const generateCommentary = (
@@ -368,8 +372,8 @@ export default function LiveGamePage() {
 
       if (healthyBench.length === 0) return;
 
-      let subLogs: string[] = [];
       const newFloorIds = [...floorIds];
+      const substitutionsMade: Array<{ inPlayer: Player; outPlayer: Player }> = [];
 
       for (const tiredId of tiredIds) {
         const tiredPlayer = roster.find(p => p.id === tiredId)!;
@@ -386,8 +390,7 @@ export default function LiveGamePage() {
           const idx = newFloorIds.indexOf(tiredId);
           if (idx !== -1) {
             newFloorIds[idx] = replacement.id;
-            const subMsg = generateCommentary("sub", replacement, tiredPlayer);
-            subLogs.push(subMsg);
+            substitutionsMade.push({ inPlayer: replacement, outPlayer: tiredPlayer });
 
             // Remove replacement from temporary list so he isn't subbed in twice
             const repIdx = healthyBench.findIndex(p => p.id === replacement!.id);
@@ -396,11 +399,24 @@ export default function LiveGamePage() {
         }
       }
 
-      if (subLogs.length > 0) {
+      if (substitutionsMade.length > 0) {
         if (teamSide === "home") setHomeFloorIds(newFloorIds);
         else setAwayFloorIds(newFloorIds);
 
-        setCommentaryList(prev => [...prev, ...subLogs]);
+        let logMsg = "";
+        const teamName = teamSide === "home" ? homeTeam.name : awayTeam.name;
+
+        if (substitutionsMade.length === 1) {
+          const { inPlayer, outPlayer } = substitutionsMade[0];
+          logMsg = `🔄 SUB [${teamName}]: Pasok si ${inPlayer.firstName} ${inPlayer.lastName} para kay ${outPlayer.firstName} ${outPlayer.lastName}.`;
+        } else {
+          const pairs = substitutionsMade.map(
+            sub => `${sub.inPlayer.firstName} ${sub.inPlayer.lastName} for ${sub.outPlayer.firstName} ${sub.outPlayer.lastName}`
+          );
+          logMsg = `🔄 SUBS [${teamName}]: ${pairs.join(", ")}.`;
+        }
+
+        setCommentaryList(prev => [...prev, logMsg]);
       }
     };
 
@@ -1119,7 +1135,7 @@ export default function LiveGamePage() {
               🎙️ Play-by-Play Live Ticker Feed
             </h4>
             
-            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-3.5 pr-2 custom-scrollbar">
+            <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto space-y-3.5 pr-2 custom-scrollbar">
               {commentaryList.map((log, i) => {
                 const isSpecial = log.startsWith("🎯") || log.startsWith("🏀") || log.startsWith("💥") || log.startsWith("⚡");
                 return (
