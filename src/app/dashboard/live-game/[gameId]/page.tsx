@@ -179,8 +179,11 @@ export default function LiveGamePage() {
 
   // Scroll commentary feed to bottom only if user is already near the bottom
   useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
     if (wasAtBottomRef.current) {
-      commentaryEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      container.scrollTop = container.scrollHeight;
     }
   }, [commentaryList]);
 
@@ -188,8 +191,8 @@ export default function LiveGamePage() {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // Check if user is within 100px of the bottom (or container hasn't overflowed yet)
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 100;
+    // Check if user is within 55px of the bottom (or container hasn't overflowed yet)
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 55;
     wasAtBottomRef.current = isAtBottom;
   };
 
