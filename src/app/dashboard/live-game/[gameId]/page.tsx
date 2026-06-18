@@ -99,6 +99,7 @@ export default function LiveGamePage() {
   const [commentaryList, setCommentaryList] = useState<string[]>([]);
 
   const commentaryEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep tactical coaching refs to avoid re-binding during loop ticks
@@ -175,9 +176,17 @@ export default function LiveGamePage() {
     fetchGameData();
   }, [gameId]);
 
-  // Scroll commentary feed to bottom
+  // Scroll commentary feed to bottom only if user is already near the bottom
   useEffect(() => {
-    commentaryEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Check if user is within 80px of the bottom (or container hasn't overflowed yet)
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 80;
+
+    if (isAtBottom) {
+      commentaryEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [commentaryList]);
 
   // Commentary phrases repository
@@ -1110,7 +1119,7 @@ export default function LiveGamePage() {
               🎙️ Play-by-Play Live Ticker Feed
             </h4>
             
-            <div className="flex-1 overflow-y-auto space-y-3.5 pr-2 custom-scrollbar">
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-3.5 pr-2 custom-scrollbar">
               {commentaryList.map((log, i) => {
                 const isSpecial = log.startsWith("🎯") || log.startsWith("🏀") || log.startsWith("💥") || log.startsWith("⚡");
                 return (
