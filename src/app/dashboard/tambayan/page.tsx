@@ -62,7 +62,7 @@ const FAN_NAMES = [
   { name: "Kuya Jayson", handle: "@kuya_jayson_smc", role: "FN" as const },
   { name: "Kababayan Pride", handle: "@kababayan_hoops", role: "FN" as const },
   { name: "Ginebra Ako NSD", handle: "@ginebra_ako_nsd", role: "FN" as const },
-  { name: "PBA Tambay", handle: "@pba_tambay_ph", role: "FN" as const },
+  { name: "Liga Tambay", handle: "@liga_tambay_ph", role: "FN" as const },
   { name: "Ka-Basket", handle: "@ka_basket_23", role: "FN" as const },
   { name: "Magnolia Faithful", handle: "@magnolia_faith", role: "FN" as const },
   { name: "Hoops Hater", handle: "@hoops_hater_clown", role: "FN" as const },
@@ -73,7 +73,7 @@ const FAN_NAMES = [
 const REPORTER_NAMES = [
   { name: "Chika Sports PH", handle: "@chika_sports", role: "RP" as const },
   { name: "Spin.ph Insider", handle: "@spin_insider", role: "RP" as const },
-  { name: "PBA Updates Online", handle: "@pba_updates", role: "RP" as const },
+  { name: "Liga Updates Online", handle: "@liga_updates", role: "RP" as const },
   { name: "Homer Senator", handle: "@homer_reporter", role: "RP" as const },
 ];
 
@@ -81,7 +81,7 @@ const BOT_REPLIES = [
   "Luh, anong pinagsasabi mo lods? Di ako agree diyan 🤡",
   "TAMA KA DIYAN! Sobrang spot on nito. Kampeon na uli! 🏆",
   "Bardagulan na naman sa replies. Makikain muna ng lechon 🐖🍿",
-  "PBA updates talaga ang pinaka-masayang tambayan. #Bardagulan",
+  "Liga updates talaga ang pinaka-masayang tambayan. #Bardagulan",
   "GM gising!!! Kailangan natin ng boodle fight para sa chemistry!",
   "Sana all ganyan mag-isip. Bawas-bawasan ang kape kaibigan haha",
   "Wait, let him cook! may point siya ah 👀🔥",
@@ -144,7 +144,7 @@ export default function TambayanPage() {
       const involvedTeams = teams.filter(t => cleanDesc.includes(`${t.city} ${t.name}`));
       const involvedPlayers = players.filter(p => cleanDesc.includes(`${p.firstName} ${p.lastName}`));
 
-      const primaryTeam = involvedTeams[0] || { city: "PBA", name: "League", conference: "Luzon" };
+      const primaryTeam = involvedTeams[0] || { city: "FBM", name: "League", conference: "Luzon" };
       const secondaryTeam = involvedTeams[1] || null;
       const primaryPlayer = involvedPlayers[0] || { firstName: "Coach", lastName: "Tito", position: "FN" };
 
@@ -167,13 +167,13 @@ export default function TambayanPage() {
           teamName: primaryTeam.name,
           teamConference: primaryTeam.conference
         },
-        content: `🚨 **OFFICIAL NEWS**: ${tx.description}\n\nWhat are your thoughts on this move? #PBALive`,
+        content: `🚨 **OFFICIAL NEWS**: ${tx.description}\n\nWhat are your thoughts on this move? #LigaLive`,
         timestamp: txDateStr,
         likes: hash(repSeed + "l", 250) + 120,
         retweets: hash(repSeed + "rt", 80) + 20,
         repliesCount: hash(repSeed + "rp", 40) + 5,
         category: "news",
-        hashtags: ["#PBALive", isBlockbuster ? "#Blockbuster" : ""].filter(Boolean)
+        hashtags: ["#LigaLive", isBlockbuster ? "#Blockbuster" : ""].filter(Boolean)
       });
 
       // 2. Generate Fan Reaction Post (Banter or Chatter)
@@ -216,7 +216,7 @@ export default function TambayanPage() {
         fanText = `Naku po! Injured si ${primaryPlayer.firstName} ${primaryPlayer.lastName}. Malaking bawas to sa rotations ng ${primaryTeam.city}. Pagsubok sa buong prangkisa. Get well soon! 🙏`;
       } else if (tx.type === "Draft") {
         category = "chatter";
-        hashtags = ["#PBADraft", "#Future"];
+        hashtags = ["#LigaDraft", "#Future"];
         fanText = `Sana all nakakuha ng star rookie! Handang mag-pakitang gilas si ${primaryPlayer.firstName} para sa barangay! Welcome, kid! 🇵🇭🌟`;
       }
 
@@ -314,13 +314,13 @@ export default function TambayanPage() {
         lastName: "Hoops",
         position: "FN"
       },
-      content: `Pangit na naman ng tawag kagabi sa Manila Clasico! Masyadong pinaboran ang SMC team! Halatang may luto! PBA management kailan niyo paparusahan ang bulag na ref? 🦓🦓 #Luto #PBALive`,
+      content: `Pangit na naman ng tawag kagabi sa Manila Clasico! Masyadong pinaboran ang SMC team! Halatang may luto! Liga management kailan niyo paparusahan ang bulag na ref? 🦓🦓 #Luto #LigaLive`,
       timestamp: defaultDate,
       likes: 128,
       retweets: 92,
       repliesCount: 68,
       category: "banter",
-      hashtags: ["#Luto", "#PBALive"]
+      hashtags: ["#Luto", "#LigaLive"]
     });
 
     // MVP race
@@ -346,7 +346,7 @@ export default function TambayanPage() {
         retweets: 18,
         repliesCount: 45,
         category: "chatter",
-        hashtags: ["#MVP", "#PBATalk"]
+        hashtags: ["#MVP", "#LigaTalk"]
       });
     }
 
@@ -608,8 +608,8 @@ export default function TambayanPage() {
             <MessageSquare className="w-7 h-7" />
           </div>
           <div>
-            <h3 className="text-2xl font-bold text-white tracking-tight">PBA Tambayan (HoopsPH X)</h3>
-            <p className="text-zinc-500 text-sm font-semibold tracking-wide">
+            <h3 className="text-2xl font-bold text-white tracking-tight">HoopsPH Tambayan</h3>
+            <p className="text-zinc-550 text-sm font-semibold tracking-wide">
               Ang pambansang tambayan ng basketball fans — chismis, balitaktakan, at mainit na bardagulan sa liga!
             </p>
           </div>
@@ -902,7 +902,7 @@ export default function TambayanPage() {
 
             <div className="flex flex-col gap-3">
               {[
-                { tag: "#PBALive", count: "125.4K posts", desc: "Main league discussions" },
+                { tag: "#LigaLive", count: "125.4K posts", desc: "Main league discussions" },
                 { tag: "#Luto", count: "89.2K posts", desc: "Controversial ref calls debates" },
                 { tag: "#BoodleFight", count: "64.1K posts", desc: "Team building & chemistry leaks" },
                 { tag: "#ManilaClasico", count: "54.8K posts", desc: "SMC vs. Ginebra vs. Magnolia rivalries" },

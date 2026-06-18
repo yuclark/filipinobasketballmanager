@@ -216,7 +216,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 links: [
                   { name: "League History", path: "/dashboard/history", icon: BookOpen },
                   { name: "League News Feed", path: "/dashboard/transactions", icon: FileText },
-                  { name: "PBA Tambayan 💬", path: "/dashboard/tambayan", icon: MessageCircle },
+                  { name: "Tambayan", path: "/dashboard/tambayan", icon: MessageCircle },
                   { name: "Offseason Hub", path: "/dashboard/offseason", icon: Sparkles },
                 ],
               },
@@ -321,7 +321,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Link href="/dashboard/prospects" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Prospects</Link>
             <Link href="/dashboard/history" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">History</Link>
             <Link href="/dashboard/transactions" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">News</Link>
-            <Link href="/dashboard/tambayan" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Tambayan 💬</Link>
+            <Link href="/dashboard/tambayan" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Tambayan</Link>
             <Link href="/dashboard/offseason" className="px-2 py-1 bg-zinc-900 rounded whitespace-nowrap">Offseason</Link>
           </div>
         </header>
