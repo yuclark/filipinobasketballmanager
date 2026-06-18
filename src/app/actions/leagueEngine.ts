@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { eq, and, inArray, sql, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, sql, isNotNull, desc } from "drizzle-orm";
 import { teams, players, games, playerGameStats, transactions, playerSalaryHistory, playerEvolutions } from "@/db/schema";
 import { MIN_ROSTER_SIZE, MAX_ROSTER_SIZE } from "@/lib/constants";
 import { calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
@@ -1575,5 +1575,111 @@ export async function simulateWeekChunkAction(
     return { status: "ERROR", error: error.message || "Failed to simulate week chunk." };
   }
 }
+
+export async function getLiveGameDataAction(gameId: string) {
+  try {
+    const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+    if (!game) {
+      return { success: false, error: "Game not found." };
+    }
+
+    const [homeTeam] = await db.select().from(teams).where(eq(teams.id, game.homeTeamId)).limit(1);
+    const [awayTeam] = await db.select().from(teams).where(eq(teams.id, game.awayTeamId)).limit(1);
+
+    if (!homeTeam || !awayTeam) {
+      return { success: false, error: "Teams not found." };
+    }
+
+    const homePlayers = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, game.homeTeamId), eq(players.status, "Active")))
+      .orderBy(desc(players.isStarter), desc(players.overall));
+
+    const awayPlayers = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.teamId, game.awayTeamId), eq(players.status, "Active")))
+      .orderBy(desc(players.isStarter), desc(players.overall));
+
+    return {
+      success: true,
+      game,
+      homeTeam,
+      awayTeam,
+      homePlayers,
+      awayPlayers,
+    };
+  } catch (error: any) {
+    console.error("Failed to fetch live game data:", error);
+    return { success: false, error: error.message || "Failed to load live game details." };
+  }
+}
+
+export async function saveLiveGameResultAction(
+  gameId: string,
+  homeScore: number,
+  awayScore: number,
+  playerStatsToInsert: Array<typeof playerGameStats.$inferInsert>
+) {
+  try {
+    const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+    if (!game) {
+      return { success: false, error: "Game not found." };
+    }
+
+    if (game.status === "Completed") {
+      return { success: false, error: "Game has already been completed." };
+    }
+
+    // Insert player stats in chunks of 100 just to be safe
+    const chunkSize = 100;
+    for (let i = 0; i < playerStatsToInsert.length; i += chunkSize) {
+      await db.insert(playerGameStats).values(playerStatsToInsert.slice(i, i + chunkSize));
+    }
+
+    // Update game status and scores
+    const updatedGame = await db
+      .update(games)
+      .set({
+        status: "Completed",
+        homeScore,
+        awayScore,
+      })
+      .where(eq(games.id, game.id))
+      .returning();
+
+    // Check if the regular season is now complete
+    if (game.stage === "Regular") {
+      const remainingGames = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(games)
+        .where(and(eq(games.stage, "Regular"), eq(games.status, "Scheduled")));
+
+      if (Number(remainingGames[0]?.count ?? 0) === 0) {
+        console.log(`[League Engine] Regular season complete via live game simulation. Triggering Season ${game.seasonYear} awards calculation...`);
+        await calculateRegularSeasonAwardsAction(game.seasonYear).catch((err) =>
+          console.error("[League Engine] Awards calculation in saveLiveGameResultAction failed silently:", err)
+        );
+        await enforceLeagueRosterLimitsAction();
+        return {
+          success: true,
+          game: updatedGame[0],
+          status: "REGULAR_SEASON_COMPLETE",
+        };
+      }
+    }
+
+    return {
+      success: true,
+      game: updatedGame[0],
+      status: "SUCCESS",
+    };
+  } catch (error: any) {
+    console.error("Failed to save live game results:", error);
+    return { success: false, error: error.message || "Failed to save game results." };
+  }
+}
+
 
 

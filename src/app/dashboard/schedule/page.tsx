@@ -687,13 +687,21 @@ export default function SchedulePage() {
                       <span className="px-3 py-1 bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold text-[10px] uppercase rounded-full">
                         Scheduled
                       </span>
-                      <button
-                        onClick={() => handleSimulateUserGame(userGame.id)}
-                        className="flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.02] cursor-pointer transition-all active:scale-[0.98]"
-                      >
-                        <Play className="w-4 h-4 fill-white" />
-                        <span>Simulate Match</span>
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          onClick={() => handleSimulateUserGame(userGame.id)}
+                          className="flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-sm shadow-[0_4px_15px_rgba(249,115,22,0.3)] hover:scale-[1.02] cursor-pointer transition-all active:scale-[0.98]"
+                        >
+                          <Play className="w-4 h-4 fill-white" />
+                          <span>Simulate Match</span>
+                        </button>
+                        <Link
+                          href={`/dashboard/live-game/${userGame.id}`}
+                          className="flex items-center gap-2 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-xl font-bold text-sm hover:scale-[1.02] cursor-pointer transition-all active:scale-[0.98]"
+                        >
+                          <span>📺 Live Spectate</span>
+                        </Link>
+                      </div>
                     </div>
                   )}
                 </div>
