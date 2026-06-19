@@ -3,7 +3,8 @@
 import { db } from "@/db";
 import { eq, and, sql, or, inArray, desc } from "drizzle-orm";
 import { teams, players, games, playerGameStats } from "@/db/schema";
-import { simulateGameAction, simulateGameLogic, DBPlayer, calculateFanChange } from "@/app/actions/leagueEngine";
+import { simulateGameAction, simulateGameLogic, DBPlayer } from "@/app/actions/leagueEngine";
+import { calculateFanChange } from "@/lib/fanHelper";
 import { calculateFinalsMvpAction, calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import crypto from "crypto";
 
