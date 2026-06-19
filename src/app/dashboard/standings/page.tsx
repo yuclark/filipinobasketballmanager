@@ -13,6 +13,7 @@ import {
   TrendingUp,
   Shield,
   Star,
+  Users,
 } from "lucide-react";
 
 interface Team {
@@ -21,6 +22,7 @@ interface Team {
   city: string;
   conference: "Luzon" | "VisMin";
   budget: number;
+  fans?: number;
 }
 
 interface CompletedGame {
@@ -299,6 +301,7 @@ export default function StandingsPage() {
                     <th className="py-4 px-3 text-center">W</th>
                     <th className="py-4 px-3 text-center">L</th>
                     <th className="py-4 px-4 text-center">PCT</th>
+                    <th className="py-4 px-4 text-center">Fans</th>
                     <th className="py-4 px-4 text-center">Streak</th>
                   </tr>
                 </thead>
@@ -368,6 +371,11 @@ export default function StandingsPage() {
                           {team.pctString}
                         </td>
 
+                        {/* Fans */}
+                        <td className="py-4 px-4 text-center font-bold text-blue-400 text-xs">
+                          {(team.fans ?? 10000).toLocaleString()}
+                        </td>
+
                         {/* Streak */}
                         <td className="py-4 px-4 text-center">
                           <span
@@ -416,6 +424,7 @@ export default function StandingsPage() {
                     <th className="py-4 px-3 text-center">W</th>
                     <th className="py-4 px-3 text-center">L</th>
                     <th className="py-4 px-4 text-center">PCT</th>
+                    <th className="py-4 px-4 text-center">Fans</th>
                     <th className="py-4 px-4 text-center">Streak</th>
                   </tr>
                 </thead>
@@ -483,6 +492,11 @@ export default function StandingsPage() {
                         {/* PCT */}
                         <td className="py-4 px-4 text-center font-extrabold text-zinc-200">
                           {team.pctString}
+                        </td>
+
+                        {/* Fans */}
+                        <td className="py-4 px-4 text-center font-bold text-blue-400 text-xs">
+                          {(team.fans ?? 10000).toLocaleString()}
                         </td>
 
                         {/* Streak */}

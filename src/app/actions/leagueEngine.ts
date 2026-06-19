@@ -635,6 +635,34 @@ export async function simulateGameLogic(
     overtimes: otPeriods,
   };
 }
+
+export function calculateFanChange(isWinner: boolean, scoreDiff: number, isHome: boolean): number {
+  if (isWinner) {
+    let delta = 800 + Math.floor(Math.random() * 400); // 800 - 1200
+    if (scoreDiff >= 18) {
+      delta += 300; // Blowout bonus
+    } else if (scoreDiff <= 5) {
+      delta += 150; // Close game/clutch bonus
+    }
+    if (isHome) {
+      delta = Math.round(delta * 1.1); // Home game boost
+    }
+    return delta;
+  } else {
+    // Loss
+    let delta = -(300 + Math.floor(Math.random() * 200)); // -300 to -500
+    if (scoreDiff >= 18) {
+      delta -= 200; // Blowout penalty
+    } else if (scoreDiff <= 5) {
+      delta += 150; // Close loss penalty reduction
+    }
+    if (!isHome) {
+      delta = Math.round(delta * 0.9); // Away loss hurts slightly less
+    }
+    return delta;
+  }
+}
+
 export async function simulateGameAction(gameId: string, userTeamId?: string | null) {
   try {
     const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
@@ -675,6 +703,29 @@ export async function simulateGameAction(gameId: string, userTeamId?: string | n
     );
 
     await db.insert(playerGameStats).values(res.playerStatsToInsert);
+
+    // Update fans for home and away teams
+    try {
+      const [homeTeam] = await db.select().from(teams).where(eq(teams.id, game.homeTeamId)).limit(1);
+      const [awayTeam] = await db.select().from(teams).where(eq(teams.id, game.awayTeamId)).limit(1);
+      if (homeTeam && awayTeam) {
+        const scoreDiff = Math.abs(res.updatedGame.homeScore - res.updatedGame.awayScore);
+        const homeWon = res.updatedGame.homeScore > res.updatedGame.awayScore;
+
+        const homeFanChange = calculateFanChange(homeWon, scoreDiff, true);
+        const awayFanChange = calculateFanChange(!homeWon, scoreDiff, false);
+
+        const newHomeFans = Math.max(2000, (homeTeam.fans ?? 10000) + homeFanChange);
+        const newAwayFans = Math.max(2000, (awayTeam.fans ?? 10000) + awayFanChange);
+
+        await db.batch([
+          db.update(teams).set({ fans: newHomeFans }).where(eq(teams.id, game.homeTeamId)),
+          db.update(teams).set({ fans: newAwayFans }).where(eq(teams.id, game.awayTeamId))
+        ]);
+      }
+    } catch (fanErr) {
+      console.error("Failed to update team fans in simulateGameAction:", fanErr);
+    }
 
     const updatedGame = await db
       .update(games)
@@ -928,6 +979,20 @@ export async function simulateBatchDaysAction(
           gamesToUpdate.push(res.updatedGame);
           statsToInsert.push(...res.playerStatsToInsert);
 
+          // Update fans inside in-memory localTeams list
+          const homeTeamObj = localTeams.find((t) => t.id === game.homeTeamId);
+          const awayTeamObj = localTeams.find((t) => t.id === game.awayTeamId);
+          if (homeTeamObj && awayTeamObj) {
+            const scoreDiff = Math.abs(res.updatedGame.homeScore - res.updatedGame.awayScore);
+            const homeWon = res.updatedGame.homeScore > res.updatedGame.awayScore;
+
+            const homeFanChange = calculateFanChange(homeWon, scoreDiff, true);
+            const awayFanChange = calculateFanChange(!homeWon, scoreDiff, false);
+
+            homeTeamObj.fans = Math.max(2000, (homeTeamObj.fans ?? 10000) + homeFanChange);
+            awayTeamObj.fans = Math.max(2000, (awayTeamObj.fans ?? 10000) + awayFanChange);
+          }
+
           // Injury Logic: 1.5% chance per game played
           if (Math.random() < 0.015) {
             const INJURY_TYPES = [
@@ -1115,6 +1180,22 @@ export async function simulateBatchDaysAction(
         const playerChunkSize = 100;
         for (let i = 0; i < playerUpdateQueries.length; i += playerChunkSize) {
           await db.batch(playerUpdateQueries.slice(i, i + playerChunkSize) as any);
+        }
+      }
+
+      // Bulk write all updated team fan and budget records back to database
+      if (localTeams.length > 0) {
+        const teamUpdateQueries = localTeams.map((t) =>
+          db.update(teams)
+            .set({
+              fans: t.fans,
+              budget: t.budget,
+            })
+            .where(eq(teams.id, t.id))
+        );
+        const teamChunkSize = 30;
+        for (let i = 0; i < teamUpdateQueries.length; i += teamChunkSize) {
+          await db.batch(teamUpdateQueries.slice(i, i + teamChunkSize) as any);
         }
       }
     }

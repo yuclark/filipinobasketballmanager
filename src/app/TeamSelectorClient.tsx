@@ -16,7 +16,8 @@ import {
   Play,
   Loader2,
   Plus,
-  AlertTriangle
+  AlertTriangle,
+  Users
 } from "lucide-react";
 import {
   saveGameAction,
@@ -32,6 +33,7 @@ interface Team {
   city: string;
   conference: "Luzon" | "VisMin";
   budget: number;
+  fans?: number;
 }
 
 interface SaveSlot {
@@ -468,11 +470,19 @@ export default function TeamSelectorClient({ teams }: TeamSelectorClientProps) {
 
                     {/* Bottom Stats */}
                     <div className="flex justify-between items-center text-zinc-400">
-                      <div className="flex items-center gap-2">
-                        <Coins className="w-4 h-4 text-amber-500" />
-                        <span className="text-xs font-semibold tracking-wide">
-                          {formatPHP(team.budget)}
-                        </span>
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <Coins className="w-4 h-4 text-amber-500" />
+                          <span className="text-xs font-semibold tracking-wide">
+                            {formatPHP(team.budget)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-semibold tracking-wide">
+                            {team.fans ? team.fans.toLocaleString() : "10,000"} fans
+                          </span>
+                        </div>
                       </div>
                       <div className="inline-flex items-center gap-1 text-xs font-semibold text-orange-500 group-hover:translate-x-1 transition-transform">
                         <span>Select Team</span>

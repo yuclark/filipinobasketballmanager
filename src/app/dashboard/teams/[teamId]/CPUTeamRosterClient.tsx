@@ -43,6 +43,7 @@ interface Team {
   city: string;
   conference: "Luzon" | "VisMin";
   budget: number;
+  fans?: number;
 }
 
 interface CPUTeamRosterClientProps {
@@ -221,18 +222,35 @@ export default function CPUTeamRosterClient({
             </div>
           </div>
 
-          {/* Budget Display */}
-          <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-5 flex items-center gap-4 min-w-[240px]">
-            <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500">
-              <Coins className="w-6 h-6" />
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Fans Display */}
+            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-5 flex items-center gap-4 min-w-[200px]">
+              <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-zinc-500 font-bold uppercase tracking-wider text-[11px] block">
+                  Fan Base
+                </span>
+                <span className="text-xl font-extrabold text-blue-500">
+                  {team.fans ? team.fans.toLocaleString() : "10,000"}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-zinc-500 font-bold uppercase tracking-wider text-[11px] block">
-                Active Cap Space
-              </span>
-              <span className="text-xl font-extrabold text-amber-500">
-                {formatPHP(team.budget)}
-              </span>
+
+            {/* Budget Display */}
+            <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-5 flex items-center gap-4 min-w-[240px]">
+              <div className="p-3 bg-amber-500/10 rounded-xl text-amber-550">
+                <Coins className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-zinc-500 font-bold uppercase tracking-wider text-[11px] block">
+                  Active Cap Space
+                </span>
+                <span className="text-xl font-extrabold text-amber-500">
+                  {formatPHP(team.budget)}
+                </span>
+              </div>
             </div>
           </div>
         </div>

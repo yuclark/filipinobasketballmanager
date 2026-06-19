@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { teams } from "@/db/schema";
 import Link from "next/link";
-import { Shield, ChevronRight, Globe } from "lucide-react";
+import { Shield, ChevronRight, Globe, Users } from "lucide-react";
 
 export const revalidate = 0;
 
@@ -56,6 +56,10 @@ export default async function TeamsDirectoryPage() {
                   </span>
                   <h5 className="text-lg font-bold text-white mt-3 leading-tight">{team.city}</h5>
                   <p className="text-zinc-400 font-extrabold text-sm">{team.name}</p>
+                  <div className="flex items-center gap-1.5 mt-2.5 text-xs text-zinc-500 font-semibold group-hover:text-zinc-400 transition-colors">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{(team.fans ?? 10000).toLocaleString()} fans</span>
+                  </div>
                 </div>
                 <div className="mt-5 pt-3 border-t border-zinc-950 flex justify-end">
                   <Link
@@ -89,6 +93,10 @@ export default async function TeamsDirectoryPage() {
                   </span>
                   <h5 className="text-lg font-bold text-white mt-3 leading-tight">{team.city}</h5>
                   <p className="text-zinc-400 font-extrabold text-sm">{team.name}</p>
+                  <div className="flex items-center gap-1.5 mt-2.5 text-xs text-zinc-500 font-semibold group-hover:text-zinc-400 transition-colors">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{(team.fans ?? 10000).toLocaleString()} fans</span>
+                  </div>
                 </div>
                 <div className="mt-5 pt-3 border-t border-zinc-950 flex justify-end">
                   <Link

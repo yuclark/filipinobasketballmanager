@@ -114,13 +114,14 @@ export async function seedDatabase(db: any) {
     console.log(" - Truncated teams");
 
     // 2. SEED 30 CULTURALLY AUTHENTIC TEAMS
-    console.log("Inserting 30 teams with default budget (₱50,000,000)...");
+    console.log("Inserting 30 teams with default budget (₱50,000,000) and starting fans...");
     const insertedTeams = await db
       .insert(schema.teams)
       .values(
         TEAMS_DATA.map((t) => ({
           ...t,
           budget: 50000000, // 50M salary cap budget
+          fans: 15000 + getRandomNumber(0, 15000), // Random starting fans between 15k and 30k
         }))
       )
       .returning();

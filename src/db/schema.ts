@@ -7,6 +7,7 @@ export const teams = pgTable("teams", {
   conference: varchar("conference", { length: 20 }).$type<"Luzon" | "VisMin">().notNull(),
   budget: integer("budget").default(50000000).notNull(),
   deadCap: integer("dead_cap").default(0).notNull(),
+  fans: integer("fans").default(10000).notNull(),
 });
 
 export const players = pgTable("players", {

@@ -3,7 +3,7 @@
 import { db } from "@/db";
 import { eq, and, sql, or, inArray, desc } from "drizzle-orm";
 import { teams, players, games, playerGameStats } from "@/db/schema";
-import { simulateGameAction, simulateGameLogic, DBPlayer } from "@/app/actions/leagueEngine";
+import { simulateGameAction, simulateGameLogic, DBPlayer, calculateFanChange } from "@/app/actions/leagueEngine";
 import { calculateFinalsMvpAction, calculateRegularSeasonAwardsAction } from "@/app/actions/awardsEngine";
 import crypto from "crypto";
 
@@ -1017,6 +1017,20 @@ export async function simulateUntilGrandFinalsAction() {
         game.awayScore = res.updatedGame.awayScore;
         game.isModified = true;
 
+        // Update fans inside in-memory allTeams list
+        const homeTeamObj = allTeams.find((t) => t.id === game.homeTeamId);
+        const awayTeamObj = allTeams.find((t) => t.id === game.awayTeamId);
+        if (homeTeamObj && awayTeamObj) {
+          const scoreDiff = Math.abs(res.updatedGame.homeScore - res.updatedGame.awayScore);
+          const homeWon = res.updatedGame.homeScore > res.updatedGame.awayScore;
+
+          const homeFanChange = calculateFanChange(homeWon, scoreDiff, true);
+          const awayFanChange = calculateFanChange(!homeWon, scoreDiff, false);
+
+          homeTeamObj.fans = Math.max(2000, (homeTeamObj.fans ?? 10000) + homeFanChange);
+          awayTeamObj.fans = Math.max(2000, (awayTeamObj.fans ?? 10000) + awayFanChange);
+        }
+
         res.playerStatsToInsert.forEach((stat) => {
           stat.gameId = game.id;
           inMemoryStats.push(stat);
@@ -1060,6 +1074,17 @@ export async function simulateUntilGrandFinalsAction() {
 
     // Commit changes
     const batchQueries: any[] = [];
+
+    // Push team fanbase updates
+    if (allTeams.length > 0) {
+      for (const t of allTeams) {
+        batchQueries.push(
+          db.update(teams)
+            .set({ fans: t.fans })
+            .where(eq(teams.id, t.id))
+        );
+      }
+    }
 
     const gamesToDelete = inMemoryGames.filter((g) => !g.isNew && g.isDeleted).map((g) => g.id);
     if (gamesToDelete.length > 0) {
